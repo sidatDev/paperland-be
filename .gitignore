@@ -1,0 +1,10 @@
+node_modules
+.env
+dist
+.DS_Store
+coverage
+*.md
+/_planning
+_planning/admin_dashboard_audit.md
+/Client feedback
+backups/pre-checkout-backup-2026-02-09T13-24-08-725Z.json

@@ -1,0 +1,16 @@
+// Add this model after the Industry model (around line 290)
+
+model ProductIndustry {
+  id         String   @id @default(uuid())
+  productId  String   @map("product_id")
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  industryId String   @map("industry_id")
+  industry   Industry @relation(fields: [industryId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([productId, industryId])
+  @@index([productId])
+  @@index([industryId])
+  @@map("product_industries")
+}

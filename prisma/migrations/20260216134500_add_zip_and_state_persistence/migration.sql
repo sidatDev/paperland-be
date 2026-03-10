@@ -1,0 +1,3 @@
+-- This migration was applied on the production server but was missing locally.
+-- Empty migration file to sync migration history.
+-- The actual changes (zip_code and state fields on users) were already applied.
