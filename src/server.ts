@@ -12,6 +12,15 @@ const fastify = Fastify({
   logger: true
 });
 
+import path from 'path';
+import fs from 'fs';
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
 const start = async () => {
   try {
     // Register CORS
@@ -20,6 +29,12 @@ const start = async () => {
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
       allowedHeaders: ['Content-Type', 'Authorization'],
       credentials: true
+    });
+
+    // Register @fastify/static to serve uploaded files
+    await fastify.register(import('@fastify/static'), {
+      root: path.join(process.cwd(), 'public', 'uploads'),
+      prefix: '/uploads/', // Files will be accessible at http://localhost:3001/uploads/
     });
 
     // Register Rate Limit

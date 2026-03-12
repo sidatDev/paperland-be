@@ -311,38 +311,27 @@ model Product {
   name                 String
   sku                  String                    @unique
   description          String?
+  fullDescription      String?                   @map("full_description")
+  price                Decimal?                  @db.Decimal(10, 2)
   imageUrl             String?                   @map("image_url")
+  images               String[]
   specifications       Json?
-  erpId                String?                   @map("erp_id")
-  isActive             Boolean                   @default(true) @map("is_active")
-  categoryId           String                    @map("category_id")
-  brandId              String                    @map("brand_id")
+  status               String                    @default("Draft")
+  groupNumber          String?                   @map("group_number")
+  groupId              String?                   @map("group_id")
+  isFeatured           Boolean                   @default(false) @map("is_featured")
+  isVisibleOnEcommerce Boolean                   @default(true) @map("is_ecommerce_visible")
+  slug                 String?                   @unique
+  length               String?
+  width                String?
+  weight               String?
+  volume               String?
   createdAt            DateTime                  @default(now()) @map("created_at")
   updatedAt            DateTime                  @updatedAt @map("updated_at")
   deletedAt            DateTime?                 @map("deleted_at")
-  micronRating         String?                   @map("micron_rating")
-  flowRate             String?                   @map("flow_rate")
-  maxPressure          String?                   @map("max_pressure")
-  temperatureRange     String?                   @map("temperature_range")
-  efficiency           String?
-  attributes           Json?
-  outerDiameter        String?                   @map("outer_diameter")
-  innerDiameter        String?                   @map("inner_diameter")
-  length               String?
-  weight               String?
-  threadSize           String?                   @map("thread_size")
-  gasketOD             String?                   @map("gasket_od")
-  gasketId             String?                   @map("gasket_id")
-  groupNumber          String?
-  images               String[]
-  isFeatured           Boolean                   @default(false) @map("is_featured")
-  seo                  Json?
-  volume               String?
-  width                String?
-  isEcommerceVisible   Boolean                   @default(true) @map("is_ecommerce_visible")
-  slug                 String?                   @unique
-  fullDescription      String?                   @map("full_description")
-  price                Decimal?                  @db.Decimal(10, 2)
+  isActive             Boolean                   @default(true) @map("is_active")
+  categoryId           String                    @map("category_id")
+  brandId              String                    @map("brand_id")
   batches              Batch[]
   cartItems            CartItem[]
   crossReferences      CrossReference[]          @relation("SourceProduct")

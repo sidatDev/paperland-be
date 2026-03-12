@@ -70,63 +70,52 @@ export default async function productRoutes(fastify: FastifyInstance) {
       created_at: Math.floor(new Date(p.createdAt).getTime() / 1000),
       is_featured: p.isFeatured || false,
       isActive: p.isActive,
-      status: (p.specifications as any)?.status || (p.isActive ? 'Active' : 'Draft'),
+      status: p.status || (p.isActive ? 'Active' : 'Draft'),
   });
 
   // Helper to transform Prisma Product to API JSON
   const transformProduct = (p: any) => {
     const specs = p.specifications || {};
-    // Extract status from specs or fallback to legacy isActive
-    const status = specs.status || (p.isActive ? "Active" : "Draft");
     
     return {
       id: p.id,
       name: p.name,
       isActive: p.isActive,
-      status, // Include the explicit status
+      status: p.status, 
       isFeatured: p.isFeatured || false,
       sku: p.sku,
-      partNumber: p.partNo || specs.partNo, // Check model field OR specs
-      slug: p.slug, // Include slug
-      erpProductId: p.erpId,
-      groupId: p.groupNumber ? `grp_${p.groupNumber}` : null,
-      price: (() => {
-        const sarPrice = p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
-        return sarPrice ? Number(sarPrice.priceRetail) : Number(p.price || 0);
-      })(),
+      slug: p.slug, 
+      groupNumber: p.groupNumber,
+      groupId: p.groupId,
+      price: Number(p.price || 0),
       relatedProductsCount: 0, 
 
+      // Added top-level fields for Edit/View Form mapping
+      brand: p.brandId,
+      category: p.categoryId,
+      description: p.description || "",
+      width: p.width || "",
+      length: p.length || "",
+      weight: p.weight || "",
+      volume: p.volume || "",
+      specs: specs.technical || [],
+
       generalInformation: [
-        { key: "erpProductId", title: "ERP Product ID", value: p.erpId, order: 1 },
         { key: "brand", title: "Brand", value: p.brand?.name, id: p.brandId, order: 2 },
         { key: "category", title: "Category", value: p.category?.name, id: p.categoryId, order: 3 },
-        { key: "subCategory", title: "Sub Category", value: p.subCategory || specs.subCategory || "N/A", order: 4 },
-        { key: "partNo", title: "Part No", value: specs.partNo || p.sku, order: 5 },
-        { key: "groupNo", title: "Group No", value: p.groupNumber, order: 6 },
-        { key: "type", title: "Type", value: p.type || specs.type || "N/A", order: 7 },
-        { key: "style", title: "Style", value: p.style || specs.style || "N/A", order: 8 },
+        { key: "groupNumber", title: "Group Number", value: p.groupNumber, order: 5 },
+        { key: "subCategory", title: "Sub Category", value: specs.subCategory || "N/A", order: 6 },
         { key: "description", title: "Description", value: p.description, order: 9 },
         { key: "fullDescription", title: "Full Description", value: p.fullDescription, order: 10 },
-        { key: "status", title: "Status", value: status, order: 11 }
+        { key: "status", title: "Status", value: p.status, order: 11 }
       ],
 
       technicalSpecifications: [
-        { key: "width", title: "Width", value: p.width || specs.width, unit: "mm", order: 1 },
-        { key: "length", title: "Length", value: p.length || specs.length, unit: "mm", order: 2 },
-        { key: "weight", title: "Weight", value: p.weight || specs.weight, unit: "kg", order: 3 },
-        { key: "volume", title: "Volume", value: p.volume || specs.volume, unit: "m³", order: 4 },
-        { key: "outerDiameter", title: "Outer Diameter", value: p.outerDiameter || specs.outerDiameter, unit: "mm", order: 5 },
-        { key: "innerDiameter", title: "Inner Diameter", value: p.innerDiameter || specs.innerDiameter, unit: "mm", order: 6 },
-        ...(specs.technical || []).filter((t: any) => {
-            const key = t.key || t.title || t.label;
-            if (!key) return true; // Keep items without key/title/label
-            return ![
-                "width", "length", "weight", "volume",
-                "outerdiameter", "innerdiameter",
-                "micronrating", "flowrate", "maxpressure", "temperaturerange", 
-                "threadsize", "gasketod", "gasketid", "efficiency", "attributes"
-            ].includes(key.toLowerCase().replace(/\s/g, ''));
-        }).map((t: any) => ({
+        { key: "width", title: "Width", value: p.width, unit: "mm", order: 1 },
+        { key: "length", title: "Length", value: p.length, unit: "mm", order: 2 },
+        { key: "weight", title: "Weight", value: p.weight, unit: "kg", order: 3 },
+        { key: "volume", title: "Volume", value: p.volume, unit: "m³", order: 4 },
+        ...(specs.technical || []).map((t: any) => ({
             key: t.key || t.label,
             title: t.title || t.label,
             value: t.value,
@@ -135,17 +124,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         }))
       ],
 
-      attributes: [
-        { key: "micronRating", title: "Micron Rating", value: p.micronRating || specs.micronRating, unit: "µm", order: 1 },
-        { key: "flowRate", title: "Flow Rate", value: p.flowRate || specs.flowRate, unit: "GPM", order: 2 },
-        { key: "maxPressure", title: "Max Pressure", value: p.maxPressure || specs.maxPressure, unit: "PSI", order: 3 },
-        { key: "temperatureRange", title: "Temperature Range", value: p.temperatureRange || specs.temperatureRange, order: 4 },
-        { key: "threadSize", title: "Thread Size", value: p.threadSize || specs.threadSize, order: 5 },
-        { key: "gasketOD", title: "Gasket OD", value: p.gasketOD || specs.gasketOD, unit: "mm", order: 6 },
-        { key: "gasketId", title: "Gasket ID", value: p.gasketId || specs.gasketId, unit: "mm", order: 7 },
-        { key: "efficiency", title: "Efficiency", value: p.efficiency || specs.efficiency, unit: "%", order: 8 },
-        { key: "attributes", title: "Attributes", value: p.attributes || specs.attributes, order: 9 }
-      ],
+      attributes: [],
 
       industries: p.industries?.map((pi: any) => ({
         id: pi.industry.id,
@@ -157,7 +136,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
         const results = p.prices?.map((price: any) => ({
            currency: price.currency?.code,
            basePrice: Number(price.priceRetail),
-           wholesalePrice: Number(price.priceWholesale)
+           wholesalePrice: Number(price.priceWholesale),
+           promotionalPrice: Number(price.priceSpecial)
         })) ?? [];
         
         const existingCodes = results.map((r: any) => r.currency);
@@ -195,12 +175,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
       totalReservedStock: p.stocks?.reduce((acc: number, s: any) => acc + (s.reservedQty || 0), 0) || 0,
       totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
       
+      wholesalePrice: Number(p.prices?.[0]?.priceWholesale || 0),
+      promotionalPrice: Number(p.prices?.[0]?.priceSpecial || 0),
+
       media: (p.images && p.images.length > 0)
         ? p.images.map((url: string, index: number) => ({ type: 'image', url, label: index === 0 ? 'Main' : `Image ${index + 1}` }))
         : (p.imageUrl ? [{ type: 'image', url: p.imageUrl, label: 'Main' }] : []),
 
-      seo: p.seo || {}, // Return SEO
-      isEcommerceVisible: p.isEcommerceVisible,
+      seo: (p.specifications as any)?.seo || {}, // Return SEO from specifications
+      isVisibleOnEcommerce: p.isVisibleOnEcommerce,
       fullDescription: p.fullDescription, // Return fullDescription
       specifications: p.specifications || {}, // Return specifications for raw access
 
@@ -243,7 +226,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                       include: { currency: true }
                   },
                   stocks: true,
-                  isEcommerceVisible: true
+                  isVisibleOnEcommerce: true
               },
               take: 20
           });
@@ -255,7 +238,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
               price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
               currency: p.prices?.[0]?.currency?.code || 'SAR',
               currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
-              isEcommerceVisible: p.isEcommerceVisible
+              isVisibleOnEcommerce: p.isVisibleOnEcommerce
           }));
 
           return createResponse(transformed, "Search successful");
@@ -296,32 +279,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
       const bIds = parseFilterArray(brandIds);
       const iIds = parseFilterArray(industryIds);
 
-      // Preliminary ID fetch for status classification (Handles Prisma JSON path flakiness)
-      const allProducts = await (fastify.prisma as any).product.findMany({
-          where: { deletedAt: null },
-          select: { id: true, specifications: true, isActive: true }
-      });
-
-      const idsByStatus: Record<string, string[]> = {
-          'Active': [],
-          'Out of Stock': [],
-          'Draft': [],
-          'Inactive': []
-      };
-
-      allProducts.forEach((p: any) => {
-          const s = p.specifications?.status;
-          if (s && idsByStatus[s]) {
-              idsByStatus[s].push(p.id);
-          } else if (p.isActive) {
-              idsByStatus['Active'].push(p.id);
-          } else {
-              idsByStatus['Draft'].push(p.id);
-          }
-      });
-
+      // Status Classification Logic (Simplified to use top-level field)
       const where: any = {
-        deletedAt: null, // Filter soft-deleted
+        deletedAt: null, 
         AND: [
           search ? {
             OR: [
@@ -330,6 +290,10 @@ export default async function productRoutes(fastify: FastifyInstance) {
               { description: { contains: search, mode: 'insensitive' } },
             ]
           } : {},
+          
+          // Status Filter
+          status && status !== 'all' ? { status } : {},
+          
           // Category Filters
           categoryId && categoryId !== 'all' ? { categoryId } : {},
           cIds ? { categoryId: { in: cIds } } : {},
@@ -347,29 +311,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
           isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
 
-          // Status Filter (Unified ID-based logic)
-          status && status !== 'all' ? (() => {
-              if (status === 'Active') {
-                  // Final safety check: must be active AND not marked otherwise
-                  const restrictedIds = [...idsByStatus['Out of Stock'], ...idsByStatus['Draft'], ...idsByStatus['Inactive']];
-                  return {
-                      AND: [
-                          { isActive: true },
-                          restrictedIds.length > 0 ? { id: { notIn: restrictedIds } } : {}
-                      ]
-                  };
-              }
-              if (status === 'Draft' || status === 'Inactive') {
-                  const targetIds = [...idsByStatus['Draft'], ...idsByStatus['Inactive']];
-                  return { id: { in: targetIds } };
-              }
-              if (status === 'Out of Stock') {
-                  return { id: { in: idsByStatus['Out of Stock'] } };
-              }
-              // For any other custom status
-              const targetIds = idsByStatus[status] || [];
-              return targetIds.length > 0 ? { id: { in: targetIds } } : { id: 'none' };
-          })() : {},
+          isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
         ]
       };
 
@@ -424,6 +366,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
       sku: { type: 'string' },
       erpProductId: { type: 'string', nullable: true },
       isActive: { type: 'boolean' },
+      groupNumber: { type: 'string', nullable: true },
+      groupId: { type: 'string', nullable: true },
+      status: { type: 'string' },
       fullDescription: { type: 'string', nullable: true },
       generalInformation: { type: 'array', items: { type: 'object', additionalProperties: true } },
       technicalSpecifications: { type: 'array', items: { type: 'object', additionalProperties: true } },
@@ -433,7 +378,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       media: { type: 'array', items: { type: 'object', additionalProperties: true } },
       seo: { type: 'object', additionalProperties: true },
       isFeatured: { type: 'boolean' },
-      isEcommerceVisible: { type: 'boolean' },
+      isVisibleOnEcommerce: { type: 'boolean' },
       industries: { type: 'array', items: { type: 'object', additionalProperties: true } },
       specifications: { type: 'object', additionalProperties: true },
       createdAt: { type: 'string' },
@@ -452,31 +397,24 @@ export default async function productRoutes(fastify: FastifyInstance) {
         categoryId: { type: 'string' },
         brandId: { type: 'string' },
         groupNumber: { type: 'string' },
+        groupId: { type: 'string' },
         erpId: { type: 'string' },
         isActive: { type: 'boolean' },
+        status: { type: 'string' },
         salesPrice: { type: 'number' },
         currency: { type: 'string' },
         stock: { type: 'number' },
         
-        // Tech Specs
-        micronRating: { type: 'string' },
-        flowRate: { type: 'string' },
-        maxPressure: { type: 'string' },
-        temperatureRange: { type: 'string' },
+        // Tech Specs (Dimensions/Weight now in model)
         weight: { type: 'string' },
-        outerDiameter: { type: 'string' },
-        innerDiameter: { type: 'string' },
+        width: { type: 'string' },
         length: { type: 'string' },
         volume: { type: 'string' },
-        threadSize: { type: 'string' },
-        gasketOD: { type: 'string' },
-        gasketId: { type: 'string' },
-        efficiency: { type: 'string' },
         
         specifications: { type: 'object', additionalProperties: true },
         specs: { type: 'array', items: { type: 'object', additionalProperties: true } },
         isFeatured: { type: 'boolean' },
-        isEcommerceVisible: { type: 'boolean' },
+        isVisibleOnEcommerce: { type: 'boolean' },
         industries: { type: 'array', items: { type: 'string' } },
         media: { type: 'array', items: { type: 'string' } }, // Array of URLs
         seo: { type: 'object', additionalProperties: true }
@@ -583,19 +521,17 @@ export default async function productRoutes(fastify: FastifyInstance) {
     const data: any = request.body;
     try {
         const { 
-            name, sku: bodySku, description, groupNumber, erpId, erpProductId, isActive: bodyIsActive,
+            name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
-            category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status,
-            salesPrice = 0, currency = "SAR", stock = 0, specifications = {}, specs = [],
-            micronRating, flowRate, maxPressure, temperatureRange,
-            weight, width, outerDiameter, innerDiameter, length, volume,
-            threadSize, gasketOD, gasketId, efficiency, attributes,
-            subCategory, type, style,
-            media, seo, // Destructure seo
-            isFeatured = false, // Destructure isFeatured
-            isEcommerceVisible = true, // Destructure isEcommerceVisible
-            fullDescription, // Destructure fullDescription
-            industries = [] // Destructure industries array
+            category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status = "Draft",
+            salesPrice = 0, currency = "PKR", stock = 0, specifications = {}, specs = [],
+            promotionalPrice = 0, tierPricing = {},
+            weight, width, length, volume,
+            media, seo, 
+            isFeatured = false, 
+            isVisibleOnEcommerce = true, 
+            fullDescription, 
+            industries = [] 
         } = data;
 
         console.log('Create Product Body:', JSON.stringify(data, null, 2));
@@ -608,12 +544,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (!resolvedBrandId) return reply.status(400).send(createErrorResponse('Valid Brand ID or Name is required'));
         if (!resolvedSku) return reply.status(400).send(createErrorResponse('SKU is required'));
 
-        // Logic for mapping status to isActive
-        // If status is "Active" or "Out of Stock", isActive is true.
-        // If status is "Draft", isActive is false.
-        const resolvedIsActive = status !== undefined 
-            ? (status === "Active" || status === "Out of Stock")
-            : (bodyIsActive !== undefined ? bodyIsActive : true);
+        const resolvedIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : true;
         
         const resolvedImageUrl = (media && media.length > 0) ? media[0] : (data.imageUrl || null);
 
@@ -634,50 +565,36 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 name,
                 slug,
                 sku: resolvedSku,
-                price: salesPrice, // SAVE TO NEW COLUMN
+                price: Number(salesPrice || 0),
                 description,
                 fullDescription,
+                status,
                 groupNumber,
-                erpId: erpId || erpProductId,
+                groupId,
                 isActive: resolvedIsActive,
-                isFeatured, // Save isFeatured
-                isEcommerceVisible, // Save isEcommerceVisible
+                isFeatured,
+                isVisibleOnEcommerce,
                 imageUrl: resolvedImageUrl,
-                images: media || [], // Save multiple images
-                categoryId: resolvedCategoryId,
-                brandId: resolvedBrandId,
-                
-                // SAVE TO NEW COLUMNS
-                micronRating: micronRating || specifications.micronRating,
-                flowRate: flowRate || specifications.flowRate,
-                maxPressure: maxPressure || specifications.maxPressure,
-                temperatureRange: temperatureRange || specifications.temperatureRange,
-                efficiency: efficiency || specifications.efficiency,
-                attributes: attributes || specifications.attributes,
-                
-                outerDiameter: outerDiameter || specifications.outerDiameter,
-                innerDiameter: innerDiameter || specifications.innerDiameter,
-                length: length || specifications.length,
-                width: width || specifications.width, // Save width
-                weight: weight || specifications.weight,
-                volume: volume || specifications.volume, // Save Volume
-                threadSize: threadSize || specifications.threadSize,
-                gasketOD: gasketOD || specifications.gasketOD,
-                gasketId: gasketId || specifications.gasketId,
-                
-                seo: seo || undefined, // Save SEO
-
+                images: media || [],
+                category: { connect: { id: resolvedCategoryId } },
+                brand: { connect: { id: resolvedBrandId } },
+                length: length?.toString(),
+                width: width?.toString(),
+                weight: weight?.toString(),
+                volume: volume?.toString(),
                 specifications: {
-                    partNo: bodyPartNo, // PERSIST PART NUMBER
-                    status: status || (resolvedIsActive ? "Active" : "Draft"), // PERSIST EXPLICIT STATUS
                     ...specifications,
-                    // Keep them in JSON too for backup/compatibility
-                    subCategory, type, style,
-                    // Map specs array to technical
-                    technical: specs || []
+                    technical: specs || [],
+                    seo: seo || {}
                 },
                 prices: {
-                   create: { currencyId: currencyRec.id, priceRetail: salesPrice, isActive: true }
+                   create: { 
+                     currencyId: currencyRec.id, 
+                     priceRetail: Number(salesPrice || 0), 
+                     priceWholesale: Number(tierPricing?.wholesale || 0),
+                     priceSpecial: Number(promotionalPrice || 0),
+                     isActive: true 
+                   }
                 },
                 stocks: {
                     create: { locationId: 'MAIN', qty: stock }
@@ -765,103 +682,73 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if(!existing) return reply.status(404).send(createErrorResponse("Not found"));
 
         const { 
-            name, sku: bodySku, description, groupNumber, erpId, erpProductId, isActive: bodyIsActive,
+            name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status,
             salesPrice, stock, specifications, specs,
-            micronRating, flowRate, maxPressure, temperatureRange,
-            weight, width, outerDiameter, innerDiameter, length, volume,
-            threadSize, gasketOD, gasketId, efficiency, attributes,
-            subCategory, type, style,
-            media, seo, // Destructure seo
-            isFeatured, // Destructure isFeatured
-            isEcommerceVisible, // Destructure isEcommerceVisible
-            fullDescription, // Destructure fullDescription
-            industries // Destructure industries
+            promotionalPrice, tierPricing,
+            weight, width, length, volume,
+            media, seo, 
+            isFeatured, isVisibleOnEcommerce, isEcommerceVisible, fullDescription, industries
         } = data;
+
+        const resolvedIsVisible = isVisibleOnEcommerce !== undefined ? isVisibleOnEcommerce : isEcommerceVisible;
 
         const resolvedCategoryId = await resolveEntityId('category', bodyCategoryId || bodyCategory) || existing.categoryId;
         const resolvedBrandId = await resolveEntityId('brand', bodyBrandId || bodyBrand) || existing.brandId;
         
-        // Map status to isActive
-        const resolvedIsActive = status !== undefined 
-            ? (status === "Active" || status === "Out of Stock")
-            : (bodyIsActive !== undefined ? bodyIsActive : undefined);
-            
+        const resolvedIsActive = bodyIsActive !== undefined 
+            ? (bodyIsActive === 'true' || bodyIsActive === true) 
+            : (status === "Draft" ? false : (status === "Active" ? true : undefined));
         const resolvedImageUrl = (media && media.length > 0) ? media[0] : (data.imageUrl || undefined);
 
-        // Build update data object, only including fields that are provided
         const updateData: any = {};
         
-        if (name !== undefined || bodySku !== undefined || bodyPartNo !== undefined) {
+        if (name !== undefined || bodySku !== undefined) {
              const newName = name || existing.name;
              const newSku = bodySku !== undefined ? bodySku : existing.sku;
-             // PartNo is tricky as it is in JSON.
-             const existingSpecs = existing.specifications as any || {};
-             const newPartNo = bodyPartNo !== undefined ? bodyPartNo : (existingSpecs.partNo || "");
-             
-             updateData.slug = await generateUniqueSlug(newName, newPartNo, newSku, id);
-             if (name !== undefined) updateData.name = name;
+             updateData.slug = await generateUniqueSlug(newName, "", newSku, id);
         }
-        if (bodySku !== undefined && bodySku !== existing.sku) updateData.sku = bodySku;
+
+        if (name !== undefined) updateData.name = name;
+        if (bodySku !== undefined) updateData.sku = bodySku;
         if (description !== undefined) updateData.description = description;
         if (fullDescription !== undefined) updateData.fullDescription = fullDescription;
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
-        if (erpId !== undefined || erpProductId !== undefined) updateData.erpId = erpId || erpProductId;
+        if (groupId !== undefined) updateData.groupId = groupId;
+        if (status !== undefined) updateData.status = status;
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (media !== undefined) updateData.images = media;
-        // isFeatured and industries handled below to avoid duplication
         
-        // Update relations
         if (resolvedCategoryId) updateData.category = { connect: { id: resolvedCategoryId } };
         if (resolvedBrandId) updateData.brand = { connect: { id: resolvedBrandId } };
         
-        // Technical specifications
-        if (micronRating !== undefined || specifications?.micronRating !== undefined) 
-            updateData.micronRating = micronRating || specifications?.micronRating;
-        if (flowRate !== undefined || specifications?.flowRate !== undefined) 
-            updateData.flowRate = flowRate || specifications?.flowRate;
-        if (maxPressure !== undefined || specifications?.maxPressure !== undefined) 
-            updateData.maxPressure = maxPressure || specifications?.maxPressure;
-        if (temperatureRange !== undefined || specifications?.temperatureRange !== undefined) 
-            updateData.temperatureRange = temperatureRange || specifications?.temperatureRange;
-        if (efficiency !== undefined || specifications?.efficiency !== undefined) 
-            updateData.efficiency = efficiency || specifications?.efficiency;
-        if (attributes !== undefined || specifications?.attributes !== undefined) 
-            updateData.attributes = attributes || specifications?.attributes;
+        if (length !== undefined) updateData.length = length?.toString();
+        if (width !== undefined) updateData.width = width?.toString();
+        if (weight !== undefined) updateData.weight = weight?.toString();
+        if (volume !== undefined) updateData.volume = volume?.toString();
         
-        if (outerDiameter !== undefined || specifications?.outerDiameter !== undefined) 
-            updateData.outerDiameter = outerDiameter || specifications?.outerDiameter;
-        if (innerDiameter !== undefined || specifications?.innerDiameter !== undefined) 
-            updateData.innerDiameter = innerDiameter || specifications?.innerDiameter;
-        if (length !== undefined || specifications?.length !== undefined) 
-            updateData.length = length || specifications?.length;
-        if (weight !== undefined || specifications?.weight !== undefined) 
-            updateData.weight = weight || specifications?.weight;
-        if (volume !== undefined || specifications?.volume !== undefined) 
-            updateData.volume = volume || specifications?.volume;
-        if (threadSize !== undefined || specifications?.threadSize !== undefined) 
-            updateData.threadSize = threadSize || specifications?.threadSize;
-        if (gasketOD !== undefined || specifications?.gasketOD !== undefined) 
-            updateData.gasketOD = gasketOD || specifications?.gasketOD;
-        if (gasketId !== undefined || specifications?.gasketId !== undefined) 
-            updateData.gasketId = gasketId || specifications?.gasketId;
-        if (width !== undefined) updateData.width = width;
-        
-        if (salesPrice !== undefined) {
-            updateData.price = salesPrice; // SAVE TO NEW COLUMN
+        if (salesPrice !== undefined || promotionalPrice !== undefined || tierPricing !== undefined) {
+            const numericPrice = salesPrice !== undefined ? Number(salesPrice) : undefined;
+            const priceUpdateData: any = {};
+            
+            if (numericPrice !== undefined) priceUpdateData.priceRetail = numericPrice;
+            if (promotionalPrice !== undefined) priceUpdateData.priceSpecial = Number(promotionalPrice);
+            if (tierPricing?.wholesale !== undefined) priceUpdateData.priceWholesale = Number(tierPricing.wholesale);
+            
+            if (numericPrice !== undefined) updateData.price = numericPrice;
+            
             updateData.prices = {
                 updateMany: {
                     where: { isActive: true },
-                    data: { priceRetail: salesPrice }
+                    data: priceUpdateData
                 }
             };
         }
 
-        // Feature & Industry Synchronization
         if (resolvedIsActive !== undefined) updateData.isActive = resolvedIsActive;
-        if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
-        if (isEcommerceVisible !== undefined) updateData.isEcommerceVisible = isEcommerceVisible;
+        if (isFeatured !== undefined) updateData.isFeatured = (isFeatured === 'true' || isFeatured === true);
+        if (resolvedIsVisible !== undefined) updateData.isVisibleOnEcommerce = (resolvedIsVisible === 'true' || resolvedIsVisible === true);
 
         if (industries !== undefined && Array.isArray(industries)) {
             updateData.industries = {
@@ -872,34 +759,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
             };
         }
 
-        if (seo !== undefined) updateData.seo = seo;
-
-        // Update specifications JSON
-        if (specifications || bodyPartNo || subCategory || type || style || specs || status) {
+        if (specifications || specs || seo) {
             updateData.specifications = {
                 ...(existing.specifications as object || {}),
                 ...specifications,
-                ...(bodyPartNo && { partNo: bodyPartNo }),
-                ...(subCategory && { subCategory }),
-                ...(type && { type }),
-                ...(style && { style }),
                 ...(specs && { technical: specs }),
-                ...(status && { status })
+                ...(seo && { seo })
             };
         }
 
         const updated = await (fastify.prisma as any).product.update({
              where: { id },
              data: updateData,
-             include: { 
-                category: true, 
-                brand: true, 
-                prices: { include: { currency: true } }, 
-                stocks: true,
-                industries: {
-                    include: { industry: true }
-                }
-             }
+             include: { category: true, brand: true, prices: { include: { currency: true } }, stocks: true, industries: { include: { industry: true } } }
         });
 
         // Audit Log

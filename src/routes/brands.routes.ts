@@ -198,9 +198,13 @@ export default async function brandRoutes(fastify: FastifyInstance) {
       });
 
       return brand;
-    } catch (err) {
+    } catch (err: any) {
       fastify.log.error(err);
-      return reply.status(500).send({ message: 'Internal Server Error' });
+      return reply.status(500).send({ 
+        message: 'Internal Server Error',
+        error: err.message,
+        code: err.code
+      });
     }
   });
 
