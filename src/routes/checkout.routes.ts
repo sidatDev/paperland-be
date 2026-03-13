@@ -7,9 +7,18 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
 
     // GET /checkout/summary
     fastify.get('/checkout/summary', {
-        preHandler: [fastify.authenticate]
+        preHandler: [fastify.authenticate],
+        schema: {
+            querystring: {
+                type: 'object',
+                properties: {
+                    couponCode: { type: 'string' }
+                }
+            }
+        }
     }, async (request, reply) => {
         const userId = (request.user as any)?.id;
+        const { couponCode } = request.query as any;
         
         // 1. Get Active Cart
         const cart = await fastify.prisma.cart.findFirst({
@@ -55,9 +64,42 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
 
         const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
 
+        // 4. Coupon Validation (NEW)
+        let couponDiscount = 0;
+        let appliedCoupon = null;
+
+        if (couponCode) {
+            const coupon = await (fastify.prisma as any).coupon.findUnique({
+                where: { code: (couponCode as string).toUpperCase(), isActive: true, deletedAt: null }
+            });
+
+            if (coupon && new Date() >= coupon.startDate && new Date() <= coupon.endDate) {
+                if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
+                    if (subtotal >= Number(coupon.minOrderAmount)) {
+                        if (coupon.discountType === 'PERCENTAGE') {
+                            couponDiscount = subtotal * (Number(coupon.discountValue) / 100);
+                            if (coupon.maxDiscountAmount && couponDiscount > Number(coupon.maxDiscountAmount)) {
+                                couponDiscount = Number(coupon.maxDiscountAmount);
+                            }
+                        } else {
+                            couponDiscount = Number(coupon.discountValue);
+                        }
+                        appliedCoupon = {
+                            id: coupon.id,
+                            code: coupon.code,
+                            discount: Number(couponDiscount.toFixed(2))
+                        };
+                    }
+                }
+            }
+        }
+
         return {
             items,
             subtotal,
+            couponDiscount: Number(couponDiscount.toFixed(2)),
+            appliedCoupon,
+            total: Number((subtotal - couponDiscount).toFixed(2)),
             currency: 'PKR',
             defaultAddress
         };
@@ -140,14 +182,15 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     country: { type: 'string' },
                     phone: { type: 'string', pattern: '^\\+?[0-9\\s-]{7,20}$' }, // Updated pattern for better compatibility
                     zipCode: { type: 'string' },
-                    shippingMethodId: { type: 'string' }
+                    shippingMethodId: { type: 'string' },
+                    couponCode: { type: 'string' }
                 }
             }
         }
     }, async (request, reply) => {
         const userId = (request.user as any)?.id;
         const payload = request.body as any;
-        const { firstName, lastName, address, city, country, province, phone, zipCode, shippingMethodId } = payload;
+        const { firstName, lastName, address, city, country, province, phone, zipCode, shippingMethodId, couponCode } = payload;
 
         // 1. Get Cart
         const cart = await fastify.prisma.cart.findFirst({
@@ -181,7 +224,34 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }
 
         const tax = subtotal * 0.18;
-        const total = subtotal + shippingCost + tax;
+        
+        // 2.5 Coupon Calculation (NEW)
+        let couponDiscount = 0;
+        let couponId = null;
+
+        if (couponCode) {
+            const coupon = await (fastify.prisma as any).coupon.findUnique({
+                where: { code: (couponCode as string).toUpperCase(), isActive: true, deletedAt: null }
+            });
+
+            if (coupon && new Date() >= coupon.startDate && new Date() <= coupon.endDate) {
+                if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
+                    if (subtotal >= Number(coupon.minOrderAmount)) {
+                        couponId = coupon.id;
+                        if (coupon.discountType === 'PERCENTAGE') {
+                            couponDiscount = subtotal * (Number(coupon.discountValue) / 100);
+                            if (coupon.maxDiscountAmount && couponDiscount > Number(coupon.maxDiscountAmount)) {
+                                couponDiscount = Number(coupon.maxDiscountAmount);
+                            }
+                        } else {
+                            couponDiscount = Number(coupon.discountValue);
+                        }
+                    }
+                }
+            }
+        }
+
+        const total = (subtotal - couponDiscount) + shippingCost + tax;
 
         // 3. Currency (Locked to PKR)
         const currency = await fastify.prisma.currency.findUnique({ where: { code: 'PKR' } });
@@ -271,10 +341,11 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 shippingAmount: shippingCost, 
                 currency: { connect: { id: currency.id } },
                 address: { connect: { id: addr.id } }, 
+                couponId: couponId as any,
                 paymentMethod: 'PENDING',
 
                 shippingDetails: {
-                    address, city, country, province, zipCode, phone, firstName, lastName, shippingMethodId
+                    address, city, country, province, zipCode, phone, firstName, lastName, shippingMethodId, couponCode
                 },
                 shippingSnapshot: {
                     firstName,
@@ -287,7 +358,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     zipCode,
                     phone
                 },
-                pricingSummary: { subtotal, shippingCost, tax, total },
+                pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
                 
                 items: {
                     create: pricedItems.map(item => ({

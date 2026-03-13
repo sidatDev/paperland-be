@@ -329,10 +329,8 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
 
       if (isIncrement) {
         updateData.qty = { increment: quantity };
-        updateData.physicalQty = { increment: quantity };
       } else {
         updateData.qty = quantity;
-        updateData.physicalQty = quantity;
       }
 
       const stock = await (fastify.prisma as any).stock.upsert({
@@ -344,7 +342,6 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
           productId,
           warehouseId,
           qty: quantity,
-          physicalQty: quantity,
           reservedQty: 0,
           reorderLevel: reorderLevel || 10,
           locationId: 'MANAGED'
