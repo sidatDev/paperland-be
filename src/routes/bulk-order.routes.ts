@@ -24,7 +24,7 @@ export default async function bulkOrderRoutes(fastify: FastifyInstance) {
         
         reply
             .header('Content-Type', 'text/csv')
-            .header('Content-Disposition', 'attachment; filename="filters-experts-bulk-order-template.csv"')
+            .header('Content-Disposition', 'attachment; filename="paperland-bulk-order-template.csv"')
             .send(csvContent);
     });
 
@@ -113,7 +113,7 @@ export default async function bulkOrderRoutes(fastify: FastifyInstance) {
                         name: product.name,
                         imageUrl: product.imageUrl,
                         unitPrice: Number(unitPrice),
-                        currency: 'SAR', // Fallback, should be dynamic
+                        currency: 'PKR', // Default for Paperland
                         lineTotal: Number(unitPrice) * item.quantity
                     };
                 }

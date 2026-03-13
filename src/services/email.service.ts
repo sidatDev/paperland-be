@@ -47,8 +47,8 @@ export class EmailService {
             user: settings.smtpUser,
             pass: settings.smtpPass,
           } : undefined,
-          senderEmail: settings.senderEmail || process.env.SENDER_EMAIL || 'no-reply@filtersexpert.com',
-          senderName: (settings.senderName || process.env.SENDER_NAME || 'Filters Expert').trim()
+          senderEmail: settings.senderEmail || process.env.SENDER_EMAIL || 'no-reply@paperland.com.pk',
+          senderName: (settings.senderName || process.env.SENDER_NAME || 'Paperland').trim()
         };
       }
     } catch (error: any) {
@@ -65,8 +65,8 @@ export class EmailService {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       } : undefined,
-      senderEmail: process.env.SENDER_EMAIL || 'no-reply@filtersexpert.com',
-      senderName: (process.env.SENDER_NAME || 'Filters Expert').trim()
+      senderEmail: process.env.SENDER_EMAIL || 'no-reply@paperland.com.pk',
+      senderName: (process.env.SENDER_NAME || 'Paperland').trim()
     };
 
     return config;
@@ -98,7 +98,7 @@ export class EmailService {
    * Send OTP email for signup verification
    */
   async sendOTPEmail(to: string, otpCode: string, userName?: string): Promise<void> {
-    const subject = 'Your Verification Code - Filters Expert';
+    const subject = 'Your Verification Code - Paperland';
     
     // FOR DEV TESTING: Log OTP to console
     console.log('=================================================');
@@ -125,14 +125,14 @@ export class EmailService {
           </div>
           <div class="content">
             ${userName ? `<p>Hello ${userName},</p>` : '<p>Hello,</p>'}
-            <p>Thank you for registering with <strong>Filters Expert</strong>!</p>
+            <p>Thank you for registering with <strong>Paperland</strong>!</p>
             <p>Please use the following 6-digit verification code to complete your registration:</p>
             <div class="otp-code">${otpCode}</div>
             <p><strong>This code will expire in 10 minutes.</strong></p>
             <p>If you didn't request this code, you can safely ignore this email.</p>
           </div>
           <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Filters Expert. All rights reserved.</p>
+            <p>&copy; ${new Date().getFullYear()} Paperland. All rights reserved.</p>
             <p>This is an automated email. Please do not reply.</p>
           </div>
         </div>
@@ -143,7 +143,7 @@ export class EmailService {
     const text = `
       Hello${userName ? ' ' + userName : ''},
       
-      Thank you for registering with Filters Expert!
+      Thank you for registering with Paperland!
       
       Your verification code is: ${otpCode}
       
@@ -151,7 +151,7 @@ export class EmailService {
       
       If you didn't request this code, you can safely ignore this email.
       
-      © ${new Date().getFullYear()} Filters Expert. All rights reserved.
+      © ${new Date().getFullYear()} Paperland. All rights reserved.
     `;
 
     await this.sendEmail({ to, subject, html, text });
@@ -161,7 +161,7 @@ export class EmailService {
    * Send admin notification for B2B account review
    */
   async sendB2BReviewNotification(companyName: string, contactName: string, email: string): Promise<void> {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@filtersexpert.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@paperland.com.pk';
     const subject = `New B2B Account Registration - ${companyName}`;
     
     const html = `
@@ -260,7 +260,7 @@ export class EmailService {
    * Send B2B account approval notification email
    */
   async sendB2BApprovalEmail(to: string, userName: string, creditLimit: number): Promise<void> {
-    const subject = '🎉 Your B2B Account Has Been Approved - Filters Expert';
+    const subject = '🎉 Your B2B Account Has Been Approved - Paperland';
     
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -277,7 +277,7 @@ export class EmailService {
           
           <div style="background-color: white; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0;">
             <h3 style="margin-top: 0; color: #059669;">Account Details:</h3>
-            <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> SAR ${creditLimit.toLocaleString()}</p>
+            <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> PKR ${creditLimit.toLocaleString()}</p>
             <p style="margin: 5px 0;">🚀 <strong>Status:</strong> Active</p>
           </div>
           
@@ -302,7 +302,7 @@ export class EmailService {
           
           <p style="color: #6b7280; font-size: 14px;">
             Best regards,<br>
-            <strong>Filters Expert Team</strong>
+            <strong>Paperland Team</strong>
           </p>
         </div>
       </div>
@@ -314,7 +314,7 @@ Dear ${userName},
 Congratulations! Your B2B account has been APPROVED.
 
 Account Details:
-- Initial Credit Limit: SAR ${creditLimit.toLocaleString()}
+- Initial Credit Limit: PKR ${creditLimit.toLocaleString()}
 - Status: Active
 
 What's Next?
@@ -326,7 +326,7 @@ What's Next?
 Login here: ${process.env.FRONTEND_URL || 'http://localhost:3002'}/en/login
 
 Best regards,
-Filters Expert Team
+Paperland Team
     `;
 
     await this.sendEmail({
@@ -343,7 +343,7 @@ Filters Expert Team
    * Send B2B account rejection notification email
    */
   async sendB2BRejectionEmail(to: string, userName: string, reason?: string): Promise<void> {
-    const subject = 'B2B Account Application Update - Filters Expert';
+    const subject = 'B2B Account Application Update - Paperland';
     
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -365,17 +365,17 @@ Filters Expert Team
           </p>
           
           <div style="background-color: white; padding: 20px; margin: 20px 0; border-radius: 6px;">
-            <p style="margin: 5px 0; color: #374151;">📧 <strong>Email:</strong> support@filtersexpert.com</p>
-            <p style="margin: 5px 0; color: #374151;">📞 <strong>Phone:</strong> +966 59 965 9888</p>
+            <p style="margin: 5px 0; color: #374151;">📧 <strong>Email:</strong> support@paperland.com.pk</p>
+            <p style="margin: 5px 0; color: #374151;">📞 <strong>Phone:</strong> +92 (000) 000-0000</p>
           </div>
           
           <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            We appreciate your interest in partnering with Filters Expert.
+            We appreciate your interest in partnering with Paperland.
           </p>
           
           <p style="color: #6b7280; font-size: 14px;">
             Best regards,<br>
-            <strong>Filters Expert Team</strong>
+            <strong>Paperland Team</strong>
           </p>
         </div>
       </div>
@@ -388,11 +388,11 @@ Your B2B account application was rejected due to ${reason || 'unspecified reason
 
 Need Help?
 If you have any questions, please contact our support team:
-- Email: support@filtersexpert.com
-- Phone: +966 59 965 9888
+- Email: support@paperland.com.pk
+- Phone: +92 (000) 000-0000
 
 Best regards,
-Filters Expert Team
+Paperland Team
     `;
 
     await this.sendEmail({
@@ -410,7 +410,7 @@ Filters Expert Team
    */
   async sendNewsletterWelcomeEmail(to: string): Promise<void> {
     const config = await this.getSmtpSettings();
-    const subject = 'Welcome to Filters Expert Newsletter';
+    const subject = 'Welcome to Paperland Newsletter';
     
     const htmlContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px, overflow: hidden;">
@@ -420,7 +420,7 @@ Filters Expert Team
         <div style="padding: 30px; background-color: #ffffff;">
           <h2 style="color: #333;">Thank you for subscribing!</h2>
           <p style="font-size: 16px; color: #4b5563; line-height: 1.6;">
-            You've successfully joined the <strong>Filters Expert</strong> newsletter.
+            You've successfully joined the <strong>Paperland</strong> newsletter.
           </p>
           <p style="font-size: 16px; color: #4b5563; line-height: 1.6;">
             We'll keep you updated with the latest trends, filtration technologies, and industry insights.
@@ -428,7 +428,7 @@ Filters Expert Team
           <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
           <p style="color: #9ca3af; font-size: 14px;">
             Best regards,<br>
-            <strong>Filters Expert Team</strong>
+            <strong>Paperland Team</strong>
           </p>
           <div style="margin-top: 20px; font-size: 12px; color: #9ca3af; text-align: center;">
             If you wish to unsubscribe, please contact us at ${config.senderEmail}
@@ -441,7 +441,7 @@ Filters Expert Team
       to,
       subject,
       html: htmlContent,
-      text: `Welcome to the Filters Expert newsletter! Thank you for subscribing. We'll keep you updated with the latest news and insights.`
+      text: `Welcome to the Paperland newsletter! Thank you for subscribing. We'll keep you updated with the latest news and insights.`
     });
     
     console.log(`📧 Newsletter Welcome Email sent to: ${to}`);
@@ -451,7 +451,7 @@ Filters Expert Team
    * Send notification to admin for new support ticket
    */
   async sendNewTicketNotification(ticketId: string, subject: string, category: string, userName: string): Promise<void> {
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@filtersexpert.com';
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@paperland.com.pk';
     const emailSubject = `New Support Ticket: ${subject} (${category})`;
     
     const html = `

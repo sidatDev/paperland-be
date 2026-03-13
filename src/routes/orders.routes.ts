@@ -107,7 +107,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
           }
  
           // 2. Find Country & Currency
-          const countryCode = data.region || 'KSA';
+          const countryCode = data.region || 'PK';
           const country = await prisma.country.findUnique({ 
               where: { code: countryCode },
               include: { currency: true }
@@ -127,7 +127,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                       firstName: user.firstName || 'Guest',
                       lastName: user.lastName || '',
                       street1: data.shippingAddress || 'Manual Order Entry',
-                      city: "Riyadh",
+                      city: "Karachi",
                       zipCode: "10000",
                       countryId: country.id,
                       phone: data.customer.phone || user.phoneNumber || '',
@@ -164,7 +164,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                       email: data.customer.email,
                       phone: data.customer.phone,
                       addressLine1: data.shippingAddress,
-                      city: "Riyadh",
+                      city: "Karachi",
                       countryCode: country.code
                   },
                   shippingSnapshot: {
@@ -221,7 +221,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                 search: { type: 'string', description: 'Search by Order Number, ERP ID or Customer Email' },
                 startDate: { type: 'string', format: 'date' },
                 endDate: { type: 'string', format: 'date' },
-                currency: { type: 'string', description: 'Filter by Currency Code (e.g. SAR, PKR)' }
+                currency: { type: 'string', description: 'Filter by Currency Code (e.g. PKR)' }
             }
         }
     }
@@ -256,7 +256,6 @@ export default async function orderRoutes(fastify: FastifyInstance) {
         if (search) {
             where.OR = [
                 { orderNumber: { contains: search, mode: 'insensitive' } },
-                { erpOrderId: { contains: search, mode: 'insensitive' } },
                 { user: { email: { contains: search, mode: 'insensitive' } } },
                 { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
             ];
@@ -280,112 +279,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // Helper to normalize erpSyncLog to array format (backward compatibility)
-  function normalizeErpSyncLog(log: any): any[] {
-    if (!log) return [];
-    if (Array.isArray(log)) return log;
-    // Convert old single-object format to array
-    return [log];
-  }
 
-  // POST /admin/orders/:id/sync (Enhanced with sync attempt history and strict checking)
-  fastify.post('/admin/orders/:id/sync', {
-      preHandler: [fastify.authenticate, fastify.hasPermission('order_manage')],
-      schema: {
-          description: 'Trigger manual ERP Sync for an Order with attempt history tracking',
-          tags: ['Orders'],
-          params: { type: 'object', properties: { id: { type: 'string' } } }
-      }
-  }, async (request: any, reply) => {
-      const { id } = request.params;
-      try {
-          const order = await (fastify.prisma as any).order.findUnique({ where: { id } });
-          if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
-
-          // 1. Check if already synced (prevent overwriting unless force param is used - not implemented yet for simplicity)
-          // If ERP ID Key exists and is valid format, maybe skip? For now, we allow retry but we must ensuring UNIQUENESS.
-          
-          // Get existing log and normalize to array
-          const existingLog = normalizeErpSyncLog(order.erpSyncLog);
-
-          // Simulate Sync Process
-          const isSuccess = Math.random() > 0.2; // 80% Success Rate of "Connection"
-          
-          // Generate a potential ERP ID (Deterministic based on Order ID to avoid changing it on retries if it was already assigned elsewhere)
-          // OR create a new one. Let's say ERP system assigns `ERP-{orderNumber}`.
-          const candidateErpId = `ERP-${order.orderNumber}`;
-
-          // Create new sync attempt entry
-          const newAttempt: any = {
-              attemptedAt: new Date().toISOString(),
-              status: isSuccess ? 'SUCCESS' : 'FAILED',
-              message: isSuccess ? 'Synced successfully with ERP' : 'Connection timeout with ERP gateway',
-              code: isSuccess ? 200 : 504
-          };
-
-          let finalErpOrderId = order.erpOrderId;
-          
-          if (isSuccess) {
-              // STRICT DUPLICATE CHECK
-              // Check if this Candidate ERP ID is already used by ANY other order
-              const duplicateCheck = await (fastify.prisma as any).order.findFirst({ 
-                where: { 
-                  erpOrderId: candidateErpId,
-                  id: { not: id } // Exclude current order
-                } 
-              });
-              
-              if (duplicateCheck) {
-                  // CRITICAL: Duplicate found on another order. This is a data integrity issue or external system conflict.
-                  newAttempt.status = 'FAILED';
-                  newAttempt.message = `ERP ID Conflict: ${candidateErpId} is already assigned to Order ${duplicateCheck.orderNumber}`;
-                  newAttempt.code = 409;
-                  fastify.log.warn(`[ERP Sync] Conflict detected for Order ${order.orderNumber}. ERP ID ${candidateErpId} exists on ${duplicateCheck.orderNumber}`);
-              } else {
-                  // Safe to assign
-                  newAttempt.erpOrderId = candidateErpId;
-                  finalErpOrderId = candidateErpId;
-                  
-                  // Update message
-                  newAttempt.message = `Synced successfully. Assigned ERP ID: ${candidateErpId}`;
-              }
-          }
-
-          // Append new attempt to history
-          const updatedLog = [newAttempt, ...existingLog]; // Newest first
-
-          const updateData: any = {
-              erpSyncStatus: newAttempt.status === 'SUCCESS' ? 'SUCCESS' : 'FAILED', // Update main status
-              erpSyncLog: updatedLog,
-              erpOrderId: finalErpOrderId
-          };
-
-          const updatedOrder = await (fastify.prisma as any).order.update({
-              where: { id },
-              data: updateData
-          });
-
-          // Audit Log
-          await logActivity(fastify, {
-             entityType: 'ORDER',
-             entityId: id,
-             action: 'SYNC_ERP',
-             performedBy: (request.user as any)?.id || 'unknown',
-             details: { status: newAttempt.status, code: newAttempt.code, erpId: finalErpOrderId },
-             ip: request.ip,
-             userAgent: request.headers['user-agent']
-          });
-
-          return createResponse(
-            updatedOrder, 
-            newAttempt.status === 'SUCCESS' ? "Order Synced Successfully" : "Order Sync Failed"
-          );
-
-      } catch (err: any) {
-          fastify.log.error(err);
-          return reply.status(500).send(createErrorResponse(err.message));
-      }
-  });
 
   // GET /admin/orders/:id (Detail View with Logs)
   fastify.get('/admin/orders/:id', {

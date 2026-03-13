@@ -20,7 +20,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         });
 
         if (!cart || cart.items.length === 0) {
-            return { items: [], subtotal: 0, currency: 'SAR' };
+            return { items: [], subtotal: 0, currency: 'PKR' };
         }
 
         // 2. Fetch Default Address
@@ -58,7 +58,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         return {
             items,
             subtotal,
-            currency: 'SAR',
+            currency: 'PKR',
             defaultAddress
         };
     });
@@ -117,9 +117,9 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         return {
             items,
             subtotal,
-            currency: 'SAR',
+            currency: 'PKR',
             defaultAddress,
-            taxRate: 0.15 // Standard 15% VAT
+            taxRate: 0.18 // Standard 18% VAT
         };
     });
 
@@ -175,20 +175,20 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         // Shipping Logic (Server Authority)
         let shippingCost = 0;
         switch (shippingMethodId) {
-            case 'express': shippingCost = 100; break;
-            case 'overnight': shippingCost = 200; break;
-            default: shippingCost = (city?.toLowerCase() === 'riyadh' ? 30 : 50);
+            case 'express': shippingCost = 500; break;
+            case 'overnight': shippingCost = 1000; break;
+            default: shippingCost = (city?.toLowerCase() === 'karachi' ? 150 : 250);
         }
 
-        const tax = subtotal * 0.15;
+        const tax = subtotal * 0.18;
         const total = subtotal + shippingCost + tax;
 
-        // 3. Currency (Locked to SAR)
-        const currency = await fastify.prisma.currency.findUnique({ where: { code: 'SAR' } });
-        if (!currency) return reply.code(500).send({ message: 'System currency (SAR) not found' });
+        // 3. Currency (Locked to PKR)
+        const currency = await fastify.prisma.currency.findUnique({ where: { code: 'PKR' } });
+        if (!currency) return reply.code(500).send({ message: 'System currency (PKR) not found' });
 
         // 4. Address handling - Prevent duplicates
-        const countryRec = await fastify.prisma.country.findFirst({ where: { code: 'SA' } });
+        const countryRec = await fastify.prisma.country.findFirst({ where: { code: 'PK' } });
         const countryId = countryRec?.id || (await fastify.prisma.country.findFirst())?.id || '';
         
         // Try to find existing non-deleted address for this user with same details
@@ -368,14 +368,14 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         const { country, city } = request.body as any;
         
         // Server-side calculation
-        let standardCost = 50; 
-        if (city?.toLowerCase() === 'riyadh') standardCost = 30;
+        let standardCost = 250; 
+        if (city?.toLowerCase() === 'karachi') standardCost = 150;
         
         return {
             methods: [
-                { id: 'standard', title: 'Standard Shipping', cost: standardCost, duration: '5-7 business days' },
-                { id: 'express', title: 'Express Shipping', cost: 100, duration: '2-3 business days' },
-                { id: 'overnight', title: 'Overnight Shipping', cost: 200, duration: '1 business day' }
+                { id: 'standard', title: 'Standard Shipping', cost: standardCost, duration: '2-4 business days' },
+                { id: 'express', title: 'Express Shipping', cost: 500, duration: '1-2 business days' },
+                { id: 'overnight', title: 'Overnight Shipping', cost: 1000, duration: 'Next day' }
             ]
         };
     });

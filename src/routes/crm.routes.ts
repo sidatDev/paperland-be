@@ -269,7 +269,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         orders: user.orders.map((o: any) => ({
             id: o.id,
             date: o.createdAt.toISOString().split('T')[0],
-            amount: `SAR ${o.totalAmount}`,
+            amount: `PKR ${o.totalAmount}`,
             status: o.status.toLowerCase()
         }))
       };

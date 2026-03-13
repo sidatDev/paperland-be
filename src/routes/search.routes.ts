@@ -169,11 +169,12 @@ export default async function searchRoutes(fastify: FastifyInstance) {
           id: ref.targetProduct.id,
           name: ref.targetProduct.name,
           slug: ref.targetProduct.slug,
+          price: Number(ref.targetProduct.prices[0]?.priceRetail || 0),
+          currency: ref.targetProduct.prices[0]?.currency.code || 'PKR',
+          image_url: ref.targetProduct.imageUrl,
           brand: ref.targetProduct.brand.name,
           category: ref.targetProduct.category.name,
-          price: Number(ref.targetProduct.prices[0]?.priceRetail || 0),
-          currency: ref.targetProduct.prices[0]?.currency.code || 'SAR',
-          image_url: ref.targetProduct.imageUrl,
+
           relationType: ref.relationType,
         })),
       };

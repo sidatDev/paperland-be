@@ -64,7 +64,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       brand: p.brand?.name || 'Unknown',
       category: p.category?.name || 'Uncategorized',
       price: Number(p.prices?.[0]?.priceRetail || p.price || 0),
-      currency: p.prices?.[0]?.currency?.code || 'SAR',
+      currency: p.prices?.[0]?.currency?.code || 'PKR',
       image_url: p.imageUrl || '',
       industry: p.industries?.map((i: any) => i.industry.name) || [],
       created_at: Math.floor(new Date(p.createdAt).getTime() / 1000),
@@ -132,7 +132,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       })) ?? [],
 
       pricing: (() => {
-        const supported = ['SAR', 'AED', 'PKR'];
+        const supported = ['PKR'];
         const results = p.prices?.map((price: any) => ({
            currency: price.currency?.code,
            basePrice: Number(price.priceRetail),
@@ -141,18 +141,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
         })) ?? [];
         
         const existingCodes = results.map((r: any) => r.currency);
-        const sarPrice = results.find((r: any) => r.currency === 'SAR');
-        const sarBase = sarPrice ? sarPrice.basePrice : Number(p.price || 0);
+        const pkrPrice = results.find((r: any) => r.currency === 'PKR');
+        const pkrBase = pkrPrice ? pkrPrice.basePrice : Number(p.price || 0);
 
         supported.forEach(code => {
             if (!existingCodes.includes(code)) {
-                const rates: Record<string, number> = { 'SAR': 1.0, 'AED': 1.0, 'PKR': 74.5 };
-                const rate = rates[code] || 1.0;
-                const converted = sarBase * rate;
                 results.push({
                     currency: code,
-                    basePrice: Number(converted.toFixed(2)),
-                    wholesalePrice: Number((converted * 0.9).toFixed(2))
+                    basePrice: Number(pkrBase.toFixed(2)),
+                    wholesalePrice: Number((pkrBase * 0.9).toFixed(2))
                 });
             }
         });
@@ -236,7 +233,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
               name: p.name,
               sku: p.sku,
               price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
-              currency: p.prices?.[0]?.currency?.code || 'SAR',
+               currency: p.prices?.[0]?.currency?.code || 'PKR',
               currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
               isVisibleOnEcommerce: p.isVisibleOnEcommerce
           }));
@@ -364,7 +361,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
       id: { type: 'string' },
       name: { type: 'string' },
       sku: { type: 'string' },
-      erpProductId: { type: 'string', nullable: true },
       isActive: { type: 'boolean' },
       groupNumber: { type: 'string', nullable: true },
       groupId: { type: 'string', nullable: true },
@@ -398,7 +394,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
         brandId: { type: 'string' },
         groupNumber: { type: 'string' },
         groupId: { type: 'string' },
-        erpId: { type: 'string' },
         isActive: { type: 'boolean' },
         status: { type: 'string' },
         salesPrice: { type: 'number' },
@@ -440,7 +435,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
           querystring: {
               type: 'object',
               properties: {
-                  country: { type: 'string', description: 'Filter prices by country code (e.g. SA, AE)' }
+                  country: { type: 'string', description: 'Filter prices by country code (e.g. PK)' }
               }
           },
           params: {

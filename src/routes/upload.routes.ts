@@ -75,8 +75,7 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                 }
             }
 
-            // Construct public URL
-            const apiUrl = process.env.API_URL || `http://localhost:${process.env.PORT || 3001}`;
+            const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
             const url = `${apiUrl}/uploads/${folder}/${filename}`;
 
             // Save to Media table

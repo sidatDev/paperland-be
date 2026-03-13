@@ -34,7 +34,8 @@ const start = async () => {
     // Register @fastify/static to serve uploaded files
     await fastify.register(import('@fastify/static'), {
       root: path.join(process.cwd(), 'public', 'uploads'),
-      prefix: '/uploads/', // Files will be accessible at http://localhost:3001/uploads/
+      prefix: '/uploads/',
+      decorateReply: false // Avoid decoration conflicts
     });
 
     // Register Rate Limit
@@ -108,8 +109,8 @@ const start = async () => {
     await fastify.register(import('./routes/cms.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/blog.routes'), { prefix: '/api/v1' });
     
-    // Sync Routes
-    await fastify.register(import('./routes/sync.routes'), { prefix: '/api/v1' });
+    // Sync Routes (Disabled for Paperland Rebrand)
+    // await fastify.register(import('./routes/sync.routes'), { prefix: '/api/v1' });
     
     // Reports Routes
     await fastify.register(import('./routes/reports.routes'), { prefix: '/api/v1' });

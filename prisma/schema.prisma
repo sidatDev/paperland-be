@@ -408,7 +408,7 @@ model Warehouse {
   code      String    @unique
   name      String
   city      String
-  country   String    @default("SA")
+  country   String    @default("PK")
   address   String?
   isActive  Boolean   @default(true) @map("is_active")
   isDefault Boolean   @default(false) @map("is_default")
@@ -423,7 +423,6 @@ model Warehouse {
 model Stock {
   id           String     @id @default(uuid())
   productId    String     @map("product_id")
-  erpProductId String?    @map("erp_product_id")
   locationId   String     @map("location_id")
   qty          Int        @default(0)
   updatedAt    DateTime   @updatedAt @map("updated_at")
@@ -486,9 +485,6 @@ model Order {
   deletedAt             DateTime?            @map("deleted_at")
   billingSnapshot       Json?                @map("billing_snapshot")
   currencyId            String               @map("currency_id")
-  erpOrderId            String?              @unique @map("erp_order_id")
-  erpSyncLog            Json?                @map("erp_sync_log")
-  erpSyncStatus         String               @default("PENDING") @map("erp_sync_status")
   notes                 Json?
   orderContext          Json?                @map("order_context")
   paymentDetails        Json?                @map("payment_details")
@@ -876,8 +872,8 @@ model WishlistItem {
 
 model GlobalSettings {
   id                String   @id @default(uuid())
-  storeName         String   @default("Filters Expert") @map("store_name")
-  contactEmail      String   @default("admin@filtersexpert.com") @map("contact_email")
+  storeName         String   @default("Paperland") @map("store_name")
+  contactEmail      String   @default("admin@paperland.com.pk") @map("contact_email")
   maintenanceMode   Boolean  @default(false) @map("maintenance_mode")
   twoFactorEnabled  Boolean  @default(true) @map("two_factor_enabled")
   smtpHost          String   @default("smtp.sendgrid.net") @map("smtp_host")
@@ -885,8 +881,9 @@ model GlobalSettings {
   smtpEncryption    String   @default("TLS") @map("smtp_encryption")
   smtpUser          String?  @map("smtp_user")
   smtpPass          String?  @map("smtp_pass")
-  senderName        String   @default("Filters Expert Support") @map("sender_name")
-  senderEmail       String   @default("no-reply@filtersexpert.com") @map("sender_email")
+  senderName        String   @default("Paperland Support") @map("sender_name")
+  senderEmail       String   @default("no-reply@paperland.com.pk") @map("sender_email")
+  storeSlogan       String?  @map("store_slogan") @default("School Se Office Tak")
   backupS3Enabled   Boolean  @default(false) @map("backup_s3_enabled")
   backupS3Bucket    String?  @map("backup_s3_bucket")
   backupS3Region    String?  @map("backup_s3_region")

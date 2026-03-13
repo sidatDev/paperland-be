@@ -96,6 +96,12 @@ export default fp(async (fastify: FastifyInstance) => {
       return;
     }
 
+    // Allow static uploads
+    if (path.startsWith('/uploads/')) {
+      console.log(`[AUTH DEBUG] Static Upload Path: ${path}`);
+      return;
+    }
+
     // 1. Truly Public Paths (Allow any method, e.g. Login, Signup, Guest Cart)
     if (publicPaths.includes(path)) {
       console.log(`[AUTH DEBUG] Truly Public Path (Always Allowed): ${path}`);

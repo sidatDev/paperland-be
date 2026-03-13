@@ -231,8 +231,8 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             },
             industriesSection: {
                 sectionTitle: "Industry Expertise",
-                heading: "Tailored Filtration Solutions for Every Sector",
-                description: "Filters Experts has been at the forefront of the automotive and industrial filtration industry for over two decades. We understand the unique challenges of each industry and provide customized solutions that ensure optimal performance and reliability.",
+                heading: "Tailored Stationery Solutions for Every Sector",
+                description: "Paperland has been at the forefront of the stationery and office supplies industry for over two decades. We understand the unique challenges of each industry and provide customized solutions that ensure optimal performance and reliability.",
                 items: [
                     { name: "Automotive", description: "High-performance filtration for cars, trucks, and heavy-duty vehicles ensuring engine longevity and efficiency." },
                     { name: "Manufacturing", description: "Industrial-grade filtration systems for production facilities, ensuring clean air and optimal machinery performance." },
@@ -254,8 +254,8 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 ]
             },
             cta: {
-                heading: "Ready to Find the Perfect Filtration Solution?",
-                description: "Our industry experts are here to help you select the right filters for your specific application",
+                heading: "Ready to Find the Perfect Stationery Solution?",
+                description: "Our industry experts are here to help you select the right supplies for your specific application",
                 buttonText: "Contact Our Team",
                 buttonLink: "/en/company/contact-us"
             }
@@ -712,10 +712,10 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 subtitle: ""
             },
             ctaSection: {
-                badge: "Premium Quality Filters",
-                title: "Get the Best Filters",
-                subtitle: "for Your Business",
-                description: "Join thousands of satisfied customers who trust Filters Experts for their industrial and automotive filtration needs.",
+                badge: "Premium Quality Stationery",
+                title: "Get the Best Stationery",
+                subtitle: "for Your Office",
+                description: "Join thousands of satisfied customers who trust Paperland for their stationery and office supplies needs.",
                 shopText: "Shop Now",
                 shopLink: "",
                 contactText: "Contact Sales",
@@ -820,8 +820,8 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             sectionHeader: {
                 titleEn: "Latest Insights",
                 titleAr: "أحدث المقالات",
-                descriptionEn: "Stay informed with the latest news, tips, and insights from Filters Experts",
-                descriptionAr: "ابقَ على اطلاع بأحدث الأخبار والنصائح والرؤى من خبراء الفلاتر"
+                descriptionEn: "Stay informed with the latest news, tips, and insights from Paperland",
+                descriptionAr: "ابقَ على اطلاع بأحدث الأخبار والنصائح والرؤى من بايبر لاند"
             },
             categories: [
                 { labelEn: "All", labelAr: "الكل", value: "All" },
@@ -973,11 +973,11 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             ],
             jobs: [
                 {
-                    titleEn: "Sales Manager – Automotive Filters",
-                    titleAr: "مدير مبيعات – فلاتر السيارات",
+                    titleEn: "Sales Manager – Office Supplies",
+                    titleAr: "مدير مبيعات – أدوات مكتبية",
                     department: "Sales",
-                    locationEn: "Riyadh, Saudi Arabia",
-                    locationAr: "الرياض، المملكة العربية السعودية",
+                    locationEn: "Karachi, Pakistan",
+                    locationAr: "كراتشي، باكستان",
                     typeEn: "FULL-TIME",
                     typeAr: "دوام كامل",
                     salaryEn: "Competitive",
@@ -987,9 +987,9 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     dateEn: "January 10, 2026",
                     dateAr: "١٠ يناير ٢٠٢٦",
                     image: "/images/career/salesmanager.jpg",
-                    slug: "sales-manager-automotive-filters",
-                    descriptionEn: "Lead our automotive filters sales team and drive business growth across the Middle East region.",
-                    descriptionAr: "قيادة فريق مبيعات فلاتر السيارات ودفع نمو الأعمال في منطقة الشرق الأوسط.",
+                    slug: "sales-manager-office-supplies",
+                    descriptionEn: "Lead our office supplies sales team and drive business growth across Pakistan.",
+                    descriptionAr: "قيادة فريق مبيعات الأدوات المكتبية ودفع نمو الأعمال في باکستان.",
                     aboutRoleEn: "We are seeking an experienced Sales Manager to lead our automotive filters division.",
                     aboutRoleAr: "نبحث عن مدير مبيعات ذو خبرة لقيادة قسم فلاتر السيارات لدينا.",
                     responsibilitiesEnHtml: "<ul><li>Develop and implement strategic sales plans</li></ul>",
@@ -1190,10 +1190,10 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
         defaultContent: {
             banner: {
                 backgroundImage: "/images/companybanner.jpg",
-                titleEn: "Premium <span class='text-[#ED2823]'>Filtration Solutions</span> <br /> for Every Industry",
-                titleAr: "حلول <span class='text-[#ED2823]'>التنقية</span> المتميزة <br /> لكل الصناعات",
-                descriptionEn: "Filters Experts specializes in top-tier filtration solutions, providing trusted brands like Fleetguard, Donaldson",
-                descriptionAr: "تتخصص شركة خبراء الفلاتر للتجارة في تقديم حلول تنقية عالية المستوى، وتوفير علامات تجارية موثوقة مثل Fleetguard و Donaldson",
+                titleEn: "Premium <span class='text-[#ED2823]'>Stationery Solutions</span> <br /> for Every Office",
+                titleAr: "حلول <span class='text-[#ED2823]'>القرطاسية</span> المتميزة <br /> لكل مكتب",
+                descriptionEn: "Paperland specializes in top-tier stationery solutions, providing trusted brands like Pelikan, Deli",
+                descriptionAr: "تتخصص شركة بايبر لاند في تقديم حلول القرطاسية عالية المستوى، وتوفير علامات تجارية موثوقة مثل Pelikan و Deli",
                 buttonTextEn: "Explore More",
                 buttonTextAr: "اكتشف المزيد",
                 buttonLink: "/products",
@@ -1203,10 +1203,10 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             expertise: {
                 sectionTitleEn: "OUR EXPERTISE",
                 sectionTitleAr: "خبرتنا",
-                headingEn: "The Filter Specialists! We provide one stop solution",
-                headingAr: "متخصصو الفلاتر! نحن نقدم حلاً شاملاً",
-                descriptionEn: "Filters Experts specializes in top-tier filtration solutions...",
-                descriptionAr: "تتخصص شركة خبراء الفلاتر للتجارة في تقديم حلول تنقية عالية المستوى...",
+                headingEn: "The Stationery Specialists! We provide one stop solution",
+                headingAr: "متخصصو القرطاسية! نحن نقدم حلاً شاملاً",
+                descriptionEn: "Paperland specializes in top-tier stationery solutions...",
+                descriptionAr: "تتخصص شركة بايبر لاند في تقديم حلول القرطاسية عالية المستوى...",
                 viewMoreButtonEn: "View More",
                 viewMoreButtonAr: "اقرأ المزيد",
                 viewMoreLink: "/company/about",

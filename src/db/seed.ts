@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function seed() {
   try {
-    console.log('Seeding database...');
+    console.log('Seeding database for Paperland (Pakistan)...');
 
     // 1. Create Default Roles
     const roles = ['SUPER_ADMIN', 'REGIONAL_ADMIN', 'B2B_ADMIN', 'BUSINESS', 'CUSTOMER'];
@@ -30,7 +30,7 @@ async function seed() {
     }
 
     // 2. Super Admin
-    const adminEmail = 'admin@filtersexpert.com';
+    const adminEmail = 'admin@paperland.com.pk';
     const adminExists = await prisma.user.findUnique({ where: { email: adminEmail } });
 
     if (!adminExists) {
@@ -41,10 +41,10 @@ async function seed() {
         data: {
           email: adminEmail,
           passwordHash: hashedPassword,
-          firstName: 'System',
+          firstName: 'Paperland',
           lastName: 'Admin',
           roleId: superAdminRole.id,
-          licenseNumber: 'SYS-ADMIN-001'
+          licenseNumber: 'PL-ADMIN-001'
         } as any
       });
       console.log('Super Admin created.');
@@ -53,7 +53,7 @@ async function seed() {
     }
 
     // 3. Mock Regional Admin
-    const regEmail = 'regional@filtersexpert.com';
+    const regEmail = 'regional@paperland.com.pk';
     const regExists = await prisma.user.findUnique({ where: { email: regEmail } });
 
     if (!regExists) {
@@ -66,23 +66,20 @@ async function seed() {
           firstName: 'Regional',
           lastName: 'Manager',
           roleId: regionalAdminRole.id,
-          licenseNumber: 'REG-ADMIN-001'
+          licenseNumber: 'PL-REG-001'
         } as any
       });
       console.log('Regional Admin created.');
     }
 
-    // ... (Categories/Brands/Currency/Permissions omitted)
-
-
-
-    // 4. Create Default Categories
+    // 4. Create Default Categories (Stationery & Office Supplies)
     const categories = [
-      { name: 'Air Filter', slug: 'air-filter' },
-      { name: 'Oil Filter', slug: 'oil-filter' },
-      { name: 'Fuel Filter', slug: 'fuel-filter' },
-      { name: 'Hydraulic Filter', slug: 'hydraulic-filter' },
-      { name: 'Cabin Air Filter', slug: 'cabin-air-filter' }
+      { name: 'Paper & Notebooks', slug: 'paper-notebooks' },
+      { name: 'Writing Instruments', slug: 'writing-instruments' },
+      { name: 'Office Equipment', slug: 'office-equipment' },
+      { name: 'Desk Accessories', slug: 'desk-accessories' },
+      { name: 'School Supplies', slug: 'school-supplies' },
+      { name: 'Art & Craft', slug: 'art-craft' }
     ];
 
     for (const cat of categories) {
@@ -96,12 +93,12 @@ async function seed() {
 
     // 5. Create Default Brands
     const brands = [
-      { name: 'Donaldson', logoUrl: null },
-      { name: 'Parker', logoUrl: null },
-      { name: 'Fleetguard', logoUrl: null },
-      { name: 'Baldwin', logoUrl: null },
-      { name: 'Mann Filter', logoUrl: null },
-      { name: 'Bosch', logoUrl: null }
+      { name: 'Pelikan', logoUrl: null },
+      { name: 'Deli', logoUrl: null },
+      { name: 'Faber-Castell', logoUrl: null },
+      { name: 'Uni-ball', logoUrl: null },
+      { name: 'Dollar', logoUrl: null },
+      { name: 'Piano', logoUrl: null }
     ];
 
     for (const brand of brands) {
@@ -113,99 +110,71 @@ async function seed() {
     }
     console.log('Brands created.');
 
-    // 5. Create Default Currency (SAR)
-    const sarCurrency = await prisma.currency.upsert({
-      where: { code: 'SAR' },
+    // 6. Create Default Currency (PKR)
+    const pkrCurrency = await prisma.currency.upsert({
+      where: { code: 'PKR' },
       update: {},
       create: {
-        code: 'SAR',
-        name: 'Saudi Riyal',
-        symbol: '﷼',
+        code: 'PKR',
+        name: 'Pakistani Rupee',
+        symbol: 'Rs.',
         decimalPlaces: 2,
         isActive: true
       }
     });
-    console.log('Default currency created.');
+    console.log('Default currency PKR created.');
 
-    // 6. Create Default Countries
+    // 7. Create Default Countries (Pakistan)
     await prisma.country.upsert({
-        where: { code: 'KSA' },
+        where: { code: 'PK' },
         update: {},
         create: {
-            code: 'KSA',
-            name: 'Saudi Arabia',
-            currencyId: sarCurrency.id,
-            taxRate: 15
+            code: 'PK',
+            name: 'Pakistan',
+            currencyId: pkrCurrency.id,
+            taxRate: 18
         }
     });
-    console.log('Country KSA created.');
+    console.log('Country Pakistan (PK) created with 18% VAT.');
 
-    // 7. Seed Permissions
+    // 8. Seed Permissions
     const permissions = [
-      // User Management
       { title: 'View Users', key: 'user_view' },
       { title: 'Create Users', key: 'user_create' },
       { title: 'Edit Users', key: 'user_edit' },
       { title: 'Delete Users', key: 'user_delete' },
-      
-      // Role Management
       { title: 'View Roles', key: 'role_view' },
       { title: 'Create Roles', key: 'role_create' },
       { title: 'Edit Roles', key: 'role_edit' },
       { title: 'Delete Roles', key: 'role_delete' },
-      
-      // Logs
       { title: 'View Logs', key: 'log_view' },
       { title: 'Export Logs', key: 'log_export' },
-
-      // System / Backup
       { title: 'Manage System Backup', key: 'system_backup' },
       { title: 'Manage Global Settings', key: 'system_settings' },
-
-      // Product Management
       { title: 'View Products', key: 'product_view' },
       { title: 'Create Products', key: 'product_create' },
       { title: 'Edit Products', key: 'product_edit' },
       { title: 'Delete Products', key: 'product_delete' },
-
-      // Order Management
       { title: 'View Orders', key: 'order_view' },
       { title: 'Manage Orders', key: 'order_manage' },
-
-      // Customer/B2B Management
       { title: 'View B2B Profiles', key: 'b2b_view' },
       { title: 'Manage B2B Profiles', key: 'b2b_manage' },
-
-      // Regional Management
       { title: 'View Regions', key: 'region_view' },
       { title: 'Manage Regions', key: 'region_manage' },
-
-      // CMS Management
       { title: 'View CMS Pages', key: 'cms_view' },
       { title: 'Manage CMS Content', key: 'cms_manage' },
-
-      // Blog Management
       { title: 'View Blog Posts', key: 'blog_view' },
       { title: 'Manage Blog Posts', key: 'blog_manage' },
-
-      // Analytics
       { title: 'View Reports', key: 'analytics_view' },
       { title: 'Export Analytics', key: 'analytics_export' },
-
-      // SEO Management
       { title: 'View SEO Settings', key: 'seo_view' },
       { title: 'Manage SEO Settings', key: 'seo_manage' },
-
-      // Homepage Management
       { title: 'View Homepage Design', key: 'homepage_view' },
       { title: 'Manage Homepage Design', key: 'homepage_manage' },
-
-      // Customer Management
       { title: 'View Customer Data', key: 'customer_view' },
       { title: 'Manage Customers', key: 'customer_manage' },
     ];
 
-    console.log('Seeding permissions...');
     for (const p of permissions) {
       await prisma.permission.upsert({
         where: { key: p.key },
@@ -218,128 +187,94 @@ async function seed() {
     }
     console.log('Permissions seeded.');
 
-    // 8. Create Sample Customer
+    // 9. Create Sample Customer
     const customerRole = await prisma.role.findUnique({ where: { name: 'CUSTOMER' } });
     if(customerRole) {
         await prisma.user.upsert({
-            where: { email: 'customer@example.com' },
+            where: { email: 'customer@example.pk' },
             update: {},
             create: {
-                email: 'customer@example.com',
+                email: 'customer@example.pk',
                 passwordHash: await bcrypt.hash('customer123', 10),
                 firstName: 'Ali',
-                lastName: 'Khan',
-                companyName: 'Global Logistics SA',
-                phoneNumber: '+966500000000',
+                lastName: 'Zafar',
+                companyName: 'Paperland Logistics',
+                phoneNumber: '+923001234567',
                 roleId: customerRole.id,
-                licenseNumber: 'CUST-001'
+                licenseNumber: 'PL-CUST-001'
             } as any
         });
         console.log('Sample Customer created.');
     }
 
-    // 9. Create Sample Products
-    const airFilter = await prisma.category.findFirst({ where: { slug: 'air-filter' } });
-    const donaldson = await prisma.brand.findFirst({ where: { name: 'Donaldson' } });
-    // Use the sarCurrency defined earlier or find it again if needed in a different scope
-    // const sarCurrency = await prisma.currency.findUnique({ where: { code: 'SAR' } });
+    // 10. Create Sample Products
+    const paperCat = await prisma.category.findFirst({ where: { slug: 'paper-notebooks' } });
+    const dollarBrand = await prisma.brand.findFirst({ where: { name: 'Dollar' } });
 
-    // Create a default warehouse
+    // Create a default warehouse in Pakistan
     const defaultWarehouse = await prisma.warehouse.upsert({
-      where: { code: 'MAIN-01' },
+      where: { code: 'PK-KRI-01' },
       update: {},
       create: {
-        code: 'MAIN-01',
-        name: 'Main Warehouse',
-        city: 'Default City',
-        country: 'SA',
+        code: 'PK-KRI-01',
+        name: 'Karachi Central Warehouse',
+        city: 'Karachi',
+        country: 'PK',
         isDefault: true
       }
     });
 
-    if (airFilter && donaldson && sarCurrency) {
-        
+    if (paperCat && dollarBrand && pkrCurrency) {
         // Product 1
         const p1 = await prisma.product.upsert({
-            where: { sku: 'P181050' },
+            where: { sku: 'PL-PAPER-A4-80' },
             update: {},
             create: {
-                name: 'Donaldson Air Filter P181050',
-                sku: 'P181050',
-                description: 'High efficiency air filter for heavy duty trucks.',
-                categoryId: airFilter.id,
-                brandId: donaldson.id,
+                name: 'Dollar Premium A4 Paper 80gsm',
+                sku: 'PL-PAPER-A4-80',
+                description: 'High quality A4 printer paper, 500 sheets.',
+                categoryId: paperCat.id,
+                brandId: dollarBrand.id,
                 isActive: true,
-                isFeatured: true
+                isFeatured: true,
+                price: 1200.00
             } as any
         });
 
         // Price for P1
-        const price1 = await prisma.price.findFirst({ where: { productId: p1.id, currencyId: sarCurrency.id }});
-        if (!price1) {
-            await prisma.price.create({
+        const existingPrice = await (prisma.price as any).findFirst({
+            where: { productId: p1.id, currencyId: pkrCurrency.id }
+        });
+
+        if (existingPrice) {
+            await (prisma.price as any).update({
+                where: { id: existingPrice.id },
+                data: { priceRetail: 1200.00, priceWholesale: 1000.00 }
+            });
+        } else {
+            await (prisma.price as any).create({
                 data: {
                     productId: p1.id,
-                    currencyId: sarCurrency.id,
-                    priceRetail: 150.00,
-                    priceWholesale: 120.00,
+                    currencyId: pkrCurrency.id,
+                    priceRetail: 1200.00,
+                    priceWholesale: 1000.00,
                     isActive: true
-                } as any
+                }
             });
         }
 
         // Stock for P1
         await prisma.stock.upsert({
             where: { productId_warehouseId: { productId: p1.id, warehouseId: defaultWarehouse.id } },
-            update: { qty: 100 },
+            update: { qty: 500 },
             create: {
                 productId: p1.id,
                 warehouseId: defaultWarehouse.id,
-                qty: 100
+                qty: 500
             } as any
         });
 
-        // Product 2
-        const p2 = await prisma.product.upsert({
-             where: { sku: 'P182000' },
-             update: {},
-             create: {
-                 name: 'Donaldson Lube Filter',
-                 sku: 'P182000',
-                 description: 'Premium lube filter.',
-                 categoryId: airFilter.id,
-                 brandId: donaldson.id,
-                 isActive: true,
-                 isFeatured: false
-             } as any
-        });
-
-        // Price for P2
-        const price2 = await prisma.price.findFirst({ where: { productId: p2.id, currencyId: sarCurrency.id }});
-        if (!price2) {
-            await prisma.price.create({
-                data: {
-                    productId: p2.id,
-                    currencyId: sarCurrency.id,
-                    priceRetail: 75.50,
-                    priceWholesale: 60.00,
-                    isActive: true
-                } as any
-            });
-        }
-
-        // Stock for P2
-        await prisma.stock.upsert({
-            where: { productId_warehouseId: { productId: p2.id, warehouseId: defaultWarehouse.id } },
-            update: { qty: 250 },
-            create: {
-                productId: p2.id,
-                warehouseId: defaultWarehouse.id,
-                qty: 250
-            } as any
-        });
-
-        console.log('Sample Products (with Prices and Stock) created.');
+        console.log('Sample Paperland Products created.');
     }
 
   } catch (err) {

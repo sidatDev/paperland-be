@@ -16,7 +16,7 @@ async function main() {
       name: 'Saudi Riyal',
       symbol: '﷼',
       decimalPlaces: 2,
-      isActive: true,
+      isActive: false,
     },
   });
 
@@ -40,7 +40,7 @@ async function main() {
       name: 'UAE Dirham',
       symbol: 'د.إ',
       decimalPlaces: 2,
-      isActive: true,
+      isActive: false,
     },
   });
 
@@ -69,7 +69,7 @@ async function main() {
       name: 'Saudi Arabia',
       currencyId: sarCurrency.id,
       taxRate: 15.00, // 15% VAT
-      isActive: true,
+      isActive: false,
     },
   });
 
@@ -93,7 +93,7 @@ async function main() {
       name: 'United Arab Emirates',
       currencyId: aedCurrency.id,
       taxRate: 5.00, // 5% VAT
-      isActive: true,
+      isActive: false,
     },
   });
 

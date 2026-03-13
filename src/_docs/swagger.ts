@@ -4,8 +4,8 @@ import { FastifySwaggerUiOptions } from '@fastify/swagger-ui';
 export const swaggerConfig: FastifyDynamicSwaggerOptions = {
   openapi: {
     info: {
-      title: 'Filters Expert API Documentation',
-      description: 'Comprehensive API reference for Filters Expert Backend (Fastify + Prisma)',
+      title: 'Paperland API Documentation',
+      description: 'Comprehensive API reference for Paperland Backend (Fastify + Prisma)',
       version: '1.0.0'
     },
     servers: [

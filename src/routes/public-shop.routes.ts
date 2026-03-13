@@ -161,7 +161,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 const sar = i.product?.prices?.find((pr: any) => pr.currency?.code === 'SAR');
                                 return sar ? Number(sar.priceRetail) : Number(i.product?.price || 0);
                             })(),
-                            currency: 'SAR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge
+                            currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge
                         }))
                     };
                 }
@@ -169,7 +169,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 const priced = await PricingEngine.calculateBulkPrices(
                     fastify.prisma as any,
                     itemsWithProducts.map((i: any) => {
-                        const sar = i.product.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                        const sar = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                         return {
                             productId: i.product.id,
                             basePrice: sar ? Number(sar.priceRetail) : Number(i.product.price || 0),
@@ -189,12 +189,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 id: i.product.id, name: i.product.name, image: i.product.imageUrl || '',
                                 price: p.finalPrice,
                                 originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
-                                currency: 'SAR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge
+                                currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge
                             };
                         }
                         return {
                             id: i.id, name: i.customTitle || 'Unnamed', image: i.customImage || '',
-                            price: 0, currency: 'SAR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
+                            price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
                         };
                     })
                 };
@@ -501,7 +501,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     const priced = await PricingEngine.calculateBulkPrices(
                         fastify.prisma as any,
                         prods.map((p: any) => {
-                            const sar = p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                            const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                             return {
                                 productId: p.id,
                                 basePrice: sar ? Number(sar.priceRetail) : Number(p.price || 0),
@@ -554,7 +554,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     sku: p.sku,
                     price: p.price,
                     originalPrice: p.originalPrice,
-                    currency: 'SAR',
+                    currency: 'PKR',
                     image_url: p.imageUrl,
                     category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
                     brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : null,
@@ -622,7 +622,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             const userId = (request.user as any)?.id;
             const basePrice = (() => {
-                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                 return sar ? Number(sar.priceRetail) : Number(product.price || 0);
             })();
             const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
@@ -637,7 +637,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 groupNumber: product.groupNumber,
                 price: finalPrice,
                 originalPrice: basePrice !== finalPrice ? basePrice : undefined,
-                currency: 'SAR',
+                currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
                 category: product.category?.name,
@@ -714,7 +714,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
             
             const basePrice = (() => {
-                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                 return sar ? Number(sar.priceRetail) : Number(product.price || 0);
             })();
             const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
@@ -730,7 +730,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 groupNumber: product.groupNumber,
                 price: finalPrice,
                 originalPrice: basePrice !== finalPrice ? basePrice : undefined,
-                currency: 'SAR',
+                currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
                 category: product.category?.name,
@@ -746,48 +746,48 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     const manualSeo = product.seo as any;
                     if (manualSeo && (manualSeo.title || manualSeo.description)) {
                         return {
-                            title: manualSeo.title || `${product.name} | ${product.brand?.name || ''} - Filters Expert`,
-                            description: manualSeo.description || '',
-                            keywords: manualSeo.keywords || '',
-                            ogImage: manualSeo.ogImage || product.imageUrl || ''
-                        };
-                    }
-                    // Auto-generate SEO meta from product data
-                    const brandName = product.brand?.name || '';
-                    const categoryName = product.category?.name || '';
-                    const partNo = (product.specifications as any)?.partNo || product.sku || '';
-                    const specs = product.specifications as any;
-                    
-                    // Build description from available specs
-                    const descParts = [`${product.name}`];
-                    if (brandName) descParts.push(`by ${brandName}`);
-                    if (categoryName) descParts.push(`- ${categoryName}`);
-                    if (specs?.outerDiameter) descParts.push(`OD: ${specs.outerDiameter}`);
-                    if (specs?.innerDiameter) descParts.push(`ID: ${specs.innerDiameter}`);
-                    if (specs?.length) descParts.push(`Length: ${specs.length}`);
-                    descParts.push('| Buy online at Filters Expert with fast delivery across Saudi Arabia.');
-                    
-                    // Build keywords
-                    const keywordParts = [product.name, brandName, categoryName, partNo, product.sku].filter(Boolean);
-                    if (product.groupNumber) keywordParts.push(product.groupNumber);
-                    
-                    return {
-                        title: `${product.name} | ${brandName} ${categoryName} - Filters Expert`.trim().replace(/\s+/g, ' '),
-                        description: descParts.join(' ').substring(0, 160),
-                        keywords: keywordParts.join(', '),
-                        ogImage: product.imageUrl || ''
+                            title: manualSeo.title || `${product.name} | ${product.brand?.name || ''} - Paperland`,
+                        description: manualSeo.description || '',
+                        keywords: manualSeo.keywords || '',
+                        ogImage: manualSeo.ogImage || product.imageUrl || ''
                     };
-                })()
-            };
+                }
+                // Auto-generate SEO meta from product data
+                const brandName = product.brand?.name || '';
+                const categoryName = product.category?.name || '';
+                const partNo = (product.specifications as any)?.partNo || product.sku || '';
+                const specs = product.specifications as any;
+                
+                // Build description from available specs
+                const descParts = [`${product.name}`];
+                if (brandName) descParts.push(`by ${brandName}`);
+                if (categoryName) descParts.push(`- ${categoryName}`);
+                if (specs?.outerDiameter) descParts.push(`OD: ${specs.outerDiameter}`);
+                if (specs?.innerDiameter) descParts.push(`ID: ${specs.innerDiameter}`);
+                if (specs?.length) descParts.push(`Length: ${specs.length}`);
+                descParts.push('| Buy online at Paperland with fast delivery across Pakistan.');
+                
+                // Build keywords
+                const keywordParts = [product.name, brandName, categoryName, partNo, product.sku].filter(Boolean);
+                if (product.groupNumber) keywordParts.push(product.groupNumber);
+                
+                return {
+                    title: `${product.name} | ${brandName} ${categoryName} - Paperland`.trim().replace(/\s+/g, ' '),
+                    description: descParts.join(' ').substring(0, 160),
+                    keywords: keywordParts.join(', '),
+                    ogImage: product.imageUrl || ''
+                };
+            })()
+        };
 
-            await fastify.cache.set(cacheKey, result, 86400); // 24 hours
-            reply.header('X-Cache', 'MISS');
-            return reply.send(createResponse(result));
-        } catch (err) {
-            fastify.log.error(err);
-            return reply.status(500).send(createErrorResponse('Internal Server Error'));
-        }
-    });
+        await fastify.cache.set(cacheKey, result, 86400); // 24 hours
+        reply.header('X-Cache', 'MISS');
+        return reply.send(createResponse(result));
+    } catch (err) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Internal Server Error'));
+    }
+});
 
     // 5. GET /api/shop/products/:productId/reviews
     fastify.get('/shop/products/:productId/reviews', {
