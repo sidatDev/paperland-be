@@ -65,104 +65,89 @@ export default fp(async (fastify: FastifyInstance) => {
     }
 
     const path = request.url.split('?')[0];
-    console.log(`[AUTH DEBUG] Request: ${request.method} ${path}`);
+    const normalizedPath = path.replace(/^\/api\/v1/, '');
+    console.log(`[AUTH DEBUG] Request: ${request.method} ${path} (Normalized: ${normalizedPath})`);
 
     const publicPaths = [
-      '/api/v1/admin/auth/login',
-      '/api/v1/auth/login',
-      '/api/v1/auth/signup',
-      '/api/v1/auth/signup-step1',
-      '/api/v1/auth/verify-otp',
-      '/api/v1/auth/resend-otp',
-      '/api/v1/auth/set-account-type',
-      '/api/v1/auth/complete-signup-details',
-      '/api/v1/auth/b2b-company-details',
-      '/api/v1/auth/b2b-contact-details',
-      '/api/v1/auth/forgot-password-initiate',
-      '/api/v1/auth/forgot-password-verify',
-      '/api/v1/auth/forgot-password-reset',
-      '/api/v1/auth/forgot-password',
-      '/api/v1/auth/verify-code',
-      '/api/v1/health',
-      '/api/orders/track',
-      '/api/public/newsletter/subscribe',
-      '/api/public/newsletter/unsubscribe',
-      '/api/redis-health',
+      '/admin/auth/login',
+      '/auth/login',
+      '/auth/signup',
+      '/auth/signup-step1',
+      '/auth/verify-otp',
+      '/auth/resend-otp',
+      '/auth/set-account-type',
+      '/auth/complete-signup-details',
+      '/auth/b2b-company-details',
+      '/auth/b2b-contact-details',
+      '/auth/forgot-password-initiate',
+      '/auth/forgot-password-verify',
+      '/auth/forgot-password-reset',
+      '/auth/forgot-password',
+      '/auth/verify-code',
+      '/health',
+      '/orders/track',
+      '/public/newsletter/subscribe',
+      '/public/newsletter/unsubscribe',
+      '/redis-health',
     ];
 
     // Allow Swagger
-    if (request.url.startsWith('/documentation')) {
-      console.log(`[AUTH DEBUG] Allowing Swagger: ${path}`);
+    if (path.startsWith('/documentation')) {
       return;
     }
 
     // Allow static uploads
     if (path.startsWith('/uploads/')) {
-      console.log(`[AUTH DEBUG] Static Upload Path: ${path}`);
       return;
     }
 
     // 1. Truly Public Paths (Allow any method, e.g. Login, Signup, Guest Cart)
-    if (publicPaths.includes(path)) {
-      console.log(`[AUTH DEBUG] Truly Public Path (Always Allowed): ${path}`);
+    if (publicPaths.includes(normalizedPath) || publicPaths.includes(path) || publicPaths.some(p => path.endsWith(`/api/v1${p}`))) {
       return;
     }
 
     // 2. Discover/Public Discovery (Mostly GETs)
-    // We restrict these to GET only to prevent accidental write bypasses
-    const isDiscoveryPath = path.startsWith('/api/shop') || path.startsWith('/api/public') || path.startsWith('/api/v1/public');
+    const isDiscoveryPath = normalizedPath.startsWith('/shop') || normalizedPath.startsWith('/public') || path.startsWith('/api/shop') || path.startsWith('/api/public');
     if (request.method === 'GET' && isDiscoveryPath) {
-      console.log(`[AUTH DEBUG] Discovery Path (Allow GET): ${path}`);
       try {
-        await request.jwtVerify(); // Optional check for user context
-      } catch (e) {
-        // Safe to ignore for discovery GET
-      }
+        await request.jwtVerify(); 
+      } catch (e) {}
       return;
     }
 
     // 3. Cart Paths (Special Case: Guests need POST/PUT/DELETE)
-    if (path.startsWith('/api/v1/cart')) {
-      console.log(`[AUTH DEBUG] Cart Path (Guest Support): ${path}`);
+    if (normalizedPath.startsWith('/cart') || path.startsWith('/api/v1/cart')) {
       try {
          await request.jwtVerify();
-      } catch (e) {
-         // Ignore error for cart - the handler handles missing user as guest
-      }
+      } catch (e) {}
       return;
     }
 
     // 4. White-listed GET paths (e.g. products, categories for unauthenticated users)
     const publicGetPaths = [
-      '/api/v1/brands',
-      '/api/v1/categories',
-      '/api/v1/industries',
-      '/api/v1/products',
-      '/api/v1/regions',
-      '/api/v1/homepage',
-      '/api/v1/system/public-settings',
-      '/api/v1/system/sitemap-content',
-      '/api/v1/search',
-      '/api/v1/countries'
+      '/brands',
+      '/categories',
+      '/industries',
+      '/products',
+      '/regions',
+      '/homepage',
+      '/system/public-settings',
+      '/system/sitemap-content',
+      '/search',
+      '/countries'
     ];
 
-    if (request.method === 'GET' && publicGetPaths.some(p => path.startsWith(p))) {
-      console.log(`[AUTH DEBUG] White-listed GET Path: ${path}`);
+    if (request.method === 'GET' && (publicGetPaths.some(p => normalizedPath.startsWith(p)) || publicGetPaths.some(p => path.startsWith(`/api/v1${p}`)))) {
       try {
          await request.jwtVerify();
-      } catch (e) {
-         // Safe to ignore for white-listed GET
-      }
+      } catch (e) {}
       return;
     }
 
-    // 5. Mandatory Verification for everything else (Admin, CRM, Support, etc.)
-    console.log(`[AUTH DEBUG] MANDATORY jwtVerify for: ${request.method} ${path}`);
+    // 5. Mandatory Verification for everything else
     try {
       await request.jwtVerify();
-      console.log(`[AUTH DEBUG] jwtVerify SUCCESS for: ${path}`);
     } catch (err) {
-      console.log(`[AUTH DEBUG] jwtVerify FAILED for: ${path}`, err);
       return reply.status(401).send({ 
         status: 'error',
         message: 'Unauthorized: Invalid or missing access token',
