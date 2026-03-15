@@ -52,5 +52,5 @@ COPY --from=builder /app/prisma ./prisma
 # Expose port
 EXPOSE 3001
 
-# Command to run the application
-CMD ["node", "dist/server.js"]
+# Command to run migrations and then the application
+CMD npx prisma migrate deploy && node dist/server.js

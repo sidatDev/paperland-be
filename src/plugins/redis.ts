@@ -41,9 +41,13 @@ export default fp(async (fastify: FastifyInstance) => {
     });
 
     redis.on('error', (err: any) => {
+      // Only log if redis exists and we haven't logged recently
       const now = Date.now();
       if (now - lastErrorTime > ERROR_LOG_COOLDOWN) {
-        fastify.log.error(`[Redis] Connection failed: ${err.message}. ${connectionString.includes('localhost') ? 'Is Redis running locally?' : 'Check your REDIS_URL.'}`);
+        // Only log if it's not a local connection failure (since we might be waiting for it) or if explicitly enabled
+        if (!connectionString.includes('localhost') || process.env.NODE_ENV === 'development') {
+            fastify.log.error(`[Redis] Connection failed: ${err.message}`);
+        }
         lastErrorTime = now;
       }
     });
