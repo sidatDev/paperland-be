@@ -225,7 +225,12 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           seoKeywords: { type: 'string', nullable: true },
           seoScriptsHeader: { type: 'string', nullable: true },
           seoScriptsBody: { type: 'string', nullable: true },
-          sitemapUrl: { type: 'string', nullable: true }
+          sitemapUrl: { type: 'string', nullable: true },
+          bankAccountName: { type: 'string', nullable: true },
+          bankAccountNumber: { type: 'string', nullable: true },
+          bankName: { type: 'string', nullable: true },
+          bankIban: { type: 'string', nullable: true },
+          bankSwiftCode: { type: 'string', nullable: true }
         }
       },
       response: {
@@ -470,6 +475,49 @@ export default async function systemRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse('Failed to upload sitemap: ' + err.message));
+    }
+  });
+  
+  // Payment Gateway Routes
+  fastify.get('/admin/system/payment-gateways', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('system_manage')],
+  }, async (request: any, reply: any) => {
+    try {
+      const gateways = await (fastify.prisma as any).paymentGateway.findMany({
+        orderBy: { sortOrder: 'asc' }
+      });
+      return createResponse(gateways, 'Payment gateways retrieved');
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse('Failed to fetch gateways'));
+    }
+  });
+
+  fastify.put('/admin/system/payment-gateways/:id', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('system_manage')],
+  }, async (request: any, reply: any) => {
+    try {
+      const { id } = request.params as any;
+      const data = request.body as any;
+      
+      const updated = await (fastify.prisma as any).paymentGateway.update({
+        where: { id },
+        data
+      });
+
+      // Log activity
+      await logActivity(fastify, {
+        entityType: 'PAYMENT_GATEWAY',
+        entityId: id,
+        action: 'UPDATE_GATEWAY',
+        performedBy: request.user?.id || 'unknown',
+        details: data,
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse(updated, 'Payment gateway updated successfully');
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse('Failed to update gateway'));
     }
   });
 

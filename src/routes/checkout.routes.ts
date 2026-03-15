@@ -451,6 +451,39 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         };
     });
 
+    // GET /checkout/payment-gateways
+    fastify.get('/checkout/payment-gateways', async (request, reply) => {
+        const gateways = await (fastify.prisma as any).paymentGateway.findMany({
+            where: { isActive: true },
+            orderBy: { sortOrder: 'asc' },
+            select: {
+                id: true,
+                name: true,
+                identifier: true,
+                type: true,
+                instructions: true,
+                feePercentage: true,
+                feeFixed: true
+            }
+        });
+        
+        const settings = await (fastify.prisma as any).globalSettings.findFirst();
+        
+        const mappedGateways = gateways.map((g: any) => {
+            let inst = g.instructions || "";
+            if (g.identifier === 'bank_transfer' && settings) {
+                inst = inst.replace('{bankAccountName}', settings.bankAccountName || '')
+                           .replace('{bankAccountNumber}', settings.bankAccountNumber || '')
+                           .replace('{bankName}', settings.bankName || '')
+                           .replace('{bankIban}', settings.bankIban || '')
+                           .replace('{bankSwiftCode}', settings.bankSwiftCode || '');
+            }
+            return { ...g, instructions: inst };
+        });
+
+        return mappedGateways;
+    });
+
     // POST /checkout/submit
     fastify.post('/checkout/submit', {
         preHandler: [fastify.authenticate]
@@ -481,7 +514,22 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 orderNumber: `ORD-${Date.now().toString().slice(-6)}`, // Assign real order number
                 paymentMethod: paymentMethod || 'COD',
                 paymentDetails: paymentMetadata || {},
+                paymentStatus: 'UNPAID', // Default for these methods until verified
                 updatedAt: new Date()
+            }
+        });
+
+        // 3. Create Transaction Record
+        await (fastify.prisma as any).transaction.create({
+            data: {
+                orderId: finalOrder.id,
+                userId: userId,
+                amount: finalOrder.totalAmount,
+                status: 'PENDING',
+                type: 'PAYMENT',
+                method: paymentMethod || 'COD',
+                currencyId: finalOrder.currencyId,
+                metadata: paymentMetadata || {}
             }
         });
 

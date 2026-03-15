@@ -184,6 +184,12 @@ export default async function productRoutes(fastify: FastifyInstance) {
       fullDescription: p.fullDescription, // Return fullDescription
       specifications: p.specifications || {}, // Return specifications for raw access
 
+      // Variants
+      parentId: p.parentId,
+      variantOptions: p.variantOptions,
+      variantAttributes: p.variantAttributes,
+      variants: p.variants ? p.variants.map(transformProduct) : [],
+
       createdAt: p.createdAt,
       updatedAt: p.updatedAt
     };
@@ -377,6 +383,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isVisibleOnEcommerce: { type: 'boolean' },
       industries: { type: 'array', items: { type: 'object', additionalProperties: true } },
       specifications: { type: 'object', additionalProperties: true },
+      
+      // Variants
+      parentId: { type: 'string', nullable: true },
+      variantOptions: { type: 'array', nullable: true, items: { type: 'object', additionalProperties: true } },
+      variantAttributes: { type: 'object', nullable: true, additionalProperties: true },
+      variants: { type: 'array', items: { type: 'object', additionalProperties: true } },
+
       createdAt: { type: 'string' },
       updatedAt: { type: 'string' }
     }
@@ -412,7 +425,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
         isVisibleOnEcommerce: { type: 'boolean' },
         industries: { type: 'array', items: { type: 'string' } },
         media: { type: 'array', items: { type: 'string' } }, // Array of URLs
-        seo: { type: 'object', additionalProperties: true }
+        seo: { type: 'object', additionalProperties: true },
+
+        // Variants
+        parentId: { type: 'string' },
+        variantOptions: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        variantAttributes: { type: 'object', additionalProperties: true },
+        variants: { type: 'array', items: { type: 'object', additionalProperties: true } }
     }
   };
 
@@ -475,6 +494,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
             stocks: true,
             industries: {
                 include: { industry: true }
+            },
+            variants: {
+                where: { deletedAt: null },
+                include: {
+                    prices: true,
+                    stocks: true
+                }
             }
         }
       });
@@ -526,7 +552,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
             isFeatured = false, 
             isVisibleOnEcommerce = true, 
             fullDescription, 
-            industries = [] 
+            industries = [],
+            parentId,
+            variantOptions,
+            variantAttributes,
+            variants = []
         } = data;
 
         console.log('Create Product Body:', JSON.stringify(data, null, 2));
@@ -599,9 +629,42 @@ export default async function productRoutes(fastify: FastifyInstance) {
                     create: industries.map((industryId: string) => ({
                         industry: { connect: { id: industryId } }
                     }))
+                } : undefined,
+                parentId,
+                variantOptions,
+                variantAttributes,
+                variants: variants.length > 0 ? {
+                    create: variants.map((v: any) => ({
+                        name: v.name,
+                        slug: v.slug || (slugify(v.name) + "-" + v.sku), // Simplified slug for variants
+                        sku: v.sku,
+                        price: Number(v.price || v.salesPrice || 0),
+                        isActive: v.isActive !== undefined ? v.isActive : true,
+                        variantAttributes: v.variantAttributes,
+                        category: { connect: { id: resolvedCategoryId } },
+                        brand: { connect: { id: resolvedBrandId } },
+                        imageUrl: v.imageUrl || null,
+                        prices: {
+                            create: {
+                                currencyId: currencyRec.id,
+                                priceRetail: Number(v.price || v.salesPrice || 0),
+                                isActive: true
+                            }
+                        },
+                        stocks: {
+                            create: { locationId: 'MAIN', qty: v.stock || 0 }
+                        }
+                    }))
                 } : undefined
             },
-            include: { category: true, brand: true, prices: { include: {currency: true} }, stocks: true, industries: { include: { industry: true } } }
+            include: { 
+                category: true, 
+                brand: true, 
+                prices: { include: {currency: true} }, 
+                stocks: true, 
+                industries: { include: { industry: true } },
+                variants: { include: { prices: true, stocks: true } }
+            }
         });
 
         // Audit Log
@@ -684,7 +747,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
             promotionalPrice, tierPricing,
             weight, width, length, volume,
             media, seo, 
-            isFeatured, isVisibleOnEcommerce, isEcommerceVisible, fullDescription, industries
+            isFeatured, isVisibleOnEcommerce, isEcommerceVisible, fullDescription, industries,
+            parentId, variantOptions, variantAttributes
         } = data;
 
         const resolvedIsVisible = isVisibleOnEcommerce !== undefined ? isVisibleOnEcommerce : isEcommerceVisible;
@@ -763,10 +827,56 @@ export default async function productRoutes(fastify: FastifyInstance) {
             };
         }
 
+        if (parentId !== undefined) updateData.parentId = parentId;
+        if (variantOptions !== undefined) updateData.variantOptions = variantOptions;
+        if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
+
+        if (data.variants !== undefined && Array.isArray(data.variants)) {
+            const newVariants = data.variants.filter((v: any) => !v.id);
+            if (newVariants.length > 0) {
+                // Get default currency for variants if not provided
+                const currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
+                
+                updateData.variants = {
+                    create: newVariants.map((v: any) => ({
+                        name: v.name,
+                        slug: v.slug || (slugify(v.name) + "-" + v.sku),
+                        sku: v.sku,
+                        price: Number(v.price || v.salesPrice || 0),
+                        isActive: v.isActive !== undefined ? v.isActive : true,
+                        variantAttributes: v.variantAttributes,
+                        category: { connect: { id: resolvedCategoryId } },
+                        brand: { connect: { id: resolvedBrandId } },
+                        imageUrl: v.imageUrl || null,
+                        prices: {
+                            create: {
+                                currencyId: currencyRec.id,
+                                priceRetail: Number(v.price || v.salesPrice || 0),
+                                isActive: true
+                            }
+                        },
+                        stocks: {
+                            create: { locationId: 'MAIN', qty: v.stock || 0 }
+                        }
+                    }))
+                };
+            }
+        }
+
         const updated = await (fastify.prisma as any).product.update({
              where: { id },
              data: updateData,
-             include: { category: true, brand: true, prices: { include: { currency: true } }, stocks: true, industries: { include: { industry: true } } }
+             include: { 
+                 category: true, 
+                 brand: true, 
+                 prices: { include: { currency: true } }, 
+                 stocks: true, 
+                 industries: { include: { industry: true } },
+                 variants: {
+                     where: { deletedAt: null },
+                     include: { prices: true, stocks: true }
+                 }
+             }
         });
 
         // Audit Log

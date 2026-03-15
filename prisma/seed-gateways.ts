@@ -1,0 +1,59 @@
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+async function main() {
+  const gateways = [
+    {
+      name: 'JazzCash',
+      identifier: 'jazzcash',
+      type: 'WALLET',
+      isActive: true,
+      instructions: 'Please pay to JazzCash Wallet: 03123456789 and share screenshot.',
+      sortOrder: 1,
+    },
+    {
+      name: 'EasyPaisa',
+      identifier: 'easypaisa',
+      type: 'WALLET',
+      isActive: true,
+      instructions: 'Please pay to EasyPaisa Wallet: 03123456789 and share screenshot.',
+      sortOrder: 2,
+    },
+    {
+      name: 'Bank Transfer',
+      identifier: 'bank_transfer',
+      type: 'BANK_TRANSFER',
+      isActive: true,
+      instructions: 'Please transfer to: \nBank: Meezan Bank\nAccount: PaperLand\nIBAN: PK00MEZN0000123456789012',
+      sortOrder: 3,
+    },
+    {
+        name: 'Cash on Delivery',
+        identifier: 'cod',
+        type: 'CASH',
+        isActive: true,
+        instructions: 'Pay in cash upon delivery.',
+        sortOrder: 4,
+    }
+  ];
+
+  for (const gateway of gateways) {
+    await (prisma as any).paymentGateway.upsert({
+      where: { identifier: gateway.identifier },
+      update: gateway,
+      create: gateway,
+    });
+  }
+
+  console.log('Payment gateways seeded successfully');
+}
+
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

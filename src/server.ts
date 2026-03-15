@@ -103,6 +103,8 @@ const start = async () => {
     await fastify.register(import('./routes/pricing.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/coupons.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/returns.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/courier.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/whatsapp.routes'), { prefix: '/api/v1' });
     // Upload Routes
     // Upload Routes
     await fastify.register(import('./routes/upload.routes'), { prefix: '/api/v1' });
