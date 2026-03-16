@@ -14,6 +14,14 @@ const newPermissions = [
   { key: 'relation_view', title: 'View Product Relations' },
   { key: 'relation_manage', title: 'Manage Product Relations' },
   { key: 'system_manage', title: 'Manage System Settings' },
+  { key: 'promotion_view', title: 'View Promotions & Flash Sales' },
+  { key: 'promotion_manage', title: 'Manage Promotions & Flash Sales' },
+  { key: 'marketing_view', title: 'View Marketing & Referrals' },
+  { key: 'marketing_manage', title: 'Manage Marketing & Referrals' },
+  { key: 'logistics_view', title: 'View Logistics & Agents' },
+  { key: 'logistics_manage', title: 'Manage Logistics & Agents' },
+  { key: 'crm_view', title: 'View Customer Data' },
+  { key: 'crm_manage', title: 'Manage Customer Data' },
 ];
 
 async function main() {
