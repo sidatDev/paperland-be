@@ -96,5 +96,76 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
             return reply.status(500).send(createErrorResponse("Upload failed: " + err.message));
         }
     });
+    
+    fastify.post('/s3-upload', {
+        schema: {
+            description: 'Upload a file to SeaweedFS (S3)',
+            tags: ['Upload'],
+            consumes: ['multipart/form-data'],
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        success: { type: 'boolean' },
+                        message: { type: 'string' },
+                        data: {
+                            type: 'object',
+                            properties: {
+                                url: { type: 'string' }
+                            }
+                        }
+                    }
+                },
+                400: {
+                    type: 'object',
+                    properties: {
+                        message: { type: 'string' },
+                        success: { type: 'boolean' }
+                    }
+                },
+                500: {
+                    type: 'object',
+                    properties: {
+                        message: { type: 'string' },
+                        success: { type: 'boolean' }
+                    }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        try {
+            const data = await request.file();
+            if (!data) return reply.status(400).send(createErrorResponse("No file uploaded"));
+
+            const { s3Client, S3_BUCKET_NAME } = await import('../plugins/storage');
+            const { PutObjectCommand, CreateBucketCommand } = await import('@aws-sdk/client-s3');
+            
+            // Try to create bucket if it doesn't exist (ignore error if it already exists)
+            try {
+                await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET_NAME }));
+            } catch (e) {}
+
+            const buffer = await data.toBuffer();
+            const ext = path.extname(data.filename);
+            const filename = `${randomUUID()}${ext}`;
+            
+            const command = new PutObjectCommand({
+                Bucket: S3_BUCKET_NAME,
+                Key: filename,
+                Body: buffer,
+                ContentType: data.mimetype
+            });
+            
+            await s3Client.send(command);
+            
+            const endpoint = process.env.S3_ENDPOINT?.replace(/\/$/, "");
+            const url = `${endpoint}/${S3_BUCKET_NAME}/${filename}`;
+            
+            return createResponse({ url }, "File uploaded to S3 successfully");
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse("S3 Upload failed: " + err.message));
+        }
+    });
 
 }
