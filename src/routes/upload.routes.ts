@@ -55,28 +55,76 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
             const ext = path.extname(data.filename);
             const uuid = randomUUID();
             const filename = `${uuid}${ext}`;
-            const uploadPath = path.join(process.cwd(), 'public', 'uploads', folder);
-            
-            // Ensure folder exists
-            await fs.mkdir(uploadPath, { recursive: true });
 
-            const filePath = path.join(uploadPath, filename);
-            await fs.writeFile(filePath, buffer);
+            const isS3Configured = !!(process.env.S3_ENDPOINT && process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY);
+            let url: string;
+            let key: string;
 
-            // 2. Process and Save WebP Version (if it's an image)
-            if (data.mimetype.startsWith('image/')) {
+            if (isS3Configured) {
+                const { s3Client, S3_BUCKET_NAME } = await import('../plugins/storage');
+                const { PutObjectCommand, CreateBucketCommand } = await import('@aws-sdk/client-s3');
+                
                 try {
-                    const webpBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer();
-                    const webpFilename = `${uuid}.webp`;
-                    const webpPath = path.join(uploadPath, webpFilename);
-                    await fs.writeFile(webpPath, webpBuffer);
-                } catch (sharpErr) {
-                    fastify.log.warn({ err: sharpErr }, `Failed to generate WebP for ${data.filename}`);
-                }
-            }
+                    await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET_NAME }));
+                } catch (e) {}
 
-            const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
-            const url = `${apiUrl}/uploads/${folder}/${filename}`;
+                key = `${folder}/${filename}`;
+
+                // Upload original file
+                await s3Client.send(new PutObjectCommand({
+                    Bucket: S3_BUCKET_NAME,
+                    Key: key,
+                    Body: buffer,
+                    ContentType: data.mimetype,
+                    ACL: 'public-read'
+                }));
+
+                const endpoint = process.env.S3_ENDPOINT?.replace(/\/$/, "");
+                url = `${endpoint}/${S3_BUCKET_NAME}/${key}`;
+
+                // Process and Save WebP Version (if it's an image)
+                if (data.mimetype.startsWith('image/')) {
+                    try {
+                        const webpBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer();
+                        const webpFilename = `${uuid}.webp`;
+                        const webpKey = `${folder}/${webpFilename}`;
+                        
+                        await s3Client.send(new PutObjectCommand({
+                            Bucket: S3_BUCKET_NAME,
+                            Key: webpKey,
+                            Body: webpBuffer,
+                            ContentType: 'image/webp',
+                            ACL: 'public-read'
+                        }));
+                    } catch (sharpErr) {
+                        fastify.log.warn({ err: sharpErr }, `Failed to generate WebP for ${data.filename} on S3`);
+                    }
+                }
+            } else {
+                const uploadPath = path.join(process.cwd(), 'public', 'uploads', folder);
+                
+                // Ensure folder exists
+                await fs.mkdir(uploadPath, { recursive: true });
+
+                const filePath = path.join(uploadPath, filename);
+                await fs.writeFile(filePath, buffer);
+
+                // 2. Process and Save WebP Version (if it's an image)
+                if (data.mimetype.startsWith('image/')) {
+                    try {
+                        const webpBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer();
+                        const webpFilename = `${uuid}.webp`;
+                        const webpPath = path.join(uploadPath, webpFilename);
+                        await fs.writeFile(webpPath, webpBuffer);
+                    } catch (sharpErr) {
+                        fastify.log.warn({ err: sharpErr }, `Failed to generate WebP for ${data.filename}`);
+                    }
+                }
+
+                const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+                url = `${apiUrl}/uploads/${folder}/${filename}`;
+                key = `${folder}/${filename}`;
+            }
 
             // Save to Media table
             const media = await (fastify.prisma as any).media.create({
@@ -85,11 +133,11 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                     url: url,
                     mimetype: data.mimetype,
                     size: buffer.length,
-                    key: `${folder}/${filename}`
+                    key: key
                 }
             });
 
-            return createResponse(media, "File uploaded successfully locally");
+            return createResponse(media, isS3Configured ? "File uploaded successfully to S3" : "File uploaded successfully locally");
 
         } catch (err: any) {
             fastify.log.error(err);
