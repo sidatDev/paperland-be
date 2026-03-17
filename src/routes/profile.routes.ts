@@ -242,7 +242,7 @@ export default async function profileRoutes(fastify: FastifyInstance) {
                 } else {
                     // Fallback: Create country if it's one of the supported ones (Self-Healing)
                     const supportedCountries: any = {
-                        'Pakistan': { code: 'PK', currency: 'PKR' },
+                        'PKR': { code: 'PK', currency: 'PKR' },
                         'Saudi Arabia': { code: 'SA', currency: 'SAR' },
                         'United Arab Emirates': { code: 'AE', currency: 'AED' }
                     };

@@ -234,14 +234,14 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 heading: "Tailored Stationery Solutions for Every Sector",
                 description: "Paperland has been at the forefront of the stationery and office supplies industry for over two decades. We understand the unique challenges of each industry and provide customized solutions that ensure optimal performance and reliability.",
                 items: [
-                    { name: "Automotive", description: "High-performance filtration for cars, trucks, and heavy-duty vehicles ensuring engine longevity and efficiency." },
-                    { name: "Manufacturing", description: "Industrial-grade filtration systems for production facilities, ensuring clean air and optimal machinery performance." },
-                    { name: "Oil & Gas", description: "Specialized filters for oil refineries, gas processing plants, and petrochemical facilities meeting strict standards." },
-                    { name: "Water Treatment", description: "Advanced filtration solutions for municipal water treatment, wastewater management, and purification systems." },
-                    { name: "HVAC Systems", description: "Air filtration products for heating, ventilation, and air conditioning systems in commercial and residential buildings." },
-                    { name: "Construction", description: "Durable filters for construction equipment, heavy machinery, and onsite power generation systems." },
-                    { name: "Marine", description: "Corrosion-resistant filtration systems for ships, boats, and offshore platforms operating in harsh environments." },
-                    { name: "Power Generation", description: "High-efficiency filters for power plants, turbines, and generators ensuring uninterrupted energy production." }
+                    { name: "Automotive", description: "High-performance stationery for cars, trucks, and heavy-duty vehicles ensuring engine longevity and efficiency." },
+                    { name: "Manufacturing", description: "Industrial-grade stationery systems for production facilities, ensuring clean air and optimal machinery performance." },
+                    { name: "Oil & Gas", description: "Specialized stationery for oil refineries, gas processing plants, and petrochemical facilities meeting strict standards." },
+                    { name: "Water Treatment", description: "Advanced stationery solutions for municipal water treatment, wastewater management, and purification systems." },
+                    { name: "HVAC Systems", description: "Air stationery products for heating, ventilation, and air conditioning systems in commercial and residential buildings." },
+                    { name: "Construction", description: "Durable stationery for construction equipment, heavy machinery, and onsite power generation systems." },
+                    { name: "Marine", description: "Corrosion-resistant stationery for ships, boats, and offshore platforms operating in harsh environments." },
+                    { name: "Power Generation", description: "High-efficiency stationery for power plants, turbines, and generators ensuring uninterrupted energy production." }
                 ]
             },
             capabilitiesSection: {
@@ -643,10 +643,10 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     type: "object",
                     title: "CTA Section",
                     properties: {
-                        badge: { type: "string", title: "Section Badge", default: "Premium Quality Filters" },
-                        title: { type: "string", title: "Main Title", default: "Get the Best Filters" },
+                        badge: { type: "string", title: "Section Badge", default: "Premium Quality Stationery" },
+                        title: { type: "string", title: "Main Title", default: "Get the Best Stationery" },
                         subtitle: { type: "string", title: "Subtitle", default: "for Your Business" },
-                        description: { type: "string", title: "Description", widget: "textarea", default: "Join thousands of satisfied customers who trust Filters Experts for their industrial and automotive filtration needs." },
+                        description: { type: "string", title: "Description", widget: "textarea", default: "Join thousands of satisfied customers who trust Paperland for their premium stationery and office supply needs." },
                         shopText: { type: "string", title: "Shop Button Text", default: "Shop Now" },
                         shopLink: { type: "string", title: "Shop Button Link" },
                         contactText: { type: "string", title: "Contact Button Text", default: "Contact Sales" },
@@ -726,9 +726,9 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     { title: "Best Prices", desc: "Competitive pricing without compromising quality", icon: "/images/icons/price-icon.png" }
                 ],
                 cards: [
-                    { title: "Air Filters", desc: "Premium quality filtration", icon: "/images/icons/air-filter-icon.png", badge: "30% OFF" },
-                    { title: "Oil Filters", desc: "Industrial grade performance", icon: "/images/icons/oil-filter-icon.png", badge: "" },
-                    { title: "Water Filters", desc: "Superior purification system", icon: "/images/icons/water-filter-icon.png", badge: "" }
+                    { title: "Paper & Stationery", desc: "Premium quality filtration", icon: "/images/icons/air-filter-icon.png", badge: "30% OFF" },
+                    { title: "Writing Instruments", desc: "Industrial grade performance", icon: "/images/icons/oil-filter-icon.png", badge: "" },
+                    { title: "Notebooks & Journals", desc: "Superior purification system", icon: "/images/icons/water-filter-icon.png", badge: "" }
                 ],
                 stats: [
                     { value: "2000+", label: "Happy Clients" },
@@ -738,12 +738,12 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 viewMoreText: "View More"
             },
             productList: [
-                { id: 1, title: "Filter Element Ultrapleat", desc: "As the next step on the path toward Leadership in Filtration, Filters Expert is strengthening its leadership structure and expanding its Management Board", image: "/images/companyproduct/filterelement.jpg" },
-                { id: 2, title: "Filter Dfo Ultra-Web", desc: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.", image: "/images/companyproduct/filterdfo.jpg" },
-                { id: 3, title: "Air Filter", desc: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.", image: "/images/companyproduct/airfilter.jpg" },
-                { id: 4, title: "Water Filter", desc: "As the next step on the path toward Leadership in Filtration, Filters Expert is strengthening its leadership structure and expanding its Management Board", image: "/images/companyproduct/waterfilter.jpg" },
-                { id: 5, title: "Hydraulic Filter", desc: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.", image: "/images/companyproduct/hydraulic.jpg" },
-                { id: 6, title: "Oil Filter", desc: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.", image: "/images/companyproduct/oil.jpg" }
+                { id: 1, title: "Premium Bond Paper", desc: "As the next step on the path toward Leadership in Stationery, Paperland is strengthening its leadership structure and expanding its Management Board", image: "/images/companyproduct/premium-paper.jpg" },
+                { id: 2, title: "Executive Notebook", desc: "Our high-quality notebooks are designed for professionals who value both form and function.", image: "/images/companyproduct/notebook.jpg" },
+                { id: 3, title: "Luxury Fountain Pen", desc: "Experience the art of writing with our curated collection of luxury pens.", image: "/images/companyproduct/luxury-pen.jpg" },
+                { id: 4, title: "Desk Organizer Set", desc: "Organize your workspace with Paperland's premium desk accessories.", image: "/images/companyproduct/desk-organizer.jpg" },
+                { id: 5, title: "Ergonomic Office Chair", desc: "Boost productivity and comfort with our range of ergonomic office chairs.", image: "/images/companyproduct/office-chair.jpg" },
+                { id: 6, title: "Shredder Machine", desc: "Securely dispose of sensitive documents with our reliable shredder machines.", image: "/images/companyproduct/shredder.jpg" }
             ]
         }
     },
@@ -833,7 +833,7 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             ],
             insights: [
                 {
-                    title: "Understanding Automotive Filter Maintenance",
+                    title: "Understanding Stationery Maintenance",
                     titleAr: "فهم صيانة فلاتر السيارات",
                     category: "Maintenance",
                     date: "January 8, 2026",
@@ -843,10 +843,10 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     author: "Sarah Thompson",
                     authorAr: "سارة طومسون",
                     image: "/images/insight/automotivefilter.jpg",
-                    slug: "understanding-automotive-filter-maintenance",
-                    description: "Learn the essential practices for maintaining your vehicle's filters to ensure optimal performance and longevity.",
+                    slug: "understanding-stationery-maintenance",
+                    description: "Learn the essential practices for maintaining your stationery to ensure optimal performance and longevity.",
                     descriptionAr: "تعرف على الممارسات الأساسية لصيانة فلاتر سيارتك لضمان الأداء الأمثل وطول العمر.",
-                    contentEn: "Maintaining your vehicle's filters is crucial...",
+                    contentEn: "Maintaining your stationery is crucial...",
                     contentAr: "صيانة فلاتر سيارتك أمر بالغ الأهمية..."
                 }
             ]
@@ -990,8 +990,8 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     slug: "sales-manager-office-supplies",
                     descriptionEn: "Lead our office supplies sales team and drive business growth across Pakistan.",
                     descriptionAr: "قيادة فريق مبيعات الأدوات المكتبية ودفع نمو الأعمال في باکستان.",
-                    aboutRoleEn: "We are seeking an experienced Sales Manager to lead our automotive filters division.",
-                    aboutRoleAr: "نبحث عن مدير مبيعات ذو خبرة لقيادة قسم فلاتر السيارات لدينا.",
+                    aboutRoleEn: "We are seeking an experienced Sales Manager to lead our stationery division.",
+                    aboutRoleAr: "نبحث عن مدير مبيعات ذو خبرة لقيادة قسم الأدوات المكتبية لدينا.",
                     responsibilitiesEnHtml: "<ul><li>Develop and implement strategic sales plans</li></ul>",
                     responsibilitiesArHtml: "<ul><li>تطوير وتنفيذ خطط مبيعات استراتيجية</li></ul>",
                     requirementsEnHtml: "<ul><li>Bachelor's degree in Business</li></ul>",
@@ -1218,12 +1218,12 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 ]
             },
             services: {
-                sectionTitleEn: "FILTERS SPECIALISTS",
-                sectionTitleAr: "أخصائيو الفلاتر",
+                sectionTitleEn: "STATIONERY SPECIALISTS",
+                sectionTitleAr: "أخصائيو القرطاسية",
                 headingEn: "Our promised services",
                 headingAr: "خدماتنا الموعودة",
-                descriptionEn: "Filters Experts leads in turn-key soft wash equipment with top-tier filtration.",
-                descriptionAr: "تتخصص شركة خبراء الفلاتر للتجارة في تقديم حلول تنقية عالية المستوى، وتوفير علامات تجارية موثوقة مثل Fleetguard و Donaldson.",
+                descriptionEn: "Paperland leads in turn-key corporate solutions with top-tier stationery.",
+                descriptionAr: "تخصص شركة بايبر لاند في تقديم حلول القرطاسية عالية المستوى، وتوفير علامات تجارية موثوقة مثل Pelikan و Deli.",
                 items: [
                     { titleEn: "Innovation", titleAr: "الابتكار", descriptionEn: "Investing in research and development clearly pays off.", descriptionAr: "الاستثمار في البحث والتطوير يؤتي ثماره بوضوح.", icon: "/images/vectors/promisedservice.png" },
                     { titleEn: "Sustainability", titleAr: "الاستدامة", descriptionEn: "Charging your car can be a chance for you to recharge too.", descriptionAr: "شحن سيارتك يمكن أن يكون فرصة لك لإعادة شحن طاقتك أيضًا.", icon: "/images/vectors/sustainability.png" },
@@ -1233,22 +1233,22 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             categories: {
                 sectionTitleEn: "ALL YOU NEED",
                 sectionTitleAr: "كل ما تحتاجه",
-                headingEn: "Filter Categories",
-                headingAr: "فئات الفلاتر",
+                headingEn: "Stationery Categories",
+                headingAr: "فئات القرطاسية",
                 items: [
-                    { titleEn: "Air Filters", titleAr: "فلاتر الهواء", descriptionEn: "Investing in research and development clearly pays off.", descriptionAr: "الاستثمار في البحث والتطوير يؤتي ثماره بوضوح.", image: "/images/company/airfilter.jpg", link: "/products?category=air-filters" },
-                    { titleEn: "Vacuum Filters", titleAr: "فلاتر الفراغ", descriptionEn: "Investing in research and development clearly pays off.", descriptionAr: "الاستثمار في البحث والتطوير يؤتي ثماره بوضوح.", image: "/images/company/vaccumefilter.png", link: "/products?category=vaccum-filters" },
-                    { titleEn: "Air deoiling", titleAr: "إزالة الزيت من الهواء", descriptionEn: "Investing in research and development clearly pays off.", descriptionAr: "الاستثمار في البحث والتطوير يؤتي ثماره بوضوح.", image: "/images/company/airdeoiling.jpg", link: "/products?category=air-deoiling" },
-                    { titleEn: "Hydraulic filters", titleAr: "الفلاتر الهيدروليكية", descriptionEn: "Investing in research and development clearly pays off.", descriptionAr: "الاستثمار في البحث والتطوير يؤتي ثماره بوضوح.", image: "/images/company/hydraulicfilter.jpg", link: "/products?category=hydraulic-filters" }
+                    { titleEn: "Paper & Stationery", titleAr: "الورق والقرطاسية", descriptionEn: "Premium quality paper for all your printing needs.", descriptionAr: "ورق عالي الجودة لجميع احتياجات الطباعة الخاصة بك.", image: "/images/company/airfilter.jpg", link: "/products?category=paper-stationery" },
+                    { titleEn: "Writing Instruments", titleAr: "أدوات الكتابة", descriptionEn: "Luxury pens and pencils from top world brands.", descriptionAr: "أقلام رصاص وأقلام فاخرة من أفضل الماركات العالمية.", image: "/images/company/vaccumefilter.png", link: "/products?category=writing-instruments" },
+                    { titleEn: "Office Supplies", titleAr: "لوازم مكتبية", descriptionEn: "Essential tools for a productive office environment.", descriptionAr: "أدوات أساسية لبيئة مكتبية منتجة.", image: "/images/company/airdeoiling.jpg", link: "/products?category=office-supplies" },
+                    { titleEn: "Notebooks & Journals", titleAr: "دفاتر ومجلدات", descriptionEn: "High-quality notebooks for notes and sketches.", descriptionAr: "دفاتر عالية الجودة للملاحظات والرسومات.", image: "/images/company/hydraulicfilter.jpg", link: "/products?category=notebooks-journals" }
                 ]
             },
             industries: {
                 sectionTitleEn: "INDUSTRIES WE SERVE",
                 sectionTitleAr: "الصناعات التي نخدمها",
-                headingEn: "Filtration solutions for every industry and sector",
-                headingAr: "حلول الترشيح لكل صناعة وقطاع",
-                descriptionEn: "Filters Experts leads in turn-key soft wash equipment with top-tier filtration.",
-                descriptionAr: "تتصدر شركة خبراء الفلاتر في معدات الغسيل الناعم الجاهزة مع ترشيح من الدرجة الأولى.",
+                headingEn: "Stationery solutions for every industry and sector",
+                headingAr: "حلول القرطاسية لكل صناعة وقطاع",
+                descriptionEn: "Paperland leads in turn-key soft wash equipment with top-tier stationery.",
+                descriptionAr: "تتصدر شركة بايبر لاند في معدات الغسيل الناعم الجاهزة مع قرطاسية من الدرجة الأولى.",
                 items: [
                     { titleEn: "Automotive", titleAr: "السيارات", descriptionEn: "Technology, innovation & systems integration", descriptionAr: "التكنولوجيا والابتكار وتكامل الأنظمة", image: "https://images.unsplash.com/photo-1617074064882-3ca2e8f96bbd?w=600&auto=format&fit=crop" },
                     { titleEn: "Water Rescue", titleAr: "الإنقاذ المائي", descriptionEn: "Technology, innovation & systems integration", descriptionAr: "التكنولوجيا والابتكار وتكامل الأنظمة", image: "https://images.unsplash.com/photo-1505118380757-91f5f5632de0?w=600&h=800&fit=crop" },
@@ -1274,14 +1274,14 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
             insights: {
                 sectionTitleEn: "OUR INSIGHTS",
                 sectionTitleAr: "رؤانا",
-                headingEn: "Discover the filter world Insights!",
-                headingAr: "اكتشف عالم الفلاتر!",
+                headingEn: "Discover the stationery world Insights!",
+                headingAr: "اكتشف عالم القرطاسية!",
                 viewMoreButtonEn: "View More",
                 viewMoreButtonAr: "عرض المزيد",
                 items: [
                     {
-                        titleEn: "Filters Experts expands Management Board",
-                        titleAr: "خبراء الفلاتر يوسعون مجلس الإدارة",
+                        titleEn: "Stationery Experts expands Management Board",
+                        titleAr: "خبراء القرطاسية يوسعون مجلس الإدارة",
                         descriptionEn: "As the next step on the path toward Leadership in Filtration, Filters Expert is strengthening its leadership structure and expanding its Management Board",
                         descriptionAr: "كخطوة تالية على طريق الريادة في الترشيح، تعمل شركة خبراء الفلاتر على تعزيز هيكلها القيادي وتوسيع مجلس إدارتها",
                         image: "/images/company/management.jpg",
@@ -1289,46 +1289,46 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                         dateAr: "٢ يونيو ٢٠٢٥",
                         categoryEn: "Corporate Communications",
                         categoryAr: "الاتصالات المؤسسية",
-                        authorEn: "Filters Expert Team",
-                        authorAr: "فريق خبراء الفلاتر",
+                        authorEn: "Stationery Expert Team",
+                        authorAr: "فريق خبراء القرطاسية",
                         readTimeEn: "5 min read",
                         readTimeAr: "٥ دقائق قراءة",
                         contentEn: "<p>Full content description goes here...</p>",
                         contentAr: "<p>وصف المحتوى الكامل يذهب هنا...</p>",
-                        slug: "filters-experts-expands-management-board",
+                        slug: "stationery-experts-expands-management-board",
                         link: "#"
                     },
                     {
-                        titleEn: "Filters Experts opens South African Production Facility",
-                        titleAr: "خبراء الفلاتر يفتتحون مرفق إنتاج في جنوب أفريقيا",
-                        descriptionEn: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.",
+                        titleEn: "Stationery Experts opens South African Production Facility",
+                        titleAr: "خبراء القرطاسية يفتتحون مرفق إنتاج في جنوب أفريقيا",
+                        descriptionEn: "New CO2-reduced stationery impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.",
                         descriptionAr: "فلاتر جديدة مخفضة لثاني أكسيد الكربون مشربة بمواد خام نباتية، مصنعة باستخدام الطاقة المتجددة، ومعبأة في مواد مستدامة ومعاد تدويرها.",
                         image: "/images/company/production.jpg",
                         dateEn: "June 2, 2025",
                         dateAr: "٢ يونيو ٢٠٢٥",
                         categoryEn: "Corporate Communications",
                         categoryAr: "الاتصالات المؤسسية",
-                        authorEn: "Filters Expert Team",
-                        authorAr: "فريق خبراء الفلاتر",
+                        authorEn: "Stationery Expert Team",
+                        authorAr: "فريق خبراء القرطاسية",
                         readTimeEn: "5 min read",
                         readTimeAr: "٥ دقائق قراءة",
                         contentEn: "<p>Full content description goes here...</p>",
                         contentAr: "<p>وصف المحتوى الكامل يذهب هنا...</p>",
-                        slug: "south-african-production-facility",
+                        slug: "stationery-experts-opens-south-african-production-facility",
                         link: "#"
                     },
                     {
                         titleEn: "Filtration of the future - inspired by nature",
                         titleAr: "ترشيح المستقبل - مستوحى من الطبيعة",
-                        descriptionEn: "New CO2-reduced filters impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.",
+                        descriptionEn: "New CO2-reduced stationery impregnated with plant-based raw materials, manufactured using renewable energy, and packaged in sustainable, recycled material.",
                         descriptionAr: "فلاتر جديدة مخفضة لثاني أكسيد الكربون مشربة بمواد خام نباتية، مصنعة باستخدام الطاقة المتجددة، ومعبأة في مواد مستدامة ومعاد تدويرها.",
                         image: "/images/company/filteration.png",
                         dateEn: "June 2, 2025",
                         dateAr: "٢ يونيو ٢٠٢٥",
                         categoryEn: "Corporate Communications",
                         categoryAr: "الاتصالات المؤسسية",
-                        authorEn: "Filters Expert Team",
-                        authorAr: "فريق خبراء الفلاتر",
+                        authorEn: "Stationery Expert Team",
+                        authorAr: "فريق خبراء القرطاسية",
                         readTimeEn: "5 min read",
                         readTimeAr: "٥ دقائق قراءة",
                         contentEn: "<p>Full content description goes here...</p>",
@@ -1657,7 +1657,7 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                 titlePart2Ar: "متميزة",
                 titlePart3En: "for Every Industry",
                 titlePart3Ar: "لكل صناعة",
-                descriptionEn: "High-quality filters for every application, ensuring optimal performance and protection for your equipment.",
+                descriptionEn: "High-quality stationery for every application, ensuring optimal performance and protection for your equipment.",
                 descriptionAr: "فلاتر عالية الجودة لكل تطبيق، مما يضمن الأداء الأمثل والحماية لمعداتك.",
                 searchPlaceholderEn: "Search for Part Number...",
                 searchPlaceholderAr: "البحث عن رقم القطعة...",
@@ -1697,7 +1697,7 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     {
                         titleEn: "Reliable and Trustworthy",
                         titleAr: "موثوق وجدير بالثقة",
-                        quoteEn: "We've been working with Filters Experts for nearly a decade, and they've become an indispensable part of our operations.",
+                        quoteEn: "We've been working with Paperland for nearly a decade, and they've become an indispensable part of our operations.",
                         quoteAr: "نحن نعمل مع خبراء الفلاتر منذ ما يقرب من عقد من الزمان، وقد أصبحوا جزءاً لا غنى عنه في عملياتنا.",
                         authorEn: "Glen R, MN",
                         authorAr: "جلين ر، إم إن",
@@ -1723,7 +1723,7 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                                 addressEn: "King Abdulaziz Street, Riyadh 12211",
                                 addressAr: "شارع الملك عبد العزيز، الرياض 12211",
                                 phone: "+966 11 123 4567",
-                                email: "riyadh@filtersexperts.com",
+                                email: "riyadh@stationeryexperts.com",
                                 hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                                 hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                                 mapEmbedLink: ""

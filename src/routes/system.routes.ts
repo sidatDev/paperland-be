@@ -43,30 +43,34 @@ export default async function systemRoutes(fastify: FastifyInstance) {
         // If table doesn't exist or property name is wrong, return defaults
         fastify.log.warn('GlobalSettings table not accessible, returning defaults: ' + (prismaErr.message || prismaErr));
         return createResponse({
-            storeName: "Filters Expert",
-            contactEmail: "admin@filtersexpert.com",
+            storeName: "Paperland",
+            contactEmail: "support@paperland.com",
             maintenanceMode: false,
             twoFactorEnabled: true,
             smtpHost: "smtp.sendgrid.net",
             smtpPort: 587,
             smtpEncryption: "TLS",
-            senderName: "Filters Expert Support",
-            senderEmail: "no-reply@filtersexpert.com"
+            senderName: "Paperland Support",
+            senderEmail: "noreply@paperland.com",
+            logoUrl: "/images/logo/Paperland logo.png",
+            themeColor: "#059669",
+            supportPhone: "+92 300 1234567",
+            address: "Karachi, Pakistan"
         }, 'Default settings retrieved');
       }
       
       // If no settings exist, return default values
       if (!settings) {
           return createResponse({
-              storeName: "Filters Expert",
-              contactEmail: "admin@filtersexpert.com",
+              storeName: "Stationery Expert",
+              contactEmail: "admin@stationeryexpert.com",
               maintenanceMode: false,
               twoFactorEnabled: true,
               smtpHost: "smtp.sendgrid.net",
               smtpPort: 587,
               smtpEncryption: "TLS",
-              senderName: "Filters Expert Support",
-              senderEmail: "no-reply@filtersexpert.com"
+              senderName: "Stationery Expert Support",
+              senderEmail: "no-reply@stationeryexpert.com"
           }, 'Default settings retrieved');
       }
       
@@ -78,15 +82,15 @@ export default async function systemRoutes(fastify: FastifyInstance) {
       return createResponse({
           error: "Failed to fetch settings from DB",
           usingDefaults: true,
-          storeName: "Filters Expert",
-          contactEmail: "admin@filtersexpert.com",
+          storeName: "Stationery Expert",
+          contactEmail: "admin@stationeryexpert.com",
           maintenanceMode: false,
           twoFactorEnabled: true,
           smtpHost: "smtp.sendgrid.net",
           smtpPort: 587,
           smtpEncryption: "TLS",
-          senderName: "Filters Expert Support",
-          senderEmail: "no-reply@filtersexpert.com"
+          senderName: "Stationery Expert Support",
+          senderEmail: "no-reply@stationeryexpert.com"
       }, 'System recovered with default settings');
     }
   });
@@ -127,11 +131,11 @@ export default async function systemRoutes(fastify: FastifyInstance) {
       // Return defaults if not found
       if (!settings) {
           return createResponse({
-              storeName: "Filters Expert",
-              contactEmail: "admin@filtersexpert.com",
+              storeName: "Stationery Expert",
+              contactEmail: "admin@stationeryexpert.com",
               maintenanceMode: false,
-              senderName: "Filters Expert Support",
-              senderEmail: "no-reply@filtersexpert.com"
+              senderName: "Stationery Expert Support",
+              senderEmail: "no-reply@stationeryexpert.com"
           }, 'Default public settings retrieved');
       }
 
@@ -148,8 +152,8 @@ export default async function systemRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
         fastify.log.error(`[SystemSettings] Error fetching public settings: ${err.message}`);
         return createResponse({
-            storeName: "Filters Expert",
-            contactEmail: "admin@filtersexpert.com",
+            storeName: "Stationery Expert",
+            contactEmail: "admin@stationeryexpert.com",
             maintenanceMode: false
         }, 'Default settings (recovery)');
     }
@@ -355,7 +359,7 @@ export default async function systemRoutes(fastify: FastifyInstance) {
       await transporter.sendMail({
         from: `"${senderName}" <${senderEmail}>`,
         to: testRecipient || senderEmail,
-        subject: "Filters Expert - SMTP Test Email",
+        subject: "Paperland - SMTP Test Email",
         text: "This is a test email from your Global System Settings.",
         html: "<b>This is a test email from your Global System Settings.</b>",
       });

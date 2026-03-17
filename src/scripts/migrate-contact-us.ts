@@ -50,7 +50,7 @@ async function main() {
                         addressEn: "King Fahd Road, Riyadh 11564",
                         addressAr: "طريق الملك فهد، الرياض 11564",
                         phone: "+966 11 234 5678",
-                        email: "riyadh@filtersexperts.com",
+                        email: "riyadh@stationeryexperts.com",
                         hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                         hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d463878.2310317589!2d46.5423326!3d24.7253981!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3e2f03890d489bbc%3A0x46613380ced45b71!2sRiyadh%20Saudi%20Arabia!5e0!3m2!1sen!2ssa!4v1688557842000!5m2!1sen!2ssa"
@@ -63,7 +63,7 @@ async function main() {
                         addressEn: "Prince Sultan Street, Jeddah 23442",
                         addressAr: "شارع الأمير سلطان، جدة 23442",
                         phone: "+966 12 345 6789",
-                        email: "jeddah@filtersexperts.com",
+                        email: "jeddah@stationeryexperts.com",
                         hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                         hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d118949.70271707297!2d39.1223405!3d21.5169315!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x15c3d01fb1137e59%3A0xe059579737bfe34c!2sJeddah%20Saudi%20Arabia!5e0!3m2!1sen!2ssa!4v1688557642000!5m2!1sen!2ssa"
@@ -76,7 +76,7 @@ async function main() {
                         addressEn: "King Abdulaziz Street, Dammam 32241",
                         addressAr: "شارع الملك عبدالعزيز، الدمام 32241",
                         phone: "+966 13 345 6789",
-                        email: "dammam@filtersexperts.com",
+                        email: "dammam@stationeryexperts.com",
                         hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                         hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d114256.76679586407!2d50.1030089!3d26.3926665!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3e49e60a3d463d11%3A0xe6ec07c77d0a273!2sDammam%20Saudi%20Arabia!5e0!3m2!1sen!2ssa!4v1688557342000!5m2!1sen!2ssa"
@@ -97,7 +97,7 @@ async function main() {
                         addressEn: "Sheikh Zayed Road, Dubai",
                         addressAr: "شارع الشيخ زايد، دبي",
                         phone: "+971 4 123 4567",
-                        email: "dubai@filtersexperts.com",
+                        email: "dubai@stationeryexperts.com",
                         hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                         hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d462560.3011839799!2d55.227487950000005!3d25.07638145!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3e5f43496ad9c645%3A0xbde66e5084295162!2sDubai%20-%20United%20Arab%20Emirates!5e0!3m2!1sen!2ssa!4v1688557442000!5m2!1sen!2ssa"
@@ -110,7 +110,7 @@ async function main() {
                         addressEn: "Corniche Road, Abu Dhabi",
                         addressAr: "طريق الكورنيش، أبوظبي",
                         phone: "+971 2 234 5678",
-                        email: "abudhabi@filtersexperts.com",
+                        email: "abudhabi@stationeryexperts.com",
                         hoursEn: "Sun - Thu: 8:00 AM - 6:00 PM",
                         hoursAr: "الأحد - الخميس: 8:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d232410.60336214432!2d54.2120016!3d24.3872225!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3e5e440f7a566721%3A0xa67edf0116471659!2sAbu%20Dhabi%20-%20United%20Arab%20Emirates!5e0!3m2!1sen!2ssa!4v1688557942000!5m2!1sen!2ssa"
@@ -131,7 +131,7 @@ async function main() {
                         addressEn: "Shahrah-e-Faisal, Karachi",
                         addressAr: "شاهراه فيصل، كراتشي",
                         phone: "+92 21 345 6789",
-                        email: "karachi@filtersexperts.com",
+                        email: "karachi@stationeryexperts.com",
                         hoursEn: "Mon - Sat: 9:00 AM - 6:00 PM",
                         hoursAr: "الإثنين - السبت: 9:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d924237.1216960824!2d67.0099388!3d24.8607343!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x3eb33e06651d4bbf%3A0x9cf92f44555a0c23!2sKarachi%2C%20Karachi%20City%2C%20Sindh%2C%20Pakistan!5e0!3m2!1sen!2ssa!4v1688557542000!5m2!1sen!2ssa"
@@ -144,7 +144,7 @@ async function main() {
                         addressEn: "Main Boulevard, Lahore",
                         addressAr: "الشارع الرئيسي، لاهور",
                         phone: "+92 42 456 7890",
-                        email: "lahore@filtersexperts.com",
+                        email: "lahore@stationeryexperts.com",
                         hoursEn: "Mon - Sat: 9:00 AM - 6:00 PM",
                         hoursAr: "الإثنين - السبت: 9:00 صباحاً - 6:00 مساءً",
                         mapEmbedUrl: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d217760.36625807982!2d74.1950346!3d31.4828113!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x39190483e58107d9%3A0xc20bef065166f150!2sLahore%2C%20Punjab%2C%20Pakistan!5e0!3m2!1sen!2ssa!4v1688557742000!5m2!1sen!2ssa"
@@ -168,7 +168,7 @@ async function main() {
             hoursLabelEn: "Working Hours",
             hoursLabelAr: "ساعات العمل",
             phone: "+966 59 965 9888",
-            email: "info@filtersexperts.com",
+            email: "info@stationeryexperts.com",
             hoursTextEn: "Mon - Sat: 9 AM - 6 PM",
             hoursTextAr: "الإثنين - السبت: 9 صباحًا - 6 مساءً"
         }
@@ -188,7 +188,7 @@ async function main() {
             phone: "+966 59 965 9888",
             emailLabelEn: "Email Address",
             emailLabelAr: "البريد الإلكتروني",
-            email: "info@filtersexperts.com",
+            email: "info@stationeryexperts.com",
             locationLabelEn: "Location",
             locationLabelAr: "الموقع",
             locationTextEn: "Riyadh, Saudi Arabia",
@@ -219,7 +219,7 @@ async function main() {
         success: {
             headingEn: "Message Received!",
             headingAr: "تم استلام الرسالة!",
-            messageEn: "Thank you for reaching out to Filters Experts. We've received your message and our team will get back to you shortly.",
+            messageEn: "Thank you for reaching out to Paperland. We've received your message and our team will get back to you shortly.",
             messageAr: "شكرًا لتواصلك مع خبراء الفلاتر. لقد استلمنا رسالتك وسيقوم فريقنا بالرد عليك قريباً.",
             cards: [
                 {

@@ -6,9 +6,9 @@ async function seedCrossRefs() {
   console.log('🌱 Seeding Cross-Brand Recommendations...');
 
   try {
-    // We'll link "Fleetguard filter" to "Compressed Hydraulic Air Filters - HX Series" (Baldwin)
-    const sourceId = "0f81fda8-d4df-4d71-be8c-05a00a8cb418"; // Fleetguard
-    const targetId = "25320f23-e5df-4a1d-966f-16ed39cbaeba"; // Baldwin (Compressed Hydraulic)
+    // We'll link "Premium Bond Paper" to "Executive Writing Set"
+    const sourceId = "0f81fda8-d4df-4d71-be8c-05a00a8cb418"; 
+    const targetId = "25320f23-e5df-4a1d-966f-16ed39cbaeba"; 
 
     await prisma.crossReference.upsert({
         where: {
@@ -23,7 +23,7 @@ async function seedCrossRefs() {
             productId: sourceId,
             targetProductId: targetId,
             relationType: "COMPATIBLE",
-            notes: "Verified alternative for Fleetguard industrial applications"
+            notes: "Verified premium stationery set for corporate use"
         }
     });
 

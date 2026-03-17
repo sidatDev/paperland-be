@@ -18,21 +18,21 @@ const aboutPageContent = {
     },
     companyHistory: {
         sectionTitle: "COMPANY HISTORY",
-        description: "Filters Experts has been at the forefront of the automotive and industrial filtration industry for over two decades. Founded with a commitment to delivering superior quality filters and spare parts, we have grown from a modest regional distributor to a trusted multi-national supplier serving thousands of businesses and individual customers across Saudi Arabia, UAE, and Pakistan."
+        description: "Paperland has been at the forefront of the premium stationery and office supplies industry for over two decades. Founded with a commitment to delivering superior quality paper and corporate items, we have grown from a modest regional distributor to a trusted multi-national supplier serving thousands of businesses and individual customers across Pakistan and beyond."
     },
     ceoMessage: {
         image: "/images/about us/CEO's Message.jpg",
-        subtitle: "FILTERS SPECIALISTS",
+        subtitle: "PAPER & STATIONERY",
         heading: "CEO's Message",
         message: "Since our founding in 1998, we have built our reputation on a simple but powerful foundation: delivering the right product, at the right time, at the right price. This commitment has earned the trust of thousands of businesses and individuals who depend on us to keep their operations running smoothly."
     },
     mission: {
         heading: "Mission",
-        description: "Our mission is to be the most trusted and accessible source of automotive filters and spare parts in the Middle East and South Asia, delivering superior quality products, exceptional service, and competitive pricing to both individual customers and businesses."
+        description: "Our mission is to be the most trusted and accessible source of premium stationery and office supplies in the Middle East and South Asia, delivering superior quality products, exceptional service, and competitive pricing to both individual customers and businesses."
     },
     vision: {
         heading: "Vision",
-        description: "To become the leading omnichannel filtration and spare parts provider in the region, recognized globally for innovation, reliability, and customer-centricity, while creating sustainable value for all stakeholders."
+        description: "To become the leading omnichannel stationery and office supplies provider in the region, recognized globally for innovation, reliability, and customer-centricity, while creating sustainable value for all stakeholders."
     },
     timelineSection: {
         sectionTitle: "COMPANY TIMELINE",
@@ -40,7 +40,7 @@ const aboutPageContent = {
         timeline: [
             {
                 year: "1998",
-                description: "Founded in Jeddah, Saudi Arabia as a regional automotive filter distributor",
+                description: "Founded in Jeddah, Saudi Arabia as a regional stationery and office supplies distributor",
                 icon: "/images/vectors/homeicon.png",
                 isActive: true
             },
@@ -85,7 +85,7 @@ const privacyPolicyContent = {
     sections: [
         {
             heading: "1. Introduction",
-            text: "Welcome to Filter Experts. We value your privacy and are committed to protecting your personal data. This privacy policy explains how we collect, use, and safeguard your information when you visit our website or use our services."
+            text: "Welcome to Paperland. We value your privacy and are committed to protecting your personal data. This privacy policy explains how we collect, use, and safeguard your information when you visit our website or use our services."
         },
         {
             heading: "2. Information We Collect",

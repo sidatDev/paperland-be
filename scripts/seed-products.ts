@@ -16,16 +16,16 @@ async function seedProducts() {
     }
 
     const sampleProducts = [
-        { name: 'Hydraulic Filter HF123', sku: 'HF-123', desc: 'High performance hydraulic filter', cat: 'Hydraulic Filter', cost: 150 },
-        { name: 'Air Filter Element AF55', sku: 'AF-55', desc: 'Primary air filter element', cat: 'Air Filter', cost: 85 },
-        { name: 'Oil Filter OF99', sku: 'OF-99', desc: 'Spin-on oil filter', cat: 'Oil Filter', cost: 45 },
-        { name: 'Fuel Water Separator FS200', sku: 'FS-200', desc: '10 micron fuel separator', cat: 'Fuel Filter', cost: 120 },
-        { name: 'Cabin Air Filter CF10', sku: 'CF-10', desc: 'Activated carbon cabin filter', cat: 'Cabin Air Filter', cost: 65 },
-        { name: 'Heavy Duty Oil Filter', sku: 'HD-OF-500', desc: 'For heavy trucks', cat: 'Oil Filter', cost: 200 },
-        { name: 'Industrial Air Cleaner', sku: 'IND-AC-900', desc: 'Large capacity air cleaner', cat: 'Air Filter', cost: 450 },
-        { name: 'Transmission Filter Kit', sku: 'TF-KIT-22', desc: 'Complete kit with gaskets', cat: 'Hydraulic Filter', cost: 300 },
-        { name: 'Fuel Filter Insert', sku: 'FF-IN-88', desc: 'Eco-friendly element', cat: 'Fuel Filter', cost: 55 },
-        { name: 'Breather Filter', sku: 'BF-12', desc: 'Tank breather filter', cat: 'Air Filter', cost: 35 }
+        { name: 'Paper & Stationery', sku: 'NB-EXEC-P554005', desc: 'Premium bond paper', cat: 'Paper & Stationery', cost: 500 },
+        { name: 'Executive Bond Paper Pack', sku: 'NB-EXEC-P554005-2', desc: 'High quality A4 paper', cat: 'Paper & Stationery', cost: 550 },
+        { name: 'Premium Fountain Pen', sku: 'WR-PEN-001', desc: 'Elegant writing pen', cat: 'Writing Instruments', cost: 400 },
+        { name: 'Luxury Leather Notebook', sku: 'NB-EXEC-002', desc: 'Premium bound notebook', cat: 'Notebooks & Journals', cost: 1000 },
+        { name: 'A4 Sketchbook', sku: 'SB-A4-001', desc: 'Ideal for sketching', cat: 'Art & Craft', cost: 200 },
+        { name: 'Desk Organizer Set', sku: 'DO-SET-01', desc: 'Complete organization kit', cat: 'Office Supplies', cost: 1800 },
+        { name: 'Drafting Paper Roll', sku: 'DP-ROLL-01', desc: 'Technical drafting paper', cat: 'Art & Craft', cost: 1100 },
+        { name: 'Fine Tip Markers (Set of 12)', sku: 'WR-MAR-12', desc: 'Vibrant colors set', cat: 'Writing Instruments', cost: 300 },
+        { name: 'Mechanical Pencil 0.5mm', sku: 'WR-PEN-0.5', desc: 'Precision writing instrument', cat: 'Writing Instruments', cost: 150 },
+        { name: 'Sticky Notes Pack', sku: 'OS-STK-01', desc: 'Colorful reminder notes', cat: 'Office Supplies', cost: 80 }
     ];
 
     for (const p of sampleProducts) {

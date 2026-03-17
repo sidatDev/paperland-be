@@ -224,7 +224,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
                if (country.includes('saudi') || currency === 'SAR') KSA += amt;
                else if (country.includes('uae') || country.includes('emirates') || currency === 'AED') UAE += amt;
-               else if (country.includes('pakistan') || currency === 'PKR') PK += amt;
+               else if (country.includes('pakistan') || country.includes('pkr') || currency === 'PKR') PK += amt;
                else KSA += amt; // Default
              });
 
@@ -341,7 +341,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
               let mappedCountry = 'Saudi Arabia'; // Default
               if (country.includes('saudi') || currency === 'SAR') mappedCountry = 'Saudi Arabia';
               else if (country.includes('uae') || country.includes('emirates') || currency === 'AED') mappedCountry = 'UAE';
-              else if (country.includes('pakistan') || currency === 'PKR') mappedCountry = 'Pakistan';
+              else if (country.includes('pakistan') || country.includes('pkr') || currency === 'PKR') mappedCountry = 'PKR';
 
               regionMap[mappedCountry] = (regionMap[mappedCountry] || 0) + 1;
           });
@@ -349,7 +349,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           const colors: Record<string, string> = {
               'Saudi Arabia': 'bg-emerald-500',
               'UAE': 'bg-blue-500',
-              'Pakistan': 'bg-green-600'
+              'PKR': 'bg-green-600'
           };
 
           const result = Object.entries(regionMap).map(([country, count]) => ({

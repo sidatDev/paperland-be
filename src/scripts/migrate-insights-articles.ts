@@ -98,10 +98,10 @@ interface InsightArticle {
 
 const insightArticles: InsightArticle[] = [
   {
-    title: "Understanding Automotive Filter Maintenance",
-    titleAr: "فهم صيانة فلاتر السيارات",
-    description: "Learn the essential practices for maintaining your vehicle's filters to ensure optimal performance and longevity.",
-    descriptionAr: "تعرف على الممارسات الأساسية لصيانة فلاتر سيارتك لضمان الأداء الأمثل وطول العمر.",
+    title: "Mastering Workplace Productivity with Stationery",
+    titleAr: "إتقان إنتاجية مكان العمل باستخدام القرطاسية",
+    description: "Learn how the right stationery tools can transform your workflow and boost daily productivity.",
+    descriptionAr: "تعرف على كيف يمكن لأدوات القرطاسية المناسبة أن تغير سير عملك وتعزز الإنتاجية اليومية.",
     content: `Maintaining your vehicle's filters is crucial for ensuring optimal performance and extending the life of your engine. In this comprehensive guide, we'll cover everything you need to know about automotive filter maintenance.
 
 ## Why Filter Maintenance Matters
@@ -110,17 +110,17 @@ Filters play a critical role in protecting your engine from contaminants. A clog
 
 ## Types of Automotive Filters
 
-### Air Filters
-Air filters prevent dust, debris, and other particles from entering your engine. They should be inspected every 12,000-15,000 miles and replaced as needed.
+### Paper & Stationery
+Quality paper is the foundation of professional communication. Choosing the right gsm and texture can make a significant difference in your printing and writing experience.
 
-### Oil Filters
-Oil filters remove contaminants from your engine oil, helping to keep your engine running smoothly. Most manufacturers recommend changing the oil filter with every oil change.
+### Writing Instruments
+From ballpoint to luxury fountain pens, the right tool enhances your handwriting and provides comfort during long writing sessions.
 
-### Fuel Filters
-Fuel filters prevent impurities in the fuel from reaching the engine. They typically need replacement every 20,000-40,000 miles.
+### Office Supplies
+Effective organization tools like desk organizers and sticky notes are essential for maintaining a productive and stress-free workspace.
 
-### Cabin Air Filters
-Cabin air filters clean the air that enters your vehicle's interior through the heating and air conditioning system. They should be replaced every 15,000-25,000 miles.
+### Notebooks & Journals
+A good notebook is a sanctuary for your thoughts and sketches. Premium binding and bleed-resistant paper ensure your ideas are preserved perfectly.
 
 ## Best Practices for Filter Maintenance
 
@@ -153,16 +153,16 @@ Cabin air filters clean the air that enters your vehicle's interior through the 
     dateAr: "٨ يناير ٢٠٢٦",
     readTime: "5 min read",
     readTimeAr: "٥ دقائق قراءة",
-    author: "Sarah Thompson",
-    authorAr: "سارة طومسون",
-    category: "Maintenance",
-    slug: "understanding-automotive-filter-maintenance",
+    author: "Fatima Noor",
+    authorAr: "فاطمة نور",
+    category: "Office Guides",
+    slug: "mastering-workplace-productivity-stationery",
   },
   {
-    title: "The Ultimate Guide to Engine Parts",
-    titleAr: "الدليل الشامل لأجزاء المحرك",
-    description: "Explore the critical components that keep your engine running efficiently and how to maintain them.",
-    descriptionAr: "استكشف المكونات الحيوية التي تحافظ على تشغيل محركك بكفاءة وكيفية صيانتها.",
+    title: "The Ultimate Guide to Premium Stationery Brands",
+    titleAr: "الدليل الشامل لماركات القرطاسية المتميزة",
+    description: "Explore the world-renowned brands that define quality and elegance in the stationery industry.",
+    descriptionAr: "استكشف العلامات التجارية العالمية الشهيرة التي تحدد الجودة والأناقة في صناعة القرطاسية.",
     content: `Your engine is the heart of your vehicle, and understanding its components is key to proper maintenance. In this guide, we'll explore the critical parts that keep your engine running efficiently.
 
 ## Core Engine Components
@@ -215,16 +215,16 @@ The oil filter removes microscopic particles from your engine oil, preventing we
     dateAr: "٥ يناير ٢٠٢٦",
     readTime: "7 min read",
     readTimeAr: "٧ دقائق قراءة",
-    author: "Michael Chen",
-    authorAr: "مايكل تشن",
-    category: "Technical",
-    slug: "ultimate-guide-engine-parts",
+    author: "Zeeshan Khan",
+    authorAr: "زيشان خان",
+    category: "Luxury Writing",
+    slug: "ultimate-guide-premium-stationery-brands",
   },
   {
-    title: "Industrial Filtration Systems Explained",
-    titleAr: "شرح أنظمة الترشيح الصناعية",
-    description: "Discover how industrial filtration systems work and their importance in manufacturing environments.",
-    descriptionAr: "اكتشف كيف تعمل أنظمة الترشيح الصناعية وأهميتها في بيئات التصنيع.",
+    title: "Organizational Systems for Modern Offices",
+    titleAr: "أنظمة التنظيم للمكاتب الحديثة",
+    description: "Discover effective filing and storage solutions to keep your office organized and efficient.",
+    descriptionAr: "اكتشف حلول الحفظ والتخزين الفعالة للحفاظ على مكتبك منظماً وفعالاً.",
     content: `Industrial filtration systems are essential to modern manufacturing processes. They ensure product quality, protect equipment, and maintain safe working environments.
 
 ## Types of Industrial Filtration
@@ -268,16 +268,16 @@ High-Efficiency Particulate Air filters capture 99.97% of particles as small as 
     dateAr: "٢٨ ديسمبر ٢٠٢٥",
     readTime: "6 min read",
     readTimeAr: "٦ دقائق قراءة",
-    author: "David Rodriguez",
-    authorAr: "ديفيد رودريغيز",
-    category: "Industrial",
-    slug: "industrial-filtration-systems-explained",
+    author: "Amna Ali",
+    authorAr: "آمنة علي",
+    category: "Business",
+    slug: "organizational-systems-modern-offices",
   },
   {
-    title: "Oil Filter Replacement: A Step-by-Step Guide",
-    titleAr: "استبدال فلتر الزيت: دليل خطوة بخطوة",
-    description: "Master the art of oil filter replacement with this comprehensive guide for vehicle owners.",
-    descriptionAr: "أتقن فن استبدال فلتر الزيت مع هذا الدليل الشامل لأصحاب السيارات.",
+    title: "Fountain Pen Maintenance: A Step-by-Step Guide",
+    titleAr: "صيانة قلم الحبر السائل: دليل خطوة بخطوة",
+    description: "Master the art of fountain pen care with this comprehensive guide for writing enthusiasts.",
+    descriptionAr: "أتقن فن العناية بقلم الحبر السائل مع هذا الدليل الشامل لعشاق الكتابة.",
     content: `Replacing your oil filter is one of the most important maintenance tasks you can perform on your vehicle. This step-by-step guide will walk you through the process.
 
 ## Tools You'll Need
@@ -343,16 +343,16 @@ Start the engine and let it run for a few minutes. Check around the filter and d
     dateAr: "٢٢ ديسمبر ٢٠٢٥",
     readTime: "8 min read",
     readTimeAr: "٨ دقائق قراءة",
-    author: "Jessica Martinez",
-    authorAr: "جيسيكا مارتينيز",
-    category: "DIY Guides",
-    slug: "oil-filter-replacement-guide",
+    author: "Bilal Siddiqui",
+    authorAr: "بلال صديقي",
+    category: "Luxury Writing",
+    slug: "fountain-pen-maintenance-guide",
   },
   {
-    title: "Optimizing Your Auto Parts Inventory",
-    titleAr: "تحسين مخزون قطع غيار السيارات",
-    description: "Learn effective strategies for managing auto parts inventory to improve efficiency and reduce costs.",
-    descriptionAr: "تعلم استراتيجيات فعالة لإدارة مخزون قطع غيار السيارات لتحسين الكفاءة وتقليل التكاليف.",
+    title: "Optimizing Office Supply Inventory",
+    titleAr: "تحسين مخزون اللوازم المكتبية",
+    description: "Learn effective strategies for managing stationery stock to improve efficiency and reduce costs.",
+    descriptionAr: "تعلم استراتيجيات فعالة لإدارة مخزون القرطاسية لتحسين الكفاءة وتقليل التكاليف.",
     content: `Managing auto parts inventory effectively is crucial for any automotive business. Whether you run a small repair shop or a large dealership, proper inventory management can significantly impact your bottom line.
 
 ## Key Strategies for Inventory Optimization
@@ -410,13 +410,13 @@ Conduct physical inventory counts regularly to ensure accuracy between your syst
     author: "Robert Johnson",
     authorAr: "روبرت جونسون",
     category: "Business",
-    slug: "optimizing-auto-parts-inventory",
+    slug: "optimizing-office-supply-inventory",
   },
   {
-    title: "Essential Vehicle Maintenance Tips for Winter",
-    titleAr: "نصائح أساسية لصيانة السيارة في الشتاء",
-    description: "Prepare your vehicle for winter with these essential maintenance tips to ensure safe and reliable performance.",
-    descriptionAr: "جهز سيارتك لفصل الشتاء مع هذه النصائح الأساسية للصيانة لضمان أداء آمن وموثوق.",
+    title: "Creative Journaling Tips for Every Season",
+    titleAr: "نصائح التدوين الإبداعي لكل موسم",
+    description: "Enhance your journaling practice with these creative tips and stationery recommendations.",
+    descriptionAr: "عزز ممارسة التدوين الخاصة بك مع هذه النصائح الإبداعية وتوصيات القرطاسية.",
     content: `Winter driving presents unique challenges for your vehicle. Proper preparation can make the difference between a safe journey and a breakdown in freezing conditions.
 
 ## Pre-Winter Checklist
@@ -472,8 +472,8 @@ Have your brakes inspected to ensure they're in good condition. Winter driving r
     readTimeAr: "٧ دقائق قراءة",
     author: "Emily Watson",
     authorAr: "إيميلي واتسون",
-    category: "Maintenance",
-    slug: "essential-vehicle-maintenance-winter",
+    category: "DIY & Craft",
+    slug: "creative-journaling-tips-seasons",
   },
 ];
 
@@ -510,10 +510,10 @@ async function run() {
 
     const categories = [
       { labelEn: "All", labelAr: "الكل", value: "All" },
-      { labelEn: "Maintenance", labelAr: "الصيانة", value: "Maintenance" },
-      { labelEn: "Technical", labelAr: "تقني", value: "Technical" },
-      { labelEn: "Industrial", labelAr: "صناعي", value: "Industrial" },
-      { labelEn: "DIY Guides", labelAr: "أدلة DIY", value: "DIY Guides" },
+      { labelEn: "Stationery", labelAr: "القرطاسية", value: "Stationery" },
+      { labelEn: "Office Guides", labelAr: "أدلة المكتب", value: "Office Guides" },
+      { labelEn: "Luxury Writing", labelAr: "كتابة فاخرة", value: "Luxury Writing" },
+      { labelEn: "DIY & Craft", labelAr: "DIY والحرف", value: "DIY & Craft" },
       { labelEn: "Business", labelAr: "أعمال", value: "Business" },
     ];
 

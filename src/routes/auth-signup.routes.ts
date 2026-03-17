@@ -130,7 +130,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
           city: { type: 'string' },
           state: { type: 'string' },
           zipCode: { type: 'string' },
-          country: { type: 'string', enum: ['Saudi Arabia', 'United Arab Emirates', 'Pakistan'] }
+          country: { type: 'string', enum: ['Saudi Arabia', 'United Arab Emirates', 'PKR'] }
         }
       },
       response: {
@@ -477,7 +477,7 @@ fastify.post('/auth/verify-otp', {
         }
 
         return {
-          message: 'Welcome to Filters Expert!',
+          message: 'Welcome to Paperland!',
           token,
           requiresB2BDetails: false,
           registrationId: user.id
