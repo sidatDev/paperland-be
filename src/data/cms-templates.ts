@@ -726,9 +726,9 @@ export const CMS_TEMPLATES: CmsTemplate[] = [
                     { title: "Best Prices", desc: "Competitive pricing without compromising quality", icon: "/images/icons/price-icon.png" }
                 ],
                 cards: [
-                    { title: "Paper & Stationery", desc: "Premium quality filtration", icon: "/images/icons/air-filter-icon.png", badge: "30% OFF" },
-                    { title: "Writing Instruments", desc: "Industrial grade performance", icon: "/images/icons/oil-filter-icon.png", badge: "" },
-                    { title: "Notebooks & Journals", desc: "Superior purification system", icon: "/images/icons/water-filter-icon.png", badge: "" }
+                    { title: "Paper & Stationery", desc: "Premium quality papers for all needs", icon: "/images/icons/paper-icon.png", badge: "30% OFF" },
+                    { title: "Writing Instruments", desc: "Smooth and precise writing tools", icon: "/images/icons/pen-icon.png", badge: "" },
+                    { title: "Notebooks & Journals", desc: "Elegant journals for your thoughts", icon: "/images/icons/notebook-icon.png", badge: "" }
                 ],
                 stats: [
                     { value: "2000+", label: "Happy Clients" },

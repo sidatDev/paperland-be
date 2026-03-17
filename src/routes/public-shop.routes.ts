@@ -123,15 +123,15 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
                     if (!hasCategories) {
                         const productsForCategories = await (fastify.prisma as any).product.findMany({
-                            where: { name: { in: ['PSG - Roof and ceiling mounted ESP mist collector', 'Fleetguard filter', 'Neville Hoffman', 'Jamal Nieves'] }, isActive: true, deletedAt: null },
+                            where: { name: { in: ['Dollar Premium A4 Paper 80gsm', 'Pelikan Fountain Pen', 'Deli Stapler', 'Faber-Castell Pencils'] }, isActive: true, deletedAt: null },
                             include: { category: true },
                             take: 4
                         });
                         if (productsForCategories.length > 0) {
                             s.push({
                                 id: 'categories-auto', type: 'categories', sortOrder: 0,
-                                displayTitle: 'Shop Filters by Category',
-                                subtitle: 'Browse our filtration products by type and application for the perfect solution.',
+                                displayTitle: 'Shop Stationeries by Category',
+                                subtitle: 'Browse our premium stationeries and office supplies for the perfect solution.',
                                 items: productsForCategories.map((p: any) => ({ id: p.id, customTitle: p.name, customLink: `/en/products/${p.slug || p.id}`, product: p }))
                             });
                         }

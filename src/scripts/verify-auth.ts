@@ -7,7 +7,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function verifyAuth() {
   try {
-    const email = process.env.TEST_ADMIN_EMAIL || 'admin@filtersexpert.com';
+    const email = process.env.TEST_ADMIN_EMAIL || 'admin@paperland.com.pk';
     const password = process.env.TEST_ADMIN_PASSWORD || 'admin123';
     const apiUrl = process.env.API_URL || 'http://localhost:3001';
 

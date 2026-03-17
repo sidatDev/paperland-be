@@ -109,7 +109,7 @@ const privacyPolicyContent = {
         },
         {
             heading: "7. Contact Us",
-            text: "If you have any questions about this Privacy Policy, please contact us at info@filtersexperts.com."
+            text: "If you have any questions about this Privacy Policy, please contact us at info@paperland.com.pk."
         }
     ]
 };
