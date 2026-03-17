@@ -64,9 +64,12 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                 const { s3Client, S3_BUCKET_NAME } = await import('../plugins/storage');
                 const { PutObjectCommand, CreateBucketCommand } = await import('@aws-sdk/client-s3');
                 
+                console.log(`[S3 DEBUG] Attempting upload to: ${process.env.S3_ENDPOINT} | Bucket: ${S3_BUCKET_NAME}`);
                 try {
                     await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET_NAME }));
-                } catch (e) {}
+                } catch (e: any) {
+                    console.log(`[S3 DEBUG] Bucket creation check: ${e.message}`);
+                }
 
                 key = `${folder}/${filename}`;
 

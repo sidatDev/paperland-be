@@ -6,7 +6,7 @@ if (!process.env.S3_ENDPOINT || !process.env.S3_ACCESS_KEY || !process.env.S3_SE
 
 export const s3Client = new S3Client({
   region: "us-east-1", // MinIO requires a region, even if ignored
-  endpoint: process.env.S3_ENDPOINT,
+  endpoint: process.env.S3_ENDPOINT?.replace(/\/$/, ""),
   credentials: {
     accessKeyId: process.env.S3_ACCESS_KEY,
     secretAccessKey: process.env.S3_SECRET_KEY,
