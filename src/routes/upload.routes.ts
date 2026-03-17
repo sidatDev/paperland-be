@@ -79,7 +79,7 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                     ACL: 'public-read'
                 }));
 
-                const endpoint = process.env.S3_ENDPOINT?.replace(/\/$/, "");
+                const endpoint = (process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT || "").replace(/\/$/, "");
                 url = `${endpoint}/${S3_BUCKET_NAME}/${key}`;
 
                 // Process and Save WebP Version (if it's an image)
@@ -206,7 +206,7 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
             
             await s3Client.send(command);
             
-            const endpoint = process.env.S3_ENDPOINT?.replace(/\/$/, "");
+            const endpoint = (process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT || "").replace(/\/$/, "");
             const url = `${endpoint}/${S3_BUCKET_NAME}/${filename}`;
             
             return createResponse({ url }, "File uploaded to S3 successfully");
