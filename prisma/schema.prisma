@@ -262,7 +262,7 @@ model B2BProfile {
 
 model Category {
   id            String     @id @default(uuid())
-  name          String     @unique
+  name          String
   description   String?
   slug          String?    @unique
   isActive      Boolean    @default(true) @map("is_active")

@@ -324,9 +324,6 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any;
     try {
       // Check for products
-      // Important: For soft delete, we might allow deleting category even if products exist, 
-      // but maybe we should disable the products or check if they are active?
-      // Standard practice: Don't allow delete if active products exist.
       const productCount = await (fastify.prisma as any).product.count({ 
         where: { categoryId: id, deletedAt: null } 
       });
@@ -335,23 +332,47 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ message: 'Cannot delete category with associated active products' });
       }
 
-      // Check for subcategories and cascade soft delete them
-      const subCategories = await (fastify.prisma as any).category.findMany({ 
-        where: { parentId: id, deletedAt: null } 
-      });
-
-      // Soft delete all subcategories first (cascade)
-      if (subCategories.length > 0) {
-        await (fastify.prisma as any).category.updateMany({
-          where: { parentId: id, deletedAt: null },
-          data: { 
-            deletedAt: new Date(),
-            isActive: false 
-          }
+      // Recursive helper to soft delete all descendants
+      const softDeleteDescendants = async (parentId: string) => {
+        // Find ALL active subcategories of this parent
+        const subs = await (fastify.prisma as any).category.findMany({
+          where: { parentId, deletedAt: null }
         });
+
+        fastify.log.info(`Soft deleting ${subs.length} subcategories of ${parentId}`);
+
+        for (const sub of subs) {
+          // Check for sub-products
+          const subProductCount = await (fastify.prisma as any).product.count({
+            where: { categoryId: sub.id, deletedAt: null }
+          });
+          
+          if (subProductCount > 0) {
+            throw new Error(`Cannot deactivate: Subcategory "${sub.name}" has associated active products.`);
+          }
+
+          // First, recursively delete its children
+          await softDeleteDescendants(sub.id);
+
+          // Then soft delete the subcategory itself
+          await (fastify.prisma as any).category.update({
+            where: { id: sub.id },
+            data: { 
+              deletedAt: new Date(),
+              isActive: false 
+            }
+          });
+        }
+      };
+
+      try {
+        await softDeleteDescendants(id);
+      } catch (err: any) {
+        fastify.log.error(`Soft delete cascade failed: ${err.message}`);
+        return reply.status(400).send({ message: err.message });
       }
 
-      // Now soft delete the parent category
+      // Now soft delete the main parent category
       await (fastify.prisma as any).category.update({ 
         where: { id },
         data: { 
@@ -422,7 +443,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
     const { id } = request.params as any;
     try {
       const category = await (fastify.prisma as any).category.findUnique({
-        where: { id }
+        where: { id },
+        include: { subCategories: true }
       });
 
       if (!category) {
@@ -433,8 +455,27 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ message: 'Only deactivated categories can be permanently deleted. Deactivate the category first.' });
       }
 
-      // Check for products (even soft-deleted ones might be tied to it, but usually we check for active ones)
-      // For permanent delete, we should probably check if ANY products are tied to it, active or not.
+      // Recursive helper to delete all descendants
+      const deleteDescendants = async (parentId: string) => {
+        const subs = await (fastify.prisma as any).category.findMany({
+          where: { parentId }
+        });
+
+        for (const sub of subs) {
+          // Check for products in sub before deleting
+          const subProductCount = await (fastify.prisma as any).product.count({
+            where: { categoryId: sub.id }
+          });
+          if (subProductCount > 0) {
+            throw new Error(`Cannot delete: Subcategory "${sub.name}" has associated products.`);
+          }
+          
+          await deleteDescendants(sub.id);
+          await (fastify.prisma as any).category.delete({ where: { id: sub.id } });
+        }
+      };
+
+      // Check for products in the main category
       const productCount = await (fastify.prisma as any).product.count({ 
         where: { categoryId: id } 
       });
@@ -443,13 +484,10 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         return reply.status(400).send({ message: 'Cannot permanently delete category with associated products' });
       }
 
-      // Check for subcategories
-      const subCategoryCount = await (fastify.prisma as any).category.count({ 
-        where: { parentId: id } 
-      });
-
-      if (subCategoryCount > 0) {
-        return reply.status(400).send({ message: 'Cannot permanently delete category with associated subcategories' });
+      try {
+        await deleteDescendants(id);
+      } catch (err: any) {
+        return reply.status(400).send({ message: err.message });
       }
 
       await (fastify.prisma as any).category.delete({
