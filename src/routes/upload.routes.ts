@@ -68,7 +68,7 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                 try {
                     await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET_NAME }));
                 } catch (e: any) {
-                    console.log(`[S3 DEBUG] Bucket creation check: ${e.message}`);
+                    // Silently ignore if bucket exists or name reserved
                 }
 
                 key = `${folder}/${filename}`;
@@ -194,7 +194,9 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
             // Try to create bucket if it doesn't exist (ignore error if it already exists)
             try {
                 await s3Client.send(new CreateBucketCommand({ Bucket: S3_BUCKET_NAME }));
-            } catch (e) {}
+            } catch (e: any) {
+                // Silently ignore
+            }
 
             const buffer = await data.toBuffer();
             const ext = path.extname(data.filename);
