@@ -915,9 +915,13 @@ model GlobalSettings {
   seoScriptsBody    String?  @map("seo_scripts_body")
   seoScriptsHeader  String?  @map("seo_scripts_header")
   seoTitle          String?  @map("seo_title")
-  sitemapUrl        String?  @map("sitemap_url")
-  backupS3Endpoint  String?  @map("backup_s3_endpoint")
-  sitemapContent    String?  @map("sitemap_content")
+  sitemapUrl            String?  @map("sitemap_url")
+  backupS3Endpoint      String?  @map("backup_s3_endpoint")
+  sitemapContent        String?  @map("sitemap_content")
+  
+  // Free Shipping Threshold
+  freeShippingThreshold Decimal? @default(2000) @map("free_shipping_threshold") @db.Decimal(10, 2)
+  freeShippingMessage   String?  @default("Orders above Rs. 2,000 automatically qualify for free shipping across Pakistan.") @map("free_shipping_message")
   
   // Bank Details for Manual Payments
   bankAccountName   String?  @map("bank_account_name")

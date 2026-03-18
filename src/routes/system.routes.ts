@@ -116,7 +116,9 @@ export default async function systemRoutes(fastify: FastifyInstance) {
                             seoTitle: { type: 'string' },
                             seoDescription: { type: 'string' },
                             senderName: { type: 'string' },
-                            senderEmail: { type: 'string' }
+                            senderEmail: { type: 'string' },
+                            freeShippingThreshold: { type: 'number' },
+                            freeShippingMessage: { type: 'string' }
                         } 
                     }
                 }
@@ -135,7 +137,9 @@ export default async function systemRoutes(fastify: FastifyInstance) {
               contactEmail: "admin@stationeryexpert.com",
               maintenanceMode: false,
               senderName: "Stationery Expert Support",
-              senderEmail: "no-reply@stationeryexpert.com"
+              senderEmail: "no-reply@stationeryexpert.com",
+              freeShippingThreshold: 2000,
+              freeShippingMessage: "Orders above Rs. 2,000 automatically qualify for free shipping across Pakistan."
           }, 'Default public settings retrieved');
       }
 
@@ -147,7 +151,9 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           seoTitle: settings.seoTitle,
           seoDescription: settings.seoDescription,
           senderName: settings.senderName,
-          senderEmail: settings.senderEmail
+          senderEmail: settings.senderEmail,
+          freeShippingThreshold: Number(settings.freeShippingThreshold || 2000),
+          freeShippingMessage: settings.freeShippingMessage || "Orders above Rs. 2,000 automatically qualify for free shipping across Pakistan."
       }, 'Public settings retrieved');
     } catch (err: any) {
         fastify.log.error(`[SystemSettings] Error fetching public settings: ${err.message}`);
@@ -234,7 +240,9 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           bankAccountNumber: { type: 'string', nullable: true },
           bankName: { type: 'string', nullable: true },
           bankIban: { type: 'string', nullable: true },
-          bankSwiftCode: { type: 'string', nullable: true }
+          bankSwiftCode: { type: 'string', nullable: true },
+          freeShippingThreshold: { type: 'number', nullable: true },
+          freeShippingMessage: { type: 'string', nullable: true }
         }
       },
       response: {
