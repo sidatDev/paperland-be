@@ -768,9 +768,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         const resolvedCategoryId = await resolveEntityId('category', bodyCategoryId || bodyCategory) || existing.categoryId;
         const resolvedBrandId = await resolveEntityId('brand', bodyBrandId || bodyBrand) || existing.brandId;
         
-        const resolvedIsActive = bodyIsActive !== undefined 
-            ? (bodyIsActive === 'true' || bodyIsActive === true) 
-            : (status === "Draft" ? false : (status === "Active" ? true : undefined));
+        // Variables moved closer to usage
         
         const mediaUrls = media !== undefined ? (media || []).map((m: any) => typeof m === 'string' ? m : m.url) : undefined;
         const resolvedImageUrl = (mediaUrls && mediaUrls.length > 0) ? mediaUrls[0] : (data.imageUrl || undefined);
@@ -818,6 +816,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 }
             };
         }
+        const resolvedIsActive = bodyIsActive !== undefined 
+            ? (bodyIsActive === 'true' || bodyIsActive === true) 
+            : (status === "Draft" ? false : (status === "Active" ? true : undefined));
 
         if (resolvedIsActive !== undefined) updateData.isActive = resolvedIsActive;
         if (isFeatured !== undefined) updateData.isFeatured = (isFeatured === 'true' || isFeatured === true);
