@@ -424,7 +424,18 @@ export default async function productRoutes(fastify: FastifyInstance) {
         isFeatured: { type: 'boolean' },
         isVisibleOnEcommerce: { type: 'boolean' },
         industries: { type: 'array', items: { type: 'string' } },
-        media: { type: 'array', items: { type: 'string' } }, // Array of URLs
+        media: { 
+            type: 'array', 
+            items: { 
+                type: 'object',
+                properties: {
+                    url: { type: 'string' },
+                    variantId: { type: 'string', nullable: true },
+                    label: { type: 'string', nullable: true }
+                },
+                required: ['url']
+            } 
+        },
         seo: { type: 'object', additionalProperties: true },
 
         // Variants
@@ -571,7 +582,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         const resolvedIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : true;
         
-        const resolvedImageUrl = (media && media.length > 0) ? media[0] : (data.imageUrl || null);
+        const mediaUrls = (media || []).map((m: any) => typeof m === 'string' ? m : m.url);
+        const resolvedImageUrl = (mediaUrls.length > 0) ? mediaUrls[0] : (data.imageUrl || null);
 
         let currencyRec = await (fastify.prisma as any).currency.findUnique({ where: { code: currency } });
         if (!currencyRec) {
@@ -600,7 +612,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 isFeatured,
                 isVisibleOnEcommerce,
                 imageUrl: resolvedImageUrl,
-                images: media || [],
+                images: mediaUrls,
                 category: { connect: { id: resolvedCategoryId } },
                 brand: { connect: { id: resolvedBrandId } },
                 length: length?.toString(),
@@ -759,7 +771,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
         const resolvedIsActive = bodyIsActive !== undefined 
             ? (bodyIsActive === 'true' || bodyIsActive === true) 
             : (status === "Draft" ? false : (status === "Active" ? true : undefined));
-        const resolvedImageUrl = (media && media.length > 0) ? media[0] : (data.imageUrl || undefined);
+        
+        const mediaUrls = media !== undefined ? (media || []).map((m: any) => typeof m === 'string' ? m : m.url) : undefined;
+        const resolvedImageUrl = (mediaUrls && mediaUrls.length > 0) ? mediaUrls[0] : (data.imageUrl || undefined);
 
         const updateData: any = {};
         
@@ -777,7 +791,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (groupId !== undefined) updateData.groupId = groupId;
         if (status !== undefined) updateData.status = status;
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
-        if (media !== undefined) updateData.images = media;
+        if (mediaUrls !== undefined) updateData.images = mediaUrls;
         
         if (resolvedCategoryId) updateData.category = { connect: { id: resolvedCategoryId } };
         if (resolvedBrandId) updateData.brand = { connect: { id: resolvedBrandId } };
