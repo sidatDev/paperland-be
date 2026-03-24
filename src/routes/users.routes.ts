@@ -372,4 +372,72 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.status(500).send({ message: 'Internal Server Error' });
     }
   });
+
+  // Update own profile
+  fastify.put('/admin/users/profile', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      description: 'Update current user profile',
+      tags: ['Users'],
+      body: {
+        type: 'object',
+        properties: {
+          firstName: { type: 'string' },
+          lastName: { type: 'string' },
+          phoneNumber: { type: 'string' },
+          profilePictureUrl: { type: 'string' }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            id: { type: 'string' },
+            email: { type: 'string' },
+            firstName: { type: 'string', nullable: true },
+            lastName: { type: 'string', nullable: true },
+            phoneNumber: { type: 'string', nullable: true },
+            profilePictureUrl: { type: 'string', nullable: true }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const userId = (request.user as any).id;
+    const { firstName, lastName, phoneNumber, profilePictureUrl } = request.body as any;
+
+    try {
+      const updatedUser = await fastify.prisma.user.update({
+        where: { id: userId },
+        data: {
+          firstName,
+          lastName,
+          phoneNumber,
+          profilePictureUrl
+        }
+      });
+
+      // Log Activity
+      await logActivity(fastify, {
+        entityType: 'USER',
+        entityId: userId,
+        action: 'UPDATE_PROFILE',
+        performedBy: userId,
+        details: { firstName, lastName, phoneNumber, profilePictureUrl },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return updatedUser;
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Internal Server Error' });
+    }
+  });
 }
