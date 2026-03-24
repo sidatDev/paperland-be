@@ -263,6 +263,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         minPrice, maxPrice,
         isActive, status,
         country, locationId,
+        includeVariants,
         ...dynamicFilters 
     } = request.query;
 
@@ -312,11 +313,18 @@ export default async function productRoutes(fastify: FastifyInstance) {
           minPrice !== undefined && minPrice !== "" ? { price: { gte: Number(minPrice) } } : {},
           maxPrice !== undefined && maxPrice !== "" ? { price: { lte: Number(maxPrice) } } : {},
 
-          isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
+          // Only Base Products (Hide Variants unless explicitly requested)
+          String(includeVariants) === 'true' ? {} : { parentId: null },
 
           isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
         ]
       };
+
+      fastify.log.error({ 
+        includeVariants, 
+        receivedType: typeof includeVariants,
+        willInclude: (includeVariants === 'true' || includeVariants === true)
+      }, "DEBUG: Variant Filter check");
 
       if (dynamicFilters.groupNumber) {
         where.AND.push({ groupNumber: { contains: dynamicFilters.groupNumber, mode: 'insensitive' } });
@@ -785,7 +793,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
         }
 
         if (name !== undefined) updateData.name = name;
-        if (bodySku !== undefined) updateData.sku = bodySku;
+        if (bodySku !== undefined) {
+            const skuExists = await (fastify.prisma as any).product.findFirst({
+                where: { sku: bodySku, id: { not: id }, deletedAt: null }
+            });
+            if (skuExists) {
+                return reply.status(400).send(createErrorResponse(`SKU "${bodySku}" already exists for product: ${skuExists.name}`));
+            }
+            updateData.sku = bodySku;
+        }
         if (description !== undefined) updateData.description = description;
         if (fullDescription !== undefined) updateData.fullDescription = fullDescription;
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
@@ -856,9 +872,78 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
 
         if (data.variants !== undefined && Array.isArray(data.variants)) {
-            const newVariants = data.variants.filter((v: any) => !v.id);
+            const variantsInRequest = data.variants;
+            
+            // 1. Sync Existing: Soft-delete variants that are in DB but not in request
+            const existingInDb = await (fastify.prisma as any).product.findMany({
+                where: { parentId: id, deletedAt: null },
+                select: { id: true, sku: true }
+            });
+
+            const requestVariantIds = variantsInRequest.filter((v: any) => v.id).map((v: any) => v.id);
+            const variantsToDelete = existingInDb.filter((v: any) => !requestVariantIds.includes(v.id));
+
+            if (variantsToDelete.length > 0) {
+                await (fastify.prisma as any).product.updateMany({
+                    where: { id: { in: variantsToDelete.map((v: any) => v.id) } },
+                    data: { deletedAt: new Date(), isActive: false }
+                });
+                fastify.log.info(`Soft-deleted ${variantsToDelete.length} variants for product ${id}`);
+            }
+
+            // 2. Update Existing: Update variants that have an ID
+            const variantsToUpdate = variantsInRequest.filter((v: any) => v.id);
+            for (const v of variantsToUpdate) {
+                // Pre-check SKU for update if it changed
+                const current = existingInDb.find((ex: any) => ex.id === v.id);
+                if (current && current.sku !== v.sku) {
+                    const skuConflict = await (fastify.prisma as any).product.findFirst({
+                        where: { sku: v.sku, id: { not: v.id }, deletedAt: null }
+                    });
+                    if (skuConflict) {
+                        return reply.status(400).send(createErrorResponse(`SKU ${v.sku} already exists for another product/variant`));
+                    }
+                }
+
+                await (fastify.prisma as any).product.update({
+                    where: { id: v.id },
+                    data: {
+                        name: v.name,
+                        sku: v.sku,
+                        price: Number(v.salesPrice || v.price || 0),
+                        variantAttributes: v.variantAttributes,
+                        stocks: {
+                            upsert: {
+                                where: { productId_warehouseId: { productId: v.id, warehouseId: 'MAIN' } }, // Assuming MAIN as default warehouse if null
+                                create: { qty: v.stock || 0, locationId: 'MAIN' },
+                                update: { qty: v.stock || 0 }
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. New Variants: Handle creation
+            const newVariants = variantsInRequest.filter((v: any) => !v.id);
             if (newVariants.length > 0) {
-                // Get default currency for variants if not provided
+                // Pre-check for SKU uniqueness in new variants
+                const newVariantSkus = newVariants.map((v: any) => v.sku).filter(Boolean);
+                
+                // Check duplicates within the request
+                const uniqueNewSkus = new Set(newVariantSkus);
+                if (uniqueNewSkus.size !== newVariantSkus.length) {
+                    return reply.status(400).send(createErrorResponse('Duplicate SKUs found within new variants'));
+                }
+
+                // Check against database
+                const existingVariantSkus = await (fastify.prisma as any).product.findMany({
+                    where: { sku: { in: newVariantSkus }, deletedAt: null }
+                });
+                if (existingVariantSkus.length > 0) {
+                    return reply.status(400).send(createErrorResponse(`One or more variant SKUs already exist (e.g. ${existingVariantSkus[0].sku})`));
+                }
+
+                // Get default currency for variants
                 const currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
                 
                 updateData.variants = {
@@ -936,6 +1021,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         return createResponse(transformProduct(updated), "Product Updated");
     } catch (err: any) {
+        if (err.code === 'P2002') {
+            return reply.status(400).send(createErrorResponse('SKU already exists (Unique constraint violation)'));
+        }
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse('Update Failed: ' + err.message));
     }
@@ -971,10 +1059,18 @@ export default async function productRoutes(fastify: FastifyInstance) {
       try {
           const product = await (fastify.prisma as any).product.findUnique({ where: { id } });
           
-          // Perform Soft Delete
+        // Perform Soft Delete (Cascade to variants)
           await (fastify.prisma as any).product.update({ 
             where: { id },
             data: { 
+                deletedAt: new Date(),
+                isActive: false
+            }
+          });
+
+          await (fastify.prisma as any).product.updateMany({
+            where: { parentId: id },
+            data: {
                 deletedAt: new Date(),
                 isActive: false
             }
@@ -1005,8 +1101,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
           // Sync to Typesense (Remove)
           try {
               await fastify.typesense.collections('products').documents(id).delete();
+              // Also remove variants from Typesense? Yes, if they are synced.
+              const variants = await (fastify.prisma as any).product.findMany({ where: { parentId: id }, select: { id: true } });
+              for (const v of variants) {
+                  await fastify.typesense.collections('products').documents(v.id).delete();
+              }
           } catch (tsErr: any) {
-              fastify.log.warn(`Failed to remove product ${id} from Typesense (it might not exist): ${tsErr.message}`);
+              fastify.log.warn(`Failed to remove product ${id} or variants from Typesense: ${tsErr.message}`);
           }
 
           return createResponse(null, "Product Deleted (Soft)");
@@ -1014,6 +1115,251 @@ export default async function productRoutes(fastify: FastifyInstance) {
           fastify.log.error(`[ProductDelete] Error deleting product ${id}: ${err.message}`);
           return reply.status(500).send(createErrorResponse('Delete Failed: ' + (err.message || 'Unknown error')));
       }
+  });
+
+  // Get Deactivated Products
+  fastify.get('/admin/products/deactivated', {
+    schema: {
+        description: 'Get all deactivated products',
+        tags: ['Catalog'],
+        response: {
+            200: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    success: { type: 'boolean' },
+                    data: {
+                        type: 'array',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                id: { type: 'string' },
+                                name: { type: 'string' },
+                                sku: { type: 'string' },
+                                deletedAt: { type: 'string' }
+                            }
+                        }
+                    }
+                }
+            },
+            500: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                    success: { type: 'boolean' }
+                }
+            }
+        }
+    }
+  }, async (request, reply) => {
+    try {
+        const products = await (fastify.prisma as any).product.findMany({
+            where: { NOT: { deletedAt: null } },
+            orderBy: { deletedAt: 'desc' },
+            select: { id: true, name: true, sku: true, deletedAt: true }
+        });
+        return createResponse(products);
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to fetch deactivated products'));
+    }
+  });
+
+  // Restore Product
+  fastify.patch('/admin/products/:id/restore', {
+    schema: {
+        description: 'Restore a deactivated product',
+        tags: ['Catalog'],
+        params: {
+            type: 'object',
+            properties: { id: { type: 'string' } }
+        },
+        response: {
+            500: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                    success: { type: 'boolean' }
+                }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    try {
+        await (fastify.prisma as any).product.update({
+            where: { id },
+            data: { deletedAt: null, isActive: true }
+        });
+
+        // Restore variants
+        await (fastify.prisma as any).product.updateMany({
+            where: { parentId: id },
+            data: { deletedAt: null, isActive: true }
+        });
+
+        // Invalidate Cache for main product
+        const restored = await (fastify.prisma as any).product.findUnique({ where: { id } });
+        if (restored?.slug) {
+            await fastify.cache.del(`product:${restored.slug}`);
+            await fastify.cache.del('shop:home');
+            await fastify.cache.clearPattern('shop:products:*');
+        }
+
+        // Re-sync to Typesense
+        if (restored) {
+            try {
+                // Fetch full product for sync
+                const full = await (fastify.prisma as any).product.findUnique({
+                    where: { id },
+                    include: { category: true, brand: true, industries: { include: { industry: true } }, prices: { include: { currency: true } }, stocks: true }
+                });
+                await fastify.typesense.collections('products').documents().upsert(mapToTypesenseDocument(full));
+                
+                // Also variants
+                const variants = await (fastify.prisma as any).product.findMany({
+                    where: { parentId: id },
+                    include: { category: true, brand: true, industries: { include: { industry: true } }, prices: { include: { currency: true } }, stocks: true }
+                });
+                for (const v of variants) {
+                    await fastify.typesense.collections('products').documents().upsert(mapToTypesenseDocument(v));
+                }
+            } catch (tsErr) {
+                fastify.log.error(tsErr, 'Typesense sync error on restore');
+            }
+        }
+
+        return createResponse(null, "Product Restored");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to restore product'));
+    }
+  });
+
+  // Permanent Delete
+  fastify.delete('/admin/products/:id/permanent', {
+    schema: {
+        description: 'Permanently delete a product',
+        tags: ['Catalog'],
+        params: {
+            type: 'object',
+            properties: { id: { type: 'string' } }
+        },
+        response: {
+            500: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                    success: { type: 'boolean' }
+                }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    try {
+        // Find all variant IDs first
+        const variants = await (fastify.prisma as any).product.findMany({
+            where: { parentId: id },
+            select: { id: true }
+        });
+        const allIds = [id, ...variants.map((v: any) => v.id)];
+
+        // 1. Delete Stock records for all (stocks table doesn't have cascade)
+        await (fastify.prisma as any).stock.deleteMany({
+            where: { productId: { in: allIds } }
+        });
+
+        // 2. Delete entries in other tables that might not have cascade (just in case)
+        // Prices, Industries, Batches, Grades usually have cascade in schema, but we can be explicit if needed.
+        // Reviews, Wishlist, Cart might also have links.
+        await (fastify.prisma as any).review.deleteMany({ where: { productId: { in: allIds } } });
+        await (fastify.prisma as any).wishlistItem.deleteMany({ where: { productId: { in: allIds } } });
+        await (fastify.prisma as any).cartItem.deleteMany({ where: { productId: { in: allIds } } });
+
+        // 3. Delete Variants
+        await (fastify.prisma as any).product.deleteMany({
+            where: { parentId: id }
+        });
+
+        // 4. Then delete parent
+        await (fastify.prisma as any).product.delete({
+            where: { id }
+        });
+
+        return createResponse(null, "Product Permanently Deleted");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to permanently delete product'));
+    }
+  });
+
+  // Bulk Permanent Delete
+  fastify.post('/admin/products/bulk-permanent-delete', {
+    schema: {
+        description: 'Permanently delete multiple products',
+        tags: ['Catalog'],
+        body: {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+                ids: { type: 'array', items: { type: 'string' } }
+            }
+        },
+        response: {
+            200: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    success: { type: 'boolean' },
+                    message: { type: 'string' }
+                }
+            },
+            500: {
+                type: 'object',
+                properties: {
+                    status: { type: 'string' },
+                    message: { type: 'string' },
+                    success: { type: 'boolean' }
+                }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { ids } = request.body;
+    try {
+        // Find all variants for all selected parents
+        const variants = await (fastify.prisma as any).product.findMany({
+            where: { parentId: { in: ids } },
+            select: { id: true }
+        });
+        const variantIds = variants.map((v: any) => v.id);
+        const allIds = [...ids, ...variantIds];
+
+        // 1. Delete Stock records for all
+        await (fastify.prisma as any).stock.deleteMany({
+            where: { productId: { in: allIds } }
+        });
+
+        // 2. Delete entries in other tables
+        await (fastify.prisma as any).review.deleteMany({ where: { productId: { in: allIds } } });
+        await (fastify.prisma as any).wishlistItem.deleteMany({ where: { productId: { in: allIds } } });
+        await (fastify.prisma as any).cartItem.deleteMany({ where: { productId: { in: allIds } } });
+
+        // 3. Delete Products (Variants first, then parents)
+        // We can use a single deleteMany since we have allIds
+        await (fastify.prisma as any).product.deleteMany({
+            where: { id: { in: allIds } }
+        });
+
+        return createResponse(null, `${ids.length} products permanently deleted`);
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to bulk permanently delete products'));
+    }
   });
   
   // Export Products (CSV/Excel)
