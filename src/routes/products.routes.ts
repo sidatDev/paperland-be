@@ -642,7 +642,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         industry: { connect: { id: industryId } }
                     }))
                 } : undefined,
-                parentId,
+                parent: parentId ? { connect: { id: parentId } } : undefined,
                 variantOptions,
                 variantAttributes,
                 variants: variants.length > 0 ? {
@@ -842,7 +842,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
             };
         }
 
-        if (parentId !== undefined) updateData.parentId = parentId;
+        if (parentId !== undefined) {
+            if (parentId && parentId !== "") {
+                updateData.parent = { connect: { id: parentId } };
+            } else {
+                updateData.parent = { disconnect: true };
+            }
+        }
         if (variantOptions !== undefined) updateData.variantOptions = variantOptions;
         if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
 
