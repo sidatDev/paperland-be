@@ -433,7 +433,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                     variantId: { type: 'string', nullable: true },
                     label: { type: 'string', nullable: true }
                 },
-                required: ['url']
+                required: ['url'],
+                additionalProperties: true
             } 
         },
         seo: { type: 'object', additionalProperties: true },
