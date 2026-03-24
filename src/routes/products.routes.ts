@@ -91,8 +91,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
       relatedProductsCount: 0, 
 
       // Added top-level fields for Edit/View Form mapping
-      brand: p.brandId,
-      category: p.categoryId,
+      brand: { id: p.brandId, name: p.brand?.name },
+      category: { id: p.categoryId, name: p.category?.name },
       description: p.description || "",
       width: p.width || "",
       length: p.length || "",
@@ -371,6 +371,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
       groupNumber: { type: 'string', nullable: true },
       groupId: { type: 'string', nullable: true },
       status: { type: 'string' },
+      brand: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: true, nullable: true },
+      category: { type: 'object', properties: { id: { type: 'string' }, name: { type: 'string' } }, additionalProperties: true, nullable: true },
       fullDescription: { type: 'string', nullable: true },
       generalInformation: { type: 'array', items: { type: 'object', additionalProperties: true } },
       technicalSpecifications: { type: 'array', items: { type: 'object', additionalProperties: true } },
