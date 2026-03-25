@@ -341,7 +341,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 shippingAmount: shippingCost, 
                 currency: { connect: { id: currency.id } },
                 address: { connect: { id: addr.id } }, 
-                couponId: couponId as any,
+                ...(couponId ? { coupon: { connect: { id: couponId } } } : {}),
                 paymentMethod: 'PENDING',
 
                 shippingDetails: {

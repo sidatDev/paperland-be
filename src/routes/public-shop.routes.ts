@@ -83,7 +83,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             where: { isActive: true },
                             include: {
                                 product: {
-                                    where: { isActive: true, isEcommerceVisible: true, deletedAt: null },
+                                    where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
                                     include: { prices: { include: { currency: true } } }
                                 }
                             },
@@ -102,19 +102,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
                     const [latestProducts, randomProducts, premiumProducts] = await Promise.all([
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isEcommerceVisible: true, deletedAt: null },
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
                             take: 4,
                             orderBy: { createdAt: 'desc' },
                             include: { prices: { include: { currency: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isEcommerceVisible: true, deletedAt: null },
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
                             take: 4,
                             orderBy: { name: 'asc' },
                             include: { prices: { include: { currency: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isEcommerceVisible: true, deletedAt: null },
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
                             take: 4,
                             orderBy: { updatedAt: 'desc' },
                             include: { prices: { include: { currency: true } } }
@@ -324,7 +324,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const where: any = {
                 AND: [
                     { isActive: true },
-                    { isEcommerceVisible: true },
+                    { isVisibleOnEcommerce: true },
                     { deletedAt: null },
                     { category: { isActive: true, deletedAt: null } },
                     { brand: { isActive: true, deletedAt: null } },
@@ -597,7 +597,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 where: { 
                     id, 
                     isActive: true, 
-                    isEcommerceVisible: true, 
+                    isVisibleOnEcommerce: true, 
                     deletedAt: null,
                     category: { isActive: true, deletedAt: null },
                     AND: [
@@ -684,7 +684,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const product = await (fastify.prisma as any).product.findFirst({
                 where: { 
                     isActive: true, 
-                    isEcommerceVisible: true, 
+                    isVisibleOnEcommerce: true, 
                     deletedAt: null,
                     category: { isActive: true, deletedAt: null },
                     AND: [

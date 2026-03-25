@@ -75,7 +75,7 @@ export default async function shopRoutes(fastify: FastifyInstance) {
         // Build where clause
         const where: any = {
             isActive: true,
-            isEcommerceVisible: true,
+            isVisibleOnEcommerce: true,
             deletedAt: null
         };
 
