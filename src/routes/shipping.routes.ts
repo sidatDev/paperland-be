@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 
 export default async function shippingRoutes(fastify: FastifyInstance) {
@@ -385,6 +386,118 @@ export default async function shippingRoutes(fastify: FastifyInstance) {
       } catch (err: any) {
           fastify.log.error(err);
           return reply.status(500).send({ message: 'Internal Server Error' });
+      }
+  });
+
+  // GET Couriers
+  fastify.get('/admin/shipping/couriers', {
+      preHandler: [fastify.authenticate],
+      schema: {
+          description: 'Get all shipping couriers',
+          tags: ['Admin Shipping Management'],
+          response: {
+              200: {
+                  type: 'object',
+                  properties: {
+                      status: { type: 'string' },
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                      data: {
+                          type: 'array',
+                          items: {
+                              type: 'object',
+                              properties: {
+                                  id: { type: 'string' },
+                                  name: { type: 'string' },
+                                  identifier: { type: 'string' },
+                                  isActive: { type: 'boolean' },
+                                  config: { type: 'object', additionalProperties: true }
+                              }
+                          }
+                      }
+                  }
+              },
+              500: {
+                  type: 'object',
+                  properties: {
+                      status: { type: 'string' },
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                      data: { type: 'null' }
+                  }
+              }
+          }
+      }
+  }, async (request, reply) => {
+      try {
+          const couriers = await (fastify.prisma as any).shippingCourier.findMany({
+              orderBy: { name: 'asc' }
+          });
+          return createResponse(couriers, 'Couriers retrieved successfully');
+      } catch (err: any) {
+          fastify.log.error(err);
+          return reply.status(500).send(createErrorResponse('Internal Server Error'));
+      }
+  });
+
+  // UPDATE Courier
+  fastify.put('/admin/shipping/couriers/:id', {
+      preHandler: [fastify.authenticate],
+      schema: {
+          description: 'Update shipping courier configuration',
+          tags: ['Admin Shipping Management'],
+          params: { type: 'object', properties: { id: { type: 'string' } } },
+          body: {
+              type: 'object',
+              properties: {
+                  isActive: { type: 'boolean' },
+                  config: { type: 'object', additionalProperties: true }
+              }
+          },
+          response: {
+              200: {
+                  type: 'object',
+                  properties: {
+                      status: { type: 'string' },
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                      data: { type: 'object', additionalProperties: true }
+                  }
+              },
+              500: {
+                  type: 'object',
+                  properties: {
+                      status: { type: 'string' },
+                      success: { type: 'boolean' },
+                      message: { type: 'string' },
+                      data: { type: 'null' }
+                  }
+              }
+          }
+      }
+  }, async (request: any, reply) => {
+      const { id } = request.params;
+      const { isActive, config } = request.body;
+      try {
+          const courier = await (fastify.prisma as any).shippingCourier.update({
+              where: { id },
+              data: { isActive, config }
+          });
+
+          await logActivity(fastify, {
+              entityType: 'SHIPPING_COURIER',
+              entityId: id,
+              action: 'UPDATE',
+              performedBy: request.user?.id,
+              details: request.body,
+              ip: request.ip,
+              userAgent: request.headers['user-agent']
+          });
+
+          return createResponse(courier, 'Courier updated successfully');
+      } catch (err: any) {
+          fastify.log.error(err);
+          return reply.status(500).send(createErrorResponse('Internal Server Error'));
       }
   });
 }

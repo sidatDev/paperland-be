@@ -379,6 +379,7 @@ model Product {
   wishlistItems        WishlistItem[]
   discountOverrides    ProductDiscountOverride[]
   returnItems          ReturnItem[]
+  flashSaleItems       FlashSaleItem[]
 
   // Variants Support
   parentId          String?   @map("parent_id")
@@ -448,6 +449,7 @@ model Warehouse {
   city      String
   country   String    @default("PK")
   address   String?
+  type      String    @default("WAREHOUSE") // RETAIL_STORE, WAREHOUSE, PICKUP_POINT
   isActive  Boolean   @default(true) @map("is_active")
   isDefault Boolean   @default(false) @map("is_default")
   createdAt DateTime  @default(now()) @map("created_at")
@@ -958,6 +960,13 @@ model GlobalSettings {
   bankIban          String? @map("bank_iban")
   bankSwiftCode     String? @map("bank_swift_code")
 
+  // Social Auth Settings
+  googleClientId     String?  @map("google_client_id")
+  googleClientSecret String?  @map("google_client_secret")
+  facebookAppId      String?  @map("facebook_app_id")
+  facebookAppSecret  String?  @map("facebook_app_secret")
+  socialAuthEnabled  Boolean  @default(false) @map("social_auth_enabled")
+
   @@map("global_settings")
 }
 
@@ -1251,6 +1260,7 @@ model FlashSaleItem {
   stockLimit  Int?      @map("stock_limit")
   soldCount   Int       @default(0) @map("sold_count")
   flashSale   FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  product     Product   @relation(fields: [productId], references: [id])
 
   @@unique([flashSaleId, productId])
   @@map("flash_sale_items")

@@ -9,6 +9,7 @@ const warehouseSchema = z.object({
   city: z.string().min(2).max(50),
   country: z.string().length(2).default('SA'),
   address: z.string().optional(),
+  type: z.enum(['WAREHOUSE', 'RETAIL_STORE', 'PICKUP_POINT']).default('WAREHOUSE'),
   isDefault: z.boolean().optional(),
   isActive: z.boolean().optional(),
 });
@@ -107,7 +108,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
   // POST /admin/warehouses - Create a new warehouse
   fastify.post('/admin/warehouses', async (request, reply) => {
     const validatedBody = warehouseSchema.parse(request.body);
-    const { code, name, city, country, address, isDefault } = validatedBody;
+    const { code, name, city, country, address, isDefault, type } = validatedBody;
 
     try {
       // Check for unique name (case-insensitive)
@@ -132,6 +133,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
           city,
           country,
           address,
+          type,
           isDefault: !!isDefault
         }
       });

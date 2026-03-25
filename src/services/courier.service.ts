@@ -1,33 +1,32 @@
-
 import { PrismaClient } from '@prisma/client';
-
-export interface BookingResponse {
-  success: boolean;
-  trackingNumber?: string;
-  labelUrl?: string;
-  message?: string;
-}
+import { ICourierProvider, BookingRequest, BookingResponse } from './courier/courier.interface';
+import { BlueExProvider } from './courier/blueex.provider';
+import { LeopardsProvider } from './courier/leopards.provider';
 
 export class CourierService {
   private prisma: PrismaClient;
+  private providers: Map<string, ICourierProvider> = new Map();
 
   constructor(prisma: PrismaClient) {
     this.prisma = prisma;
+    
+    // Register available providers
+    this.registerProvider(new BlueExProvider());
+    this.registerProvider(new LeopardsProvider());
+  }
+
+  private registerProvider(provider: ICourierProvider) {
+    this.providers.set(provider.identifier, provider);
   }
 
   /**
-   * Mock booking logic for demo purposes
+   * Book a shipment using the specified courier
    */
   async bookShipment(orderId: string, courierIdentifier: string): Promise<BookingResponse> {
     try {
-      const order = await this.prisma.order.findFirst({
-        where: { 
-            OR: [
-                { id: orderId },
-                { orderNumber: orderId }
-            ]
-        },
-        include: { address: true }
+      const order = await this.prisma.order.findUnique({
+        where: { id: orderId },
+        include: { address: true, user: true }
       });
 
       if (!order) {
@@ -42,39 +41,47 @@ export class CourierService {
         return { success: false, message: 'Courier not found or inactive' };
       }
 
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      const provider = this.providers.get(courierIdentifier);
+      if (!provider) {
+        return { success: false, message: `No implementation found for courier: ${courierIdentifier}` };
+      }
 
-      // Generate a mock tracking number
-      const trackingPrefix = courierIdentifier.toUpperCase();
-      const randomDigits = Math.floor(100000 + Math.random() * 900000);
-      const trackingNumber = `DEMO-${trackingPrefix}-${randomDigits}`;
-
-      // Update Order with mock booking data
-      await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          trackingNumber: trackingNumber,
-          courierPartner: courier.name,
-          shipperBookingId: `BOOK-${randomDigits}`,
-          shipperLabelUrl: `https://example.com/labels/${trackingNumber}.pdf`,
-          status: 'SHIPPED', // Update status to SHIPPED for the demo
-          shippedDate: new Date()
-        }
-      });
-
-      // Log the activity
-      // Note: In a real app, we'd use the logActivity utility here
-      
-      return {
-        success: true,
-        trackingNumber: trackingNumber,
-        labelUrl: `https://example.com/labels/${trackingNumber}.pdf`,
-        message: `Shipment successfully booked with ${courier.name}`
+      // Construct booking request
+      const bookingRequest: BookingRequest = {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        customerName: `${order.user?.firstName || ''} ${order.user?.lastName || ''}`.trim() || 'Customer',
+        customerPhone: order.user?.phoneNumber || '0000000000',
+        customerAddress: `${order.address?.street1 || ''} ${order.address?.street2 || ''}`.trim() || 'Unknown Address',
+        customerCity: order.address?.city || 'Unknown City',
+        totalAmount: Number(order.totalAmount),
+        isCod: order.paymentMethod?.toUpperCase() === 'COD' || order.paymentStatus !== 'PAID',
+        pieces: 1, // Defaulting to 1 for now
+        weightInKg: 0.5 // Defaulting to 0.5kg for now
       };
+
+      // Call the provider's booking logic
+      const response = await provider.createBooking(bookingRequest, courier.config);
+
+      if (response.success && response.trackingNumber) {
+        // Update Order with booking data
+        await this.prisma.order.update({
+          where: { id: orderId },
+          data: {
+            trackingNumber: response.trackingNumber,
+            courierPartner: courier.name,
+            shipperBookingId: response.bookingId,
+            shipperLabelUrl: response.labelUrl,
+            status: 'SHIPPED',
+            shippedDate: new Date()
+          }
+        });
+      }
+
+      return response;
     } catch (error: any) {
       console.error('Courier booking error:', error);
-      return { success: false, message: error.message || 'Internal simulation error' };
+      return { success: false, message: error.message || 'API Integration error' };
     }
   }
 

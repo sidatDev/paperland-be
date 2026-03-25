@@ -70,7 +70,12 @@ export default async function systemRoutes(fastify: FastifyInstance) {
               smtpPort: 587,
               smtpEncryption: "TLS",
               senderName: "Stationery Expert Support",
-              senderEmail: "no-reply@stationeryexpert.com"
+              senderEmail: "no-reply@stationeryexpert.com",
+              socialAuthEnabled: false,
+              googleClientId: null,
+              googleClientSecret: null,
+              facebookAppId: null,
+              facebookAppSecret: null
           }, 'Default settings retrieved');
       }
       
@@ -242,7 +247,12 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           bankIban: { type: 'string', nullable: true },
           bankSwiftCode: { type: 'string', nullable: true },
           freeShippingThreshold: { type: 'number', nullable: true },
-          freeShippingMessage: { type: 'string', nullable: true }
+          freeShippingMessage: { type: 'string', nullable: true },
+          googleClientId: { type: 'string', nullable: true },
+          googleClientSecret: { type: 'string', nullable: true },
+          facebookAppId: { type: 'string', nullable: true },
+          facebookAppSecret: { type: 'string', nullable: true },
+          socialAuthEnabled: { type: 'boolean' }
         }
       },
       response: {

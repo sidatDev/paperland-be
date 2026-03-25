@@ -91,6 +91,7 @@ const start = async () => {
     await fastify.register(import('./routes/warehouse.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/industries.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/orders.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/payments.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/checkout.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/cart.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/wishlist.routes'), { prefix: '/api/v1' });
@@ -98,12 +99,12 @@ const start = async () => {
     await fastify.register(import('./routes/bulk-order.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/support.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/shipping.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/shipment.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/crm.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/reviews.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/pricing.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/coupons.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/returns.routes'), { prefix: '/api/v1' });
-    await fastify.register(import('./routes/courier.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/whatsapp.routes'), { prefix: '/api/v1' });
     
     // New Admin Module Routes
