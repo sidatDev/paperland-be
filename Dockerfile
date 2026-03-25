@@ -1,16 +1,16 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM node:20 AS builder
 
-# Install OpenSSL and other build dependencies
-RUN apt-get update && apt-get install -y openssl python3 make g++ && rm -rf /var/lib/apt/lists/*
+# Install specific dependencies for Prisma/Sharp
+RUN apt-get update && apt-get install -y openssl python3 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files first
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install all dependencies (including dev)
+# Install dependencies (regular install for reliability in Coolify)
 RUN npm ci
 
 # Marker for sequential stage synchronization
