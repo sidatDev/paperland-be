@@ -884,10 +884,17 @@ export default async function productRoutes(fastify: FastifyInstance) {
             const variantsToDelete = existingInDb.filter((v: any) => !requestVariantIds.includes(v.id));
 
             if (variantsToDelete.length > 0) {
-                await (fastify.prisma as any).product.updateMany({
-                    where: { id: { in: variantsToDelete.map((v: any) => v.id) } },
-                    data: { deletedAt: new Date(), isActive: false }
-                });
+                for (const v of variantsToDelete) {
+                    await (fastify.prisma as any).product.update({
+                        where: { id: v.id },
+                        data: { 
+                            deletedAt: new Date(), 
+                            isActive: false,
+                            sku: `${v.sku}_del_${Date.now()}`,
+                            slug: v.slug ? `${v.slug}_del_${Date.now()}` : undefined
+                        }
+                    });
+                }
                 fastify.log.info(`Soft-deleted ${variantsToDelete.length} variants for product ${id}`);
             }
 
@@ -1022,7 +1029,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
         return createResponse(transformProduct(updated), "Product Updated");
     } catch (err: any) {
         if (err.code === 'P2002') {
-            return reply.status(400).send(createErrorResponse('SKU already exists (Unique constraint violation)'));
+            const target = err.meta?.target ? err.meta.target.join(', ') : 'unknown field';
+            fastify.log.error(`P2002 Error: Unique constraint violation on ${target}`, err);
+            return reply.status(400).send(createErrorResponse(`Unique constraint violation on field(s): ${target}`));
         }
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse('Update Failed: ' + err.message));
@@ -1064,17 +1073,28 @@ export default async function productRoutes(fastify: FastifyInstance) {
             where: { id },
             data: { 
                 deletedAt: new Date(),
-                isActive: false
+                isActive: false,
+                sku: `${product.sku}_del_${Date.now()}`,
+                slug: product.slug ? `${product.slug}_del_${Date.now()}` : undefined
             }
           });
 
-          await (fastify.prisma as any).product.updateMany({
-            where: { parentId: id },
-            data: {
-                deletedAt: new Date(),
-                isActive: false
-            }
+          // Fetch variants to delete to dynamically update their SKUs
+          const variantsToDelete = await (fastify.prisma as any).product.findMany({
+            where: { parentId: id }
           });
+
+          for (const v of variantsToDelete) {
+            await (fastify.prisma as any).product.update({
+                where: { id: v.id },
+                data: {
+                    deletedAt: new Date(),
+                    isActive: false,
+                    sku: `${v.sku}_del_${Date.now()}`,
+                    slug: v.slug ? `${v.slug}_del_${Date.now()}` : undefined
+                }
+            });
+          }
 
           // Invalidate Cache
           if (product) {
