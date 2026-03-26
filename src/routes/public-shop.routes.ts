@@ -326,6 +326,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     { isActive: true },
                     { isVisibleOnEcommerce: true },
                     { deletedAt: null },
+                    { parentId: null },
                     { category: { isActive: true, deletedAt: null } },
                     { brand: { isActive: true, deletedAt: null } },
                     {
@@ -614,7 +615,13 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     category: true,
                     brand: true,
                     stocks: true,
-                    prices: { include: { currency: true } }
+                    prices: { include: { currency: true } },
+                    variants: {
+                        include: {
+                            prices: { include: { currency: true } },
+                            stocks: true
+                        }
+                    }
                 }
             });
 
@@ -648,7 +655,26 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 length: product.length,
                 weight: product.weight,
                 volume: product.volume,
-                specifications: product.specifications || {}
+                specifications: product.specifications || {},
+                variantOptions: product.variantOptions,
+                variantAttributes: product.variantAttributes,
+                variants: await Promise.all((product.variants || []).map(async (v: any) => {
+                    const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                    const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
+                    const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
+                    
+                    return {
+                        id: v.id,
+                        name: v.name,
+                        sku: v.sku,
+                        price: vFinal,
+                        originalPrice: vBase !== vFinal ? vBase : undefined,
+                        currency: 'PKR',
+                        image_url: v.imageUrl,
+                        totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                        variantAttributes: v.variantAttributes
+                    };
+                }))
             }));
         } catch (err) {
             fastify.log.error(err);
@@ -707,7 +733,13 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     category: true,
                     brand: true,
                     stocks: true,
-                    prices: { include: { currency: true } }
+                    prices: { include: { currency: true } },
+                    variants: {
+                        include: {
+                            prices: { include: { currency: true } },
+                            stocks: true
+                        }
+                    }
                 }
             });
 
@@ -740,7 +772,25 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 length: product.length,
                 weight: product.weight,
                 volume: product.volume,
-                specifications: product.specifications || {},
+                variantOptions: product.variantOptions,
+                variantAttributes: product.variantAttributes,
+                variants: await Promise.all((product.variants || []).map(async (v: any) => {
+                    const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                    const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
+                    const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
+
+                    return {
+                        id: v.id,
+                        name: v.name,
+                        sku: v.sku,
+                        price: vFinal,
+                        originalPrice: vBase !== vFinal ? vBase : undefined,
+                        currency: 'PKR',
+                        image_url: v.imageUrl,
+                        totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                        variantAttributes: v.variantAttributes
+                    };
+                })),
                 seo: (() => {
                     // If product has manual SEO from CMS, use it
                     const manualSeo = product.seo as any;
