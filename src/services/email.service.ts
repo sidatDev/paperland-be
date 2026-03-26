@@ -37,30 +37,34 @@ export class EmailService {
         }
       });
       
-      if (settings && settings.smtpHost && settings.smtpPort) {
+      // Fixed: Only use DB settings if Host, Port, AND Credentials exist.
+      // Otherwise, SendGrid/SMTP will fail with 550 Unauthenticated if just host is provided.
+      if (settings && settings.smtpHost && settings.smtpPort && settings.smtpUser && settings.smtpPass) {
         console.log('📬 Using SMTP settings from Database');
         return {
           host: settings.smtpHost,
           port: settings.smtpPort,
           secure: settings.smtpPort === 465,
-          auth: settings.smtpUser && settings.smtpPass ? {
+          auth: {
             user: settings.smtpUser,
             pass: settings.smtpPass,
-          } : undefined,
+          },
           senderEmail: settings.senderEmail || process.env.SENDER_EMAIL || 'no-reply@paperland.com.pk',
           senderName: (settings.senderName || process.env.SENDER_NAME || 'Paperland').trim()
         };
+      } else {
+        console.log('⚠️ Database SMTP settings incomplete (Missing Host/User/Pass). Falling back to .env.');
       }
     } catch (error: any) {
       console.warn(`⚠️ Database SMTP fetch failed: ${error.message.substring(0, 100)}... Falling back to .env.`);
     }
 
-    // Fallback to .env
+    // Fallback to .env (Proved to work in user's environment)
     console.log('📂 Using SMTP settings from .env fallback');
     const config = {
       host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
       port: parseInt(process.env.SMTP_PORT || '587'),
-      secure: process.env.SMTP_SECURE === 'true' || false,
+      secure: parseInt(process.env.SMTP_PORT || '587') === 465,
       auth: process.env.SMTP_USER && process.env.SMTP_PASS ? {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
@@ -87,7 +91,6 @@ export class EmailService {
       port: config.port,
       secure: config.secure,
       auth: config.auth,
-      requireTLS: config.port === 587,
       tls: {
         rejectUnauthorized: false
       }
@@ -233,11 +236,18 @@ export class EmailService {
       console.log(`✅ Email sent successfully to ${options.to} | Subject: ${options.subject}`);
     } catch (error: any) {
       console.error('❌ Email send error:', error.message);
+      
       if (error.code === 'EAUTH') {
-        console.error('🔒 AUTHENTICATION FAILED: Please check your SMTP_USER and SMTP_PASS in .env or Database');
+        console.error('🔒 AUTHENTICATION FAILED (535): Incorrect SMTP_USER or SMTP_PASS.');
+        console.error('👉 TIP: For Brevo, ensure SMTP_USER is your account email and SMTP_PASS is an active SMTP Key.');
+      } else if (error.code === 'ECONNREFUSED') {
+        console.error('🔌 CONNECTION REFUSED: Check your SMTP_HOST and SMTP_PORT settings.');
+      } else if (error.code === 'ESOCKET') {
+        process.stdout.write('📡 NETWORK ERROR: SMTP server timed out or connection was aborted.\n');
       }
-      // Don't throw - allow cleanup etc to continue
-      console.warn('⚠️ Email failed but suppressed for resilience. Check logs above for exact connection details.');
+
+      // Don't throw - allow signup to proceed since user can see OTP in console
+      console.warn('⚠️ Email failed but suppressed for resilience. DEV OTP is still visible in console above.');
     }
   }
 

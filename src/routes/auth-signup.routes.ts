@@ -89,7 +89,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         entityType: 'USER',
         entityId: 'NEW_REGISTRATION',
         action: 'SIGNUP_INITIATED',
-        performedBy: 'SYSTEM',
+        performedBy: undefined, // Fixed: Guest user doesn't exist yet
         details: { email, step: 1, registrationId: pendingReg.id },
         ip: request.ip,
         userAgent: request.headers['user-agent']
@@ -126,11 +126,11 @@ export default async function authRoutes(fastify: FastifyInstance) {
           firstName: { type: 'string', minLength: 2, maxLength: 40 },
           lastName: { type: 'string', minLength: 2, maxLength: 40 },
           phoneNumber: { type: 'string', maxLength: 15 },
-          phoneCountryCode: { type: 'string', enum: ['+966', '+971', '+92'] },
+          phoneCountryCode: { type: 'string', enum: ['+92'] },
           city: { type: 'string' },
           state: { type: 'string' },
           zipCode: { type: 'string' },
-          country: { type: 'string', enum: ['Saudi Arabia', 'United Arab Emirates', 'PKR'] }
+          country: { type: 'string', enum: ['Pakistan'] }
         }
       },
       response: {
@@ -255,7 +255,7 @@ fastify.post('/auth/verify-otp', {
         entityType: 'USER',
         entityId: 'NEW_REGISTRATION',
         action: 'EMAIL_VERIFIED',
-        performedBy: 'SYSTEM',
+        performedBy: undefined, // Fixed: Guest user doesn't exist yet
         details: { email, step: 2, registrationId: pendingReg.id },
         ip: request.ip,
         userAgent: request.headers['user-agent']
