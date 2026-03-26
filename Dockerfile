@@ -13,9 +13,6 @@ COPY prisma ./prisma/
 # Install dependencies (regular install for reliability in Coolify)
 RUN npm ci
 
-# Marker for sequential stage synchronization
-RUN touch /app/build-done.txt
-
 # Copy source code and config
 COPY . .
 
@@ -24,6 +21,12 @@ RUN npx prisma generate
 
 # Build TypeScript
 RUN npm run build
+
+# Prune devDependencies to keep node_modules light for the runner
+RUN npm prune --omit=dev
+
+# Marker for sequential stage synchronization
+RUN touch /app/build-done.txt
 
 # Stage 2: Production
 FROM node:20-slim AS runner
@@ -39,14 +42,12 @@ WORKDIR /app
 # Set environment
 ENV NODE_ENV production
 
-# Copy package files and install production-only dependencies
+# Copy package files
 COPY package*.json ./
-RUN npm ci --omit=dev
 
-# Copy built code and prisma artifacts from builder
+# Copy built code, prisma artifacts, AND pruned node_modules from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma/client ./node_modules/@prisma/client
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 
 # Expose port
