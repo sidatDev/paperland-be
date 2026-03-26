@@ -243,8 +243,8 @@ export default async function profileRoutes(fastify: FastifyInstance) {
                     // Fallback: Create country if it's one of the supported ones (Self-Healing)
                     const supportedCountries: any = {
                         'Pakistan': { code: 'PK', currency: 'PKR' },
-                        'Saudi Arabia': { code: 'SA', currency: 'SAR' },
-                        'United Arab Emirates': { code: 'AE', currency: 'AED' }
+                        'United Arab Emirates': { code: 'AE', currency: 'AED' },
+                        'Saudi Arabia': { code: 'SA', currency: 'SAR' }
                     };
                     
                     if (supportedCountries[country]) {
@@ -310,7 +310,7 @@ export default async function profileRoutes(fastify: FastifyInstance) {
                         city: city || 'Pending',
                         state: state || 'Pending',
                         zipCode: zipCode || '00000',
-                        countryId: countryId || (await fastify.prisma.country.findFirst({ select: { id: true } }))?.id || 'saudi-arabia-id-fallback',
+                        countryId: (countryId || (await fastify.prisma.country.findFirst({ where: { code: 'PK' }, select: { id: true } }))?.id || (await fastify.prisma.country.findFirst({ select: { id: true } }))?.id || '') as string,
                         phone: currentUser.phoneNumber || 'Pending'
                     }
                 });

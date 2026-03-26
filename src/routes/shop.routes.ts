@@ -167,7 +167,7 @@ export default async function shopRoutes(fastify: FastifyInstance) {
                 id: p.id,
                 name: p.name,
                 price: p.prices[0]?.amount || 0,
-                currency: p.prices[0]?.currency?.code || 'SAR',
+                currency: p.prices[0]?.currency?.code || 'PKR',
                 image_url: p.imageUrl,
                 images: p.images,
                 brand: p.brand?.name,

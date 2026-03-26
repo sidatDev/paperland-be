@@ -98,7 +98,7 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
         carrier: timelineData.carrier || order.courierPartner || 'Standard Delivery',
         trackingNumber: order.trackingNumber,
         totalAmount: order.totalAmount ? parseFloat(order.totalAmount.toString()) : 0,
-        currency: order.currency?.code || 'SAR',
+        currency: order.currency?.code || 'PKR',
         timeline: timelineData.timeline || []
       };
 

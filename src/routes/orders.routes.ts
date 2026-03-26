@@ -1193,7 +1193,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
         carrier: timelineData.carrier || order.courierPartner || 'Standard Delivery',
         trackingNumber: order.trackingNumber,
         totalAmount: parseFloat(order.totalAmount.toString()),
-        currency: order.currency?.code || 'SAR',
+        currency: order.currency?.code || 'PKR',
         timeline: timelineData.timeline || []
       });
 

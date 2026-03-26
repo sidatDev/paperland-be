@@ -222,10 +222,9 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
                const country = o.address?.country?.name?.toLowerCase() || '';
                const currency = o.currency?.code;
 
-               if (country.includes('saudi') || currency === 'SAR') KSA += amt;
+               if (country.includes('pakistan') || currency === 'PKR') PK += amt;
                else if (country.includes('uae') || country.includes('emirates') || currency === 'AED') UAE += amt;
-               else if (country.includes('pakistan') || country.includes('pkr') || currency === 'PKR') PK += amt;
-               else KSA += amt; // Default
+               else KSA += amt; // Default (Other/Legacy)
              });
 
              result.push({

@@ -1445,7 +1445,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
           
           if (!priceValue || priceValue === 0) {
             const sarBase = Number(p.price || 0);
-            const rates: Record<string, number> = { 'SAR': 1.0, 'AED': 1.0, 'PKR': 74.5 };
+            const rates: Record<string, number> = { 'PKR': 1.0, 'SAR': 0.013, 'AED': 0.013 };
             const rate = rates[currCode.toUpperCase()] || 1.0;
             const converted = sarBase * rate;
             priceValue = type === 'retail' ? converted : (converted * 0.9);
@@ -1488,12 +1488,10 @@ export default async function productRoutes(fastify: FastifyInstance) {
               industry: p.industries?.map((i: any) => i.industry?.name).filter(Boolean).join(', ') || "N/A",
               status: p.isActive ? "Active" : "Inactive",
               basePrice: Number(p.price || 0),
-              sarRetail: getPriceByCurrency(p, 'SAR', 'retail'),
-              sarWholesale: getPriceByCurrency(p, 'SAR', 'wholesale'),
-              aedRetail: getPriceByCurrency(p, 'AED', 'retail'),
-              aedWholesale: getPriceByCurrency(p, 'AED', 'wholesale'),
               pkrRetail: getPriceByCurrency(p, 'PKR', 'retail'),
               pkrWholesale: getPriceByCurrency(p, 'PKR', 'wholesale'),
+              aedRetail: getPriceByCurrency(p, 'AED', 'retail'),
+              aedWholesale: getPriceByCurrency(p, 'AED', 'wholesale'),
               totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - s.reservedQty), 0) || 0),
               seoTitle: seo.title || "",
               seoDescription: seo.description || "",

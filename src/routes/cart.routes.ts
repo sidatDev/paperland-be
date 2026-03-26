@@ -56,10 +56,10 @@ export default async function cartRoutes(fastify: FastifyInstance) {
     const pricedItems = await PricingEngine.calculateBulkPrices(
         fastify.prisma as any,
         cart.items.map((item: any) => {
-            const sar = item.product.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+            const pkr = item.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
             return {
                 productId: item.productId,
-                basePrice: sar ? Number(sar.priceRetail) : Number(item.product.price || 0),
+                basePrice: pkr ? Number(pkr.priceRetail) : Number(item.product.prices?.[0]?.priceRetail || item.product.price || 0),
                 sku: item.product.sku
             };
         }),

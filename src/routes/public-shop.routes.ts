@@ -158,8 +158,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => ({
                             id: i.product?.id || i.id, name: i.customTitle || i.product?.name || 'Unnamed', image: i.customImage || i.product?.imageUrl || '',
                             price: (() => {
-                                const sar = i.product?.prices?.find((pr: any) => pr.currency?.code === 'SAR');
-                                return sar ? Number(sar.priceRetail) : Number(i.product?.price || 0);
+                                const pkr = i.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                                return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
                             })(),
                             currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge
                         }))
@@ -169,10 +169,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 const priced = await PricingEngine.calculateBulkPrices(
                     fastify.prisma as any,
                     itemsWithProducts.map((i: any) => {
-                        const sar = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                        const pkr = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                         return {
                             productId: i.product.id,
-                            basePrice: sar ? Number(sar.priceRetail) : Number(i.product.price || 0),
+                            basePrice: pkr ? Number(pkr.priceRetail) : Number(i.product.prices?.[0]?.priceRetail || i.product.price || 0),
                             sku: i.product.sku
                         };
                     }),
@@ -494,18 +494,18 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 }).then(async (prods: any[]) => {
                     const userId = (request.user as any)?.id;
                     if (!userId) return prods.map((p: any) => {
-                        const sar = p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
-                        const basePrice = sar ? Number(sar.priceRetail) : Number(p.price || 0);
+                        const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                        const basePrice = pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0);
                         return { ...p, price: basePrice };
                     });
 
                     const priced = await PricingEngine.calculateBulkPrices(
                         fastify.prisma as any,
                         prods.map((p: any) => {
-                            const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                            const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                             return {
                                 productId: p.id,
-                                basePrice: sar ? Number(sar.priceRetail) : Number(p.price || 0),
+                                basePrice: pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0),
                                 sku: p.sku
                             };
                         }),
@@ -629,8 +629,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             const userId = (request.user as any)?.id;
             const basePrice = (() => {
-                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return sar ? Number(sar.priceRetail) : Number(product.price || 0);
+                const pkr = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                return pkr ? Number(pkr.priceRetail) : Number(product.prices?.[0]?.priceRetail || product.price || 0);
             })();
             const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
 
@@ -746,8 +746,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
             
             const basePrice = (() => {
-                const sar = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return sar ? Number(sar.priceRetail) : Number(product.price || 0);
+                const pkr = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                return pkr ? Number(pkr.priceRetail) : Number(product.prices?.[0]?.priceRetail || product.price || 0);
             })();
             const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
             
