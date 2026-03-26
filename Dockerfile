@@ -11,7 +11,7 @@ COPY package*.json ./
 COPY prisma ./prisma/
 
 # Install dependencies (regular install for reliability in Coolify)
-RUN npm ci
+RUN npm ci --no-audit --no-fund
 
 # Copy source code and config
 COPY . .
@@ -23,7 +23,7 @@ RUN npx prisma generate
 RUN npm run build
 
 # Prune devDependencies to keep node_modules light for the runner
-RUN npm prune --omit=dev
+RUN npm prune --omit=dev --no-audit --no-fund
 
 # Marker for sequential stage synchronization
 RUN touch /app/build-done.txt
