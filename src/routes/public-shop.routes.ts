@@ -251,7 +251,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 const categories = await (fastify.prisma as any).category.findMany({
                         where: { isActive: true, deletedAt: null },
                         select: { id: true, name: true, slug: true, imageUrl: true, parentId: true },
-                        orderBy: { name: 'asc' }
+                        orderBy: { position: 'asc' }
                     });
 
                 const hierarchy = ((cats: any[]) => {

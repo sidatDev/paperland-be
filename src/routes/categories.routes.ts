@@ -85,7 +85,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
              select: { id: true, name: true, slug: true, isActive: true, parentId: true } 
           }
         },
-        orderBy: { name: 'asc' }
+        orderBy: { position: 'asc' }
       });
       return categories;
     } catch (err) {
@@ -149,7 +149,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug: { type: 'string' },
           imageUrl: { type: 'string' },
           isActive: { type: 'boolean' },
-          parentId: { type: 'string', nullable: true }
+          parentId: { type: 'string', nullable: true },
+          position: { type: 'integer' }
         }
       },
       response: {
@@ -186,7 +187,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { name, description, slug, imageUrl, isActive, parentId } = request.body as any;
+    const { name, description, slug, imageUrl, isActive, parentId, position } = request.body as any;
     try {
       const category = await (fastify.prisma as any).category.create({
         data: { 
@@ -195,7 +196,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
           imageUrl,
           isActive: isActive ?? true,
-          parentId: parentId || null
+          parentId: parentId || null,
+          position: position || 0
         }
       });
 
@@ -240,13 +242,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug: { type: 'string' },
           imageUrl: { type: 'string' },
           isActive: { type: 'boolean' },
-          parentId: { type: 'string', nullable: true }
+          parentId: { type: 'string', nullable: true },
+          position: { type: 'integer' }
         }
       }
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { name, description, slug, imageUrl, isActive, parentId } = request.body as any;
+    const { name, description, slug, imageUrl, isActive, parentId, position } = request.body as any;
     try {
       const category = await (fastify.prisma as any).category.update({
         where: { id },
@@ -256,7 +259,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug, 
           imageUrl, 
           isActive,
-          parentId: parentId || null 
+          parentId: parentId || null,
+          position
         }
       });
 
@@ -572,6 +576,69 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       });
 
       return { success: true, message: 'Category restored successfully' };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Internal Server Error' });
+    }
+  });
+
+  // Reorder categories
+  fastify.patch('/admin/categories/reorder', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('category_manage')],
+    schema: {
+      description: 'Bulk update category positions',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['orders'],
+        properties: {
+          orders: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'position'],
+              properties: {
+                id: { type: 'string' },
+                position: { type: 'integer' }
+              }
+            }
+          }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { orders } = request.body as any;
+    try {
+      await (fastify.prisma as any).$transaction(
+        orders.map((o: any) =>
+          (fastify.prisma as any).category.update({
+            where: { id: o.id },
+            data: { position: o.position }
+          })
+        )
+      );
+
+      // Invalidate public cache
+      if ((fastify as any).cache) {
+        await (fastify as any).cache.del('shop:categories:hierarchy');
+      }
+
+      return { success: true, message: 'Category order updated successfully' };
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Internal Server Error' });

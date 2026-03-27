@@ -501,6 +501,7 @@ export default async function reportsRoutes(fastify: FastifyInstance) {
 
             // 3. Products by Category (Top 5)
             const categories = await prisma.category.findMany({
+                where: { isActive: true, deletedAt: null },
                 include: { _count: { select: { products: true } } }
             });
 

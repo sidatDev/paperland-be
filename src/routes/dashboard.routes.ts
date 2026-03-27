@@ -388,6 +388,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
                 product: {
                   include: {
                     category: {
+                      where: { isActive: true, deletedAt: null },
                       include: { parent: true }
                     }
                   }
@@ -420,7 +421,11 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           } else {
             // Original logic: Product distribution
             const categories = await prisma.category.findMany({
-                where: { parentId: null }, // Only show parent categories as requested
+                where: { 
+                  parentId: null,
+                  isActive: true,
+                  deletedAt: null 
+                }, // Only show active parent categories
                 include: { _count: { select: { products: true } } }
             });
 
