@@ -79,6 +79,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
                     growth: { type: 'string' }
                   }
                 },
+                deliveredCount: { type: 'integer' },
                 returnRate: {
                   type: 'object',
                   properties: {
@@ -125,7 +126,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
         where: { role: { name: { notIn: ['SUPER_ADMIN', 'REGIONAL_ADMIN'] } } }
       });
 
-      // 4. Delivered Rate
+      // 4. Delivered Rate & Count
       const deliveredOrders = await prisma.order.count({ where: { status: 'DELIVERED' } });
       const deliveredRate = totalOrders > 0 ? ((deliveredOrders / totalOrders) * 100).toFixed(1) : "0.0";
 
@@ -152,6 +153,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
           value: deliveredRate, // Sending raw number/string
           growth: "+0.0%"
         },
+        deliveredCount: deliveredOrders,
         returnRate: {
           value: returnRate,
           growth: "+0.0%"
@@ -331,33 +333,21 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
               }
           });
 
-          const regionMap: Record<string, number> = {};
-          
+          // --- NEW: City Breakdown grouping ---
+          const cityMap: Record<string, number> = {};
           orders.forEach((order: any) => {
-              const country = order.address?.country?.name?.toLowerCase() || '';
-              const currency = order.currency?.code;
-              
-              let mappedCountry = 'Saudi Arabia'; // Default
-              if (country.includes('saudi') || currency === 'SAR') mappedCountry = 'Saudi Arabia';
-              else if (country.includes('uae') || country.includes('emirates') || currency === 'AED') mappedCountry = 'UAE';
-              else if (country.includes('pakistan') || country.includes('pkr') || currency === 'PKR') mappedCountry = 'PKR';
-
-              regionMap[mappedCountry] = (regionMap[mappedCountry] || 0) + 1;
+              const city = order.address?.city || 'Unknown';
+              cityMap[city] = (cityMap[city] || 0) + 1;
           });
 
-          const colors: Record<string, string> = {
-              'Saudi Arabia': 'bg-emerald-500',
-              'UAE': 'bg-blue-500',
-              'PKR': 'bg-green-600'
-          };
-
-          const result = Object.entries(regionMap).map(([country, count]) => ({
-              country, 
+          const cityResult = Object.entries(cityMap).map(([city, count]) => ({
+              city, 
               count,
-              color: colors[country] || 'bg-slate-500'
-          })).sort((a, b) => b.count - a.count);
+              color: 'bg-indigo-500' // Consistent color for cities
+          })).sort((a: any, b: any) => b.count - a.count).slice(0, 8);
+          // ------------------------------------
 
-          return createResponse(result, "Today Regional Orders Retrieved");
+          return createResponse(cityResult, "Today City Orders Retrieved");
       } catch (err: any) {
           return reply.status(500).send(createErrorResponse(err.message));
       }
@@ -450,13 +440,19 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       try {
           // Mocking or simple count
           const prisma = (fastify.prisma as any);
-          const totalProducts = await prisma.product.count();
-          const lowStock = 0; // Requires complex stock logic
+          const totalProducts = await prisma.product.count({ where: { deletedAt: null } });
+          
+          // Calculate low stock where qty <= reorderLevel
+          // Using raw query for field-to-field comparison in inventory snapshot
+          const lowStockResult = await prisma.$queryRaw`SELECT COUNT(*) as count FROM stocks WHERE qty <= reorder_level`;
+          const lowStock = Number(lowStockResult[0]?.count || 0);
+
+          const status = lowStock > 0 ? "Warning" : "Healthy";
           
            return createResponse({
                totalProducts,
                lowStock,
-               status: "Healthy"
+               status
            }, "Inventory Snapshot Retrieved");
       } catch (err: any) {
            return reply.status(500).send(createErrorResponse(err.message));
@@ -524,7 +520,7 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
       // 2. Pending B2B Approvals
       const pendingB2B = await prisma.user.count({
-        where: { accountStatus: 'IN_REVIEW' },
+        where: { accountStatus: { in: ['PENDING', 'PENDING_DOCS', 'IN_REVIEW'] } },
       });
 
       // 3. New Orders Today
@@ -577,10 +573,25 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
       const { limit = 20 } = request.query;
 
       const activities = await prisma.auditLog.findMany({
+        where: {
+          performer: {
+            role: {
+              name: { in: ['SUPER_ADMIN', 'REGIONAL_ADMIN', 'ADMIN'] }
+            }
+          }
+        },
         take: limit,
         orderBy: { createdAt: 'desc' },
         include: {
-          performer: { select: { id: true, firstName: true, lastName: true, email: true } },
+          performer: { 
+            select: { 
+               id: true, 
+               firstName: true, 
+               lastName: true, 
+               email: true,
+               role: { select: { name: true } }
+            } 
+          },
         },
       });
 
