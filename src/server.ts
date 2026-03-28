@@ -9,11 +9,13 @@ import fastifyCors from '@fastify/cors';
 import { swaggerConfig, swaggerUiConfig } from './_docs/swagger';
 
 const fastify = Fastify({
-  logger: true
+  logger: true,
+  pluginTimeout: 30000
 });
 
 import path from 'path';
 import fs from 'fs';
+import productRelationsRoutes from './routes/product-relations.routes';
 
 // Ensure uploads directory exists
 const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
@@ -88,6 +90,7 @@ const start = async () => {
     await fastify.register(import('./routes/categories.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/brands.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/products.routes'), { prefix: '/api/v1' });
+    await fastify.register(productRelationsRoutes, { prefix: '/api/v1' });
     await fastify.register(import('./routes/warehouse.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/industries.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/orders.routes'), { prefix: '/api/v1' });

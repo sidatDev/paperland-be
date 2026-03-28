@@ -382,6 +382,10 @@ model Product {
   returnItems          ReturnItem[]
   flashSaleItems       FlashSaleItem[]
 
+  // Product Relations (Related, FBT, Upsell)
+  sourceRelations   ProductRelation[] @relation("SourceRelations")
+  targetRelations   ProductRelation[] @relation("TargetRelations")
+
   // Variants Support
   parentId          String?   @map("parent_id")
   parent            Product?  @relation("ProductVariants", fields: [parentId], references: [id])
@@ -1338,4 +1342,25 @@ model SecurityDeposit {
 
   @@index([b2bProfileId])
   @@map("security_deposits")
+}
+
+// Product Relations (Related Products, Frequently Bought Together, Upsells)
+model ProductRelation {
+  id              String   @id @default(uuid())
+  sourceProductId String   @map("source_product_id")
+  targetProductId String   @map("target_product_id")
+  type            String   // "RELATED" | "FBT" | "UPSELL"
+  score           Int      @default(0)
+  isManual        Boolean  @default(true) @map("is_manual")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  sourceProduct Product @relation("SourceRelations", fields: [sourceProductId], references: [id], onDelete: Cascade)
+  targetProduct Product @relation("TargetRelations", fields: [targetProductId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceProductId, targetProductId, type])
+  @@index([sourceProductId, type])
+  @@index([targetProductId])
+  @@map("product_relations")
 }
