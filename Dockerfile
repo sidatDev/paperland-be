@@ -1,57 +1,45 @@
 # Stage 1: Build
-FROM node:20 AS builder
+FROM node:20-slim AS builder
 
-# Install specific dependencies for Prisma/Sharp
-RUN apt-get update && apt-get install -y openssl python3 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy package files first
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies (regular install for reliability in Coolify)
 RUN npm ci --no-audit --no-fund
 
-# Copy source code and config
 COPY . .
 
-# Generate Prisma Client
 RUN npx prisma generate
-
-# Build TypeScript
 RUN npm run build
 
-# Prune devDependencies to keep node_modules light for the runner
-RUN npm prune --omit=dev --no-audit --no-fund
-
-# Marker for sequential stage synchronization
-RUN touch /app/build-done.txt
+# Remove devDeps but keep Prisma engines
+RUN npm prune --omit=dev
 
 # Stage 2: Production
 FROM node:20-slim AS runner
 
-# Force Docker to finish the builder stage before starting this one
-COPY --from=builder /app/build-done.txt /tmp/
-
-# Install OpenSSL for Prisma
-RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-
-# Set environment
 ENV NODE_ENV production
 
-# Copy package files
-COPY package*.json ./
-
-# Copy built code, prisma artifacts, AND pruned node_modules from builder
+# Only copy essential artifacts
+COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 
-# Expose port
 EXPOSE 3001
 
-# Command to run migrations and then the application
-CMD npx prisma migrate deploy && node dist/server.js
+# Direct execution - no wrapping shell or npx overhead
+CMD ["node", "dist/server.js"]
