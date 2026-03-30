@@ -458,19 +458,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             let orderBy: any;
             switch (sort) {
                 case 'price_asc':
-                    orderBy = { price: 'asc' };
+                    orderBy = [{ price: 'asc' }, { name: 'asc' }];
                     break;
                 case 'price_desc':
-                    orderBy = { price: 'desc' };
+                    orderBy = [{ price: 'desc' }, { name: 'asc' }];
                     break;
                 case 'alphabetical':
                     orderBy = { name: 'asc' };
                     break;
                 case 'featured':
-                    orderBy = { isFeatured: 'desc' };
+                    orderBy = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
                     break;
                 case 'best_seller':
-                    orderBy = { orderItems: { _count: 'desc' } };
+                    orderBy = [{ orderItems: { _count: 'desc' } }, { name: 'asc' }];
                     break;
                 case 'newest':
                 default:

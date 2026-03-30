@@ -571,6 +571,60 @@ Paperland Team
 
     await this.sendEmail({ to, subject: emailSubject, html });
   }
+
+  /**
+   * Send notification to admin for new Contact Us submission
+   */
+  async sendContactUsNotification(name: string, email: string, phone: string, subject: string, message: string, attachments?: string[]): Promise<void> {
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@paperland.com.pk';
+    const emailSubject = `New Contact Inquiry: ${subject}`;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background-color: #E31E24; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; }
+          .info-row { margin: 10px 0; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+          .label { font-weight: bold; display: inline-block; width: 120px; color: #666; }
+          .message-box { background: white; padding: 20px; border-radius: 8px; border: 1px solid #eee; margin-top: 20px; white-space: pre-wrap; }
+          .attachments { margin-top: 15px; }
+          .attachment-link { display: inline-block; padding: 5px 10px; background: #eee; border-radius: 4px; margin-right: 5px; color: #E31E24; text-decoration: none; font-size: 12px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h2>New Contact Inquiry</h2>
+          </div>
+          <div class="content">
+            <div class="info-row"><span class="label">Name:</span><span>${name}</span></div>
+            <div class="info-row"><span class="label">Email:</span><span>${email}</span></div>
+            <div class="info-row"><span class="label">Phone:</span><span>${phone}</span></div>
+            <div class="info-row"><span class="label">Subject:</span><span>${subject}</span></div>
+            
+            <div class="message-box">
+              <strong>Message:</strong><br/>
+              ${message}
+            </div>
+
+            ${attachments && attachments.length > 0 ? `
+              <div class="attachments">
+                <strong>Attachments:</strong><br/>
+                ${attachments.map((url, i) => `<a href="${url}" target="_blank" class="attachment-link">Attachment ${i + 1}</a>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    await this.sendEmail({ to: adminEmail, subject: emailSubject, html });
+  }
 }
 
 // Export class for initialization with Prisma
