@@ -1,5 +1,12 @@
 import nodemailer from 'nodemailer';
 import { PrismaClient } from '@prisma/client';
+import { 
+  getOTPEmailTemplate, 
+  getNewsletterWelcomeTemplate, 
+  getContactUsConfirmationTemplate, 
+  getOrderConfirmationTemplate, 
+  getOrderStatusUpdateTemplate 
+} from '../templates/email-templates';
 
 interface EmailOptions {
   to: string;
@@ -108,41 +115,7 @@ export class EmailService {
     console.log(`🔑 DEV OTP for ${to}: ${otpCode}`);
     console.log('=================================================');
     
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #ED2823; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; border-radius: 0 0 8px 8px; }
-          .otp-code { font-size: 32px; font-weight: bold; letter-spacing: 5px; color: #ED2823; text-align: center; padding: 20px; background-color: #fff; border: 2px dashed #ED2823; border-radius: 4px; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>Email Verification</h1>
-          </div>
-          <div class="content">
-            ${userName ? `<p>Hello ${userName},</p>` : '<p>Hello,</p>'}
-            <p>Thank you for registering with <strong>Paperland</strong>!</p>
-            <p>Please use the following 6-digit verification code to complete your registration:</p>
-            <div class="otp-code">${otpCode}</div>
-            <p><strong>This code will expire in 10 minutes.</strong></p>
-            <p>If you didn't request this code, you can safely ignore this email.</p>
-          </div>
-          <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Paperland. All rights reserved.</p>
-            <p>This is an automated email. Please do not reply.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
+    const html = getOTPEmailTemplate(otpCode, userName);
     const text = `
       Hello${userName ? ' ' + userName : ''},
       
@@ -419,33 +392,8 @@ Paperland Team
    * Send newsletter welcome email
    */
   async sendNewsletterWelcomeEmail(to: string): Promise<void> {
-    const config = await this.getSmtpSettings();
     const subject = 'Welcome to Paperland Newsletter';
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #eee; border-radius: 8px, overflow: hidden;">
-        <div style="background-color: #ED2823; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">Welcome!</h1>
-        </div>
-        <div style="padding: 30px; background-color: #ffffff;">
-          <h2 style="color: #333;">Thank you for subscribing!</h2>
-          <p style="font-size: 16px; color: #4b5563; line-height: 1.6;">
-            You've successfully joined the <strong>Paperland</strong> newsletter.
-          </p>
-          <p style="font-size: 16px; color: #4b5563; line-height: 1.6;">
-            We'll keep you updated with the latest trends, filtration technologies, and industry insights.
-          </p>
-          <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-          <p style="color: #9ca3af; font-size: 14px;">
-            Best regards,<br>
-            <strong>Paperland Team</strong>
-          </p>
-          <div style="margin-top: 20px; font-size: 12px; color: #9ca3af; text-align: center;">
-            If you wish to unsubscribe, please contact us at ${config.senderEmail}
-          </div>
-        </div>
-      </div>
-    `;
+    const htmlContent = getNewsletterWelcomeTemplate();
 
     await this.sendEmail({
       to,
@@ -624,6 +572,42 @@ Paperland Team
     `;
 
     await this.sendEmail({ to: adminEmail, subject: emailSubject, html });
+  }
+
+  /**
+   * Send confirmation receipt to user who filled Contact Us form
+   */
+  async sendContactUsConfirmationEmail(to: string, name: string, subject: string): Promise<void> {
+    const emailSubject = `We've received your inquiry: ${subject}`;
+    const html = getContactUsConfirmationTemplate(name, subject);
+    const text = `Hello ${name}, thank you for contacting Paperland. We've received your message regarding "${subject}" and will respond within 24 hours.`;
+
+    await this.sendEmail({ to, subject: emailSubject, html, text });
+    console.log(`📧 Contact Confirmation Email sent to: ${to}`);
+  }
+
+  /**
+   * Send order confirmation email to customer
+   */
+  async sendOrderConfirmationEmail(to: string, orderData: any): Promise<void> {
+    const subject = `Your order is placed! #${orderData.orderNumber} - Paperland`;
+    const html = getOrderConfirmationTemplate(orderData);
+    const text = `Hi ${orderData.user?.firstName}, thank you for shopping with Paperland! Your order #${orderData.orderNumber} has been successfully placed.`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 Order Confirmation Email sent to: ${to}`);
+  }
+
+  /**
+   * Send order status update email to customer
+   */
+  async sendOrderStatusUpdateEmail(to: string, orderData: any, newStatus: string): Promise<void> {
+    const subject = `Status Update for Order #${orderData.orderNumber} - Paperland`;
+    const html = getOrderStatusUpdateTemplate(orderData, newStatus);
+    const text = `Hi ${orderData.user?.firstName}, your order #${orderData.orderNumber} status has been updated to ${newStatus.toUpperCase()}.`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 Order Status Update Email sent to: ${to} | New Status: ${newStatus}`);
   }
 }
 

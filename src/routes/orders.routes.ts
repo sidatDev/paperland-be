@@ -2,6 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
+import { emailService } from '../services/email.service';
 import { z } from 'zod';
 
 // Order Validation Schema
@@ -433,15 +434,28 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                fastify.log.error(cacheErr, 'Failed to invalidate cache on bulk status update');
            }
           // Log activities for each order 
-          await Promise.all(ids.map((id: string) => 
-               logActivity(fastify, {
+          await Promise.all(ids.map(async (id: string) => {
+               const order = await (fastify.prisma as any).order.findFirst({
+                   where: { OR: [{ id }, { orderNumber: id }] },
+                   include: { user: true, items: { include: { product: true } } }
+               });
+               
+               if (order && order.user?.email) {
+                   try {
+                       await emailService.sendOrderStatusUpdateEmail(order.user.email, order, status);
+                   } catch (e) {
+                       fastify.log.error(e, `Failed to send bulk status update email for order ${id}`);
+                   }
+               }
+
+               return logActivity(fastify, {
                   entityType: 'ORDER',
                   entityId: id,
                   action: 'UPDATE_STATUS',
                   performedBy: userId,
                   details: { oldStatus: 'Bulk', newStatus: status, bulk: true }
-               })
-          ));
+               });
+          }));
 
           return createResponse({ count: successCount }, "Bulk Status Updated");
       } catch (err: any) {
@@ -573,6 +587,26 @@ export default async function orderRoutes(fastify: FastifyInstance) {
              ip: request.ip,
              userAgent: request.headers['user-agent']
           });
+
+          // Send Status Update Email
+          try {
+              const fullOrder = await (fastify.prisma as any).order.findUnique({
+                  where: { id: order.id },
+                  include: {
+                      user: true,
+                      items: {
+                          include: {
+                              product: true
+                          }
+                      }
+                  }
+              });
+              if (fullOrder && fullOrder.user?.email) {
+                  await emailService.sendOrderStatusUpdateEmail(fullOrder.user.email, fullOrder, status);
+              }
+          } catch (emailErr) {
+              fastify.log.error(emailErr, `Failed to send status update email for order ${order.id}`);
+          }
 
           fastify.log.info(`Order ${id} status updated from ${order.status} to ${status}`);
 

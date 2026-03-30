@@ -12,18 +12,6 @@ export default async function publicContactRoutes(fastify: FastifyInstance) {
       description: 'Public contact form submission with ReCaptcha and File Attachment',
       tags: ['Public'],
       consumes: ['multipart/form-data'],
-      body: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          email: { type: 'string' },
-          phone: { type: 'string' },
-          subject: { type: 'string' },
-          message: { type: 'string' },
-          captchaToken: { type: 'string' },
-          attachments: { type: 'array', items: { type: 'string' } }
-        }
-      }
     }
   }, async (request: any, reply) => {
     try {
@@ -71,6 +59,15 @@ export default async function publicContactRoutes(fastify: FastifyInstance) {
         message || 'No Message',
         fileUrls
       );
+
+      // 3. Send Confirmation Email to User
+      if (email) {
+        try {
+          await emailService.sendContactUsConfirmationEmail(email, name || 'Customer', subject || 'Contact Inquiry');
+        } catch (emailErr) {
+          fastify.log.error(emailErr, 'Failed to send contact confirmation email to user');
+        }
+      }
 
       return createResponse({ success: true }, "Message sent successfully! We'll get back to you soon.");
 

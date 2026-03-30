@@ -70,6 +70,8 @@ export default fp(async (fastify: FastifyInstance) => {
 
     const publicPaths = [
       '/admin/auth/login',
+      '/api/public/contact',
+      '/api/public/orders/track',
       '/auth/login',
       '/auth/signup',
       '/auth/signup-step1',

@@ -154,7 +154,21 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
           // Send Email Notification
           if (action === 'APPROVE') {
               try {
-                  // emailService.sendOrderConfirmation(...) // To be implemented in email.service.ts
+                  // Refetch full order with items and user for the template
+                  const fullOrder = await prisma.order.findUnique({
+                      where: { id: transaction.orderId },
+                      include: {
+                          user: true,
+                          items: {
+                              include: {
+                                  product: true
+                              }
+                          }
+                      }
+                  });
+                  if (fullOrder && fullOrder.user?.email) {
+                      await emailService.sendOrderStatusUpdateEmail(fullOrder.user.email, fullOrder, orderStatus);
+                  }
                   fastify.log.info(`Payment approved for Order ${transaction.order.orderNumber}. Email notification triggered.`);
               } catch (e) {
                   fastify.log.error(e, "Failed to send payment approval email");

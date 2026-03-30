@@ -590,6 +590,26 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             userAgent: request.headers['user-agent']
         });
 
+        // 5. Send Order Confirmation Email
+        try {
+            const fullOrder = await fastify.prisma.order.findUnique({
+                where: { id: finalOrder.id },
+                include: {
+                    user: true,
+                    items: {
+                        include: {
+                            product: true
+                        }
+                    }
+                }
+            });
+            if (fullOrder && fullOrder.user?.email) {
+                await emailService.sendOrderConfirmationEmail(fullOrder.user.email, fullOrder);
+            }
+        } catch (emailErr) {
+            fastify.log.error(emailErr, 'Failed to send order confirmation email');
+        }
+
         return { 
             orderId: finalOrder.id, 
             orderNumber: finalOrder.orderNumber,

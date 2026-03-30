@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { ICourierProvider, BookingRequest, BookingResponse } from './courier/courier.interface';
 import { BlueExProvider } from './courier/blueex.provider';
 import { LeopardsProvider } from './courier/leopards.provider';
+import { emailService } from './email.service';
 
 export class CourierService {
   private prisma: PrismaClient;
@@ -76,6 +77,22 @@ export class CourierService {
             shippedDate: new Date()
           }
         });
+
+        // Send Status Update Email (SHIPPED)
+        if (order.user?.email) {
+            try {
+                // Refetch to get updated order with tracking info for email
+                const updatedOrder = await this.prisma.order.findUnique({
+                    where: { id: orderId },
+                    include: { user: true, items: { include: { product: true } } }
+                });
+                if (updatedOrder) {
+                    await emailService.sendOrderStatusUpdateEmail(order.user.email, updatedOrder, 'SHIPPED');
+                }
+            } catch (emailErr) {
+                console.error('Failed to send shipping notification email:', emailErr);
+            }
+        }
       }
 
       return response;
