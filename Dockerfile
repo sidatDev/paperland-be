@@ -1,8 +1,7 @@
 # Stage 1: Build
 FROM node:20-slim AS builder
 
-# Install build dependencies for Debian slim
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     python3 \
     make \
@@ -11,56 +10,36 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy package files for dependency installation
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Leverage the npm cache mount for faster builds
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --prefer-offline --no-audit
+RUN npm ci --no-audit --no-fund
 
-# Copy source code
 COPY . .
 
-# Generate Prisma Client with proper binary targets
 RUN npx prisma generate
-
-# Build TypeScript
 RUN npm run build
 
-# Remove devDependencies and prune node_modules
-RUN npm prune --omit=dev --no-audit --no-fund
+# Remove devDeps but keep Prisma engines
+RUN npm prune --omit=dev
 
 # Stage 2: Production
 FROM node:20-slim AS runner
 
-# Install runtime dependencies for Debian slim
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     openssl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV NODE_ENV production
 
-# The 'node' user already exists in the official image
-# Set ownership before switching to the node user
+# Only copy essential artifacts
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 
-# Create uploads directory and set permissions
-RUN mkdir -p public/uploads && \
-    chown -R node:node /app
-
-# Set environment
-ENV NODE_ENV=production \
-    PORT=3001
-
-# Switch to non-root user
-USER node
-
-# Expose port
 EXPOSE 3001
 
-# Command to run migrations and then the application
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+# Direct execution - no wrapping shell or npx overhead
+CMD ["node", "dist/server.js"]
