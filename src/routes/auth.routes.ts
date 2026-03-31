@@ -38,8 +38,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
                 email: { type: 'string' },
                 role: { type: 'string' },
                 name: { type: 'string' },
-                firstName: { type: 'string' },
-                lastName: { type: 'string' },
+                firstName: { type: 'string', nullable: true },
+                lastName: { type: 'string', nullable: true },
                 city: { type: 'string', nullable: true },
                 state: { type: 'string', nullable: true },
                 zipCode: { type: 'string', nullable: true },
@@ -153,7 +153,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         })
       ]);
 
-      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission.key) || [];
+      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
 
       return {
         token,
@@ -205,8 +205,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
                 email: { type: 'string' },
                 role: { type: 'string' },
                 name: { type: 'string' },
-                firstName: { type: 'string' },
-                lastName: { type: 'string' },
+                firstName: { type: 'string', nullable: true },
+                lastName: { type: 'string', nullable: true },
                 city: { type: 'string', nullable: true },
                 state: { type: 'string', nullable: true },
                 zipCode: { type: 'string', nullable: true },
@@ -360,7 +360,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         })
       ]);
 
-      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission.key) || [];
+      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
 
       return {
         token,
@@ -426,8 +426,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
                 email: { type: 'string' },
                 role: { type: 'string' },
                 name: { type: 'string' },
-                firstName: { type: 'string' },
-                lastName: { type: 'string' }
+                firstName: { type: 'string', nullable: true },
+                lastName: { type: 'string', nullable: true }
               }
             },
             message: { type: 'string' }

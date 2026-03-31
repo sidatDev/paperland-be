@@ -75,6 +75,11 @@ const start = async () => {
       }
     });
 
+    // Global Request Monitor (Aggressive Logging)
+    fastify.addHook('onRequest', async (request) => {
+        process.stdout.write(`🚀 [ENTRY LOG]: ${request.method} ${request.url}\n`);
+    });
+
     // Register Routes
     await fastify.register(import('./routes/auth.routes'), { prefix: '/api/v1' });
     

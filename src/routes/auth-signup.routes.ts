@@ -475,6 +475,13 @@ fastify.post('/auth/verify-otp', {
             userAgent: request.headers['user-agent']
           });
         }
+        
+        // Send Welcome Email for B2C
+        try {
+          await emailService.sendIndividualWelcomeEmail(user.email, user.firstName || 'Customer');
+        } catch (e) {
+          fastify.log.error(e, `Failed to send welcome email to ${user.email}`);
+        }
 
         return {
           message: 'Welcome to Paperland!',
@@ -542,6 +549,22 @@ fastify.post('/auth/verify-otp', {
           return newUser;
         });
 
+        // Trigger Application Received Email for B2B now (Step 5 completion)
+        try {
+          const finalUser = await fastify.prisma.user.findUnique({ where: { id: user.id } });
+          if (finalUser && finalUser.email) {
+            process.stdout.write(`📧 B2B Step 5: Sending application received email to ${finalUser.email}...\n`);
+            await emailService.sendB2BReviewConfirmationEmail(
+              finalUser.email, 
+              finalUser.firstName || 'Applicant', 
+              'your business'
+            );
+            process.stdout.write(`✅ B2B Step 5 email sent successfully.\n`);
+          }
+        } catch (e: any) {
+          fastify.log.error(e, `Failed to send B2B application received email to ${user.id}`);
+        }
+
         return {
           message: 'Please provide your company details',
           token: null,
@@ -576,6 +599,8 @@ fastify.post('/auth/verify-otp', {
       }
     }
   }, async (request, reply) => {
+    process.stdout.write('🚀 [ROUTE START]: POST /api/v1/auth/b2b-company-details\n');
+    console.log('🚀 [ROUTE START]: POST /api/v1/auth/b2b-company-details');
     try {
       // Parse multipart form data
       const parts = request.parts();
@@ -713,6 +738,32 @@ fastify.post('/auth/verify-otp', {
         });
       }
 
+      process.stdout.write(`📧 DEBUG: B2B Step 6 completed. Ensuring user data for email...\n`);
+      
+      // Explicitly re-fetch user to ensure we have email and firstName
+      const finalUser = await fastify.prisma.user.findUnique({
+        where: { id: updatedUser.id }
+      });
+
+      // Send B2B Review Confirmation Email
+      try {
+        if (!finalUser || !finalUser.email) {
+          process.stdout.write(`❌ DEBUG: Email skipped - finalUser or email is missing\n`);
+          console.error('❌ DEBUG: Cannot send email - finalUser or email is missing', { finalUser });
+        } else {
+          process.stdout.write(`📧 Sending B2B confirmation to ${finalUser.email}...\n`);
+          await emailService.sendB2BReviewConfirmationEmail(
+            finalUser.email, 
+            finalUser.firstName || 'Applicant', 
+            formData.companyName || 'your company'
+          );
+          process.stdout.write(`✅ B2B confirmation sent successfully to ${finalUser.email}\n`);
+        }
+      } catch (e: any) {
+        console.error(`❌ DEBUG: Error in sendB2BReviewConfirmationEmail: ${e.message}`, e);
+        fastify.log.error(e, `Failed to send B2B review confirmation email to ${updatedUser?.email}`);
+      }
+
       return { message: 'Company details saved successfully' };
 
     } catch (err: any) {
@@ -771,6 +822,9 @@ fastify.post('/auth/verify-otp', {
       apCountryCode 
     } = request.body as any;
 
+    process.stdout.write('🚀 [ROUTE START]: PATCH /api/v1/auth/b2b-contact-details\n');
+    console.log('🚀 [ROUTE START]: PATCH /api/v1/auth/b2b-contact-details');
+
     try {
       // Find user and company details
       const user = await fastify.prisma.user.findUnique({ where: { id: userId } });
@@ -821,6 +875,18 @@ fastify.post('/auth/verify-otp', {
         primaryContactName,
         billingEmail
       );
+
+      // Send confirmation email to user as well
+      try {
+        await emailService.sendB2BReviewConfirmationEmail(
+          user.email,
+          user.firstName || 'Applicant',
+          companyDetails?.companyName || 'your company'
+        );
+        console.log(`✅ DEBUG: sendB2BReviewConfirmationEmail sent to user in Step 5: ${user.email}`);
+      } catch (e) {
+        console.error(`❌ DEBUG: Failed to send B2B confirmation to user in Step 5: ${user.email}`, e);
+      }
 
       // Log activity
       if (user) {

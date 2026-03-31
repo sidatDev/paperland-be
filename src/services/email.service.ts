@@ -208,8 +208,10 @@ export class EmailService {
         html: options.html,
         text: options.text,
       });
+      process.stdout.write(`✅ [EMAIL SUCCESS] Sent to: ${options.to} | Subject: ${options.subject}\n`);
       console.log(`✅ Email sent successfully to ${options.to} | Subject: ${options.subject}`);
     } catch (error: any) {
+      process.stdout.write(`❌ [EMAIL FAILURE] to: ${options.to} | Topic: ${options.subject} | Error: ${error.message}\n`);
       console.error('❌ Email send error:', error.message);
       
       if (error.code === 'EAUTH') {
@@ -628,12 +630,14 @@ Paperland Team
    * Send B2B Review Confirmation email to business applicant
    */
   async sendB2BReviewConfirmationEmail(to: string, userName: string, companyName: string): Promise<void> {
+    process.stdout.write(`📧 [EMAIL PREP]: Starting B2B confirmation for ${to}\n`);
+    console.log(`📧 DEBUG: sendB2BReviewConfirmationEmail entry. To: ${to}, User: ${userName}, Company: ${companyName}`);
     const subject = `B2B Application Received - ${companyName}`;
     const html = getB2BReviewConfirmationTemplate(userName, companyName);
     const text = `Hello ${userName}, thank you for your B2B application for ${companyName}. Our team is reviewing your details.`;
 
     await this.sendEmail({ to, subject, html, text });
-    console.log(`📧 B2B Review Confirmation Email sent to: ${to} | Company: ${companyName}`);
+    console.log(`✅ DEBUG: sendB2BReviewConfirmationEmail exit. Successfully sent to: ${to}`);
   }
 }
 

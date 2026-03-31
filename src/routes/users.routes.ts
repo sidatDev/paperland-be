@@ -265,7 +265,24 @@ export default async function userRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ message: 'User not found' });
       }
       
-      await fastify.prisma.user.delete({ where: { id } });
+      // Use a transaction for atomic cleanup and deletion
+      await fastify.prisma.$transaction(async (tx) => {
+        // 1. Delete associated permissions
+        await tx.userPermission.deleteMany({ where: { userId: id } });
+
+        // 2. Delete personal addresses
+        await tx.address.deleteMany({ where: { userId: id } });
+
+        // 3. Delete carts and cart items
+        // First delete items to avoid FK issues with cart_id
+        await tx.cartItem.deleteMany({
+          where: { cart: { userId: id } }
+        });
+        await tx.cart.deleteMany({ where: { userId: id } });
+
+        // 4. Finally delete the user
+        await tx.user.delete({ where: { id } });
+      });
       
       // Log Activity
       await logActivity(fastify, {
@@ -282,6 +299,14 @@ export default async function userRoutes(fastify: FastifyInstance) {
       return reply.status(204).send();
     } catch (err: any) {
       fastify.log.error(`Error deleting user ${id}: ${err.message || err}`);
+      
+      // Handle known foreign key constraint issues
+      if (err.message?.includes('foreign key constraint') || err.code === 'P2003') {
+        return reply.status(400).send({ 
+          message: 'This user cannot be deleted because they have associated critical data (like Orders or Blog Posts) that must be preserved.' 
+        });
+      }
+      
       return reply.status(500).send({ message: 'Internal Server Error' });
     }
   });

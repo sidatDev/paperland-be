@@ -420,6 +420,17 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                           where: { id: order.id },
                           data: { status }
                       });
+
+                      // Log to OrderStatusHistory
+                      await tx.orderStatusHistory.create({
+                          data: {
+                              orderId: order.id,
+                              status: status,
+                              notes: "Bulk Status Updated",
+                              changedBy: userId
+                          }
+                      });
+
                       successCount++;
                   }
               });
@@ -575,6 +586,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   where: { id: order.id },
                   data: updateData
               });
+          });
+
+          // Log to OrderStatusHistory
+          await (fastify.prisma as any).orderStatusHistory.create({
+              data: {
+                  orderId: order.id,
+                  status: status,
+                  notes: note || `Order status updated to ${status}`,
+                  changedBy: (request.user as any)?.id || null
+              }
           });
 
           // Audit Log
