@@ -78,18 +78,23 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const sections = await (async () => {
                 let s = await (fastify.prisma as any).homepageSection.findMany({
                     where: { isActive: true },
-                    include: {
-                        items: {
-                            where: { isActive: true },
-                            include: {
-                                product: {
-                                    where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
-                                    include: { prices: { include: { currency: true } } }
-                                }
-                            },
-                            orderBy: { sortOrder: 'asc' }
-                        }
-                    },
+                        include: {
+                            items: {
+                                where: { isActive: true },
+                                include: {
+                                    product: {
+                                        where: { 
+                                            isActive: true, 
+                                            isVisibleOnEcommerce: true, 
+                                            deletedAt: null,
+                                            parentId: null // Ensure only parent products are featured
+                                        },
+                                        include: { prices: { include: { currency: true } } }
+                                    }
+                                },
+                                orderBy: { sortOrder: 'asc' }
+                            }
+                        },
                     orderBy: { sortOrder: 'asc' }
                 });
 
@@ -100,22 +105,22 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
 
                 if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
-                    const [latestProducts, randomProducts, premiumProducts] = await Promise.all([
+                    const [popularProducts, latestProducts, premiumProducts] = await Promise.all([
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
-                            take: 4,
-                            orderBy: { createdAt: 'desc' },
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                            take: 10,
+                            orderBy: { orderItems: { _count: 'desc' } }, // REAL Popularity (Sales)
                             include: { prices: { include: { currency: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
-                            take: 4,
-                            orderBy: { name: 'asc' },
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                            take: 10,
+                            orderBy: { createdAt: 'desc' }, // Latest Arrivals
                             include: { prices: { include: { currency: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null },
-                            take: 4,
+                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                            take: 10,
                             orderBy: { updatedAt: 'desc' },
                             include: { prices: { include: { currency: true } } }
                         })
@@ -123,7 +128,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
                     if (!hasCategories) {
                         const productsForCategories = await (fastify.prisma as any).product.findMany({
-                            where: { name: { in: ['Dollar Premium A4 Paper 80gsm', 'Pelikan Fountain Pen', 'Deli Stapler', 'Faber-Castell Pencils'] }, isActive: true, deletedAt: null },
+                            where: { 
+                                name: { in: ['Dollar Premium A4 Paper 80gsm', 'Pelikan Fountain Pen', 'Deli Stapler', 'Faber-Castell Pencils'] }, 
+                                isActive: true, 
+                                deletedAt: null,
+                                parentId: null // Suppression
+                            },
                             include: { category: true },
                             take: 4
                         });
@@ -142,8 +152,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (!hasPremium && premiumProducts.length > 0) {
                         s.push({ id: 'premium-auto', type: 'special_offers', sortOrder: 1, displayTitle: 'Our Premium Collection', subtitle: 'Our COLLECTIONS', items: premiumProducts.map((p: any) => ({ id: p.id, product: p })) });
                     }
-                    if (!hasBestSellers && randomProducts.length > 0) {
-                        s.push({ id: 'bestsellers-auto', type: 'bestsellers', sortOrder: 3, displayTitle: 'Our Best Sellers', subtitle: 'OUR COLLECTIONS', items: randomProducts.map((p: any) => ({ id: p.id, product: p })) });
+                    if (!hasBestSellers && popularProducts.length > 0) {
+                        s.push({ id: 'bestsellers-auto', type: 'bestsellers', sortOrder: 3, displayTitle: 'Our Best Sellers', subtitle: 'OUR COLLECTIONS', items: popularProducts.map((p: any) => ({ id: p.id, product: p })) });
                     }
                     s.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
                 }
@@ -839,10 +849,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
     }
 });
 
-    // 5. GET /api/shop/products/:productId/reviews
     fastify.get('/shop/products/:productId/reviews', {
         schema: {
-            description: 'Get public reviews for a product',
+            description: 'Get public approved reviews for a product',
             tags: ['Public Shop'],
             params: { type: 'object', properties: { productId: { type: 'string' } } },
             response: {
@@ -853,8 +862,25 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
     }, async (request: any, reply: any) => {
         try {
             const { productId } = request.params;
+
+            // Find the product and all its variants to aggregate their reviews
+            const product = await (fastify.prisma as any).product.findUnique({
+                where: { id: productId },
+                select: { id: true, variants: { select: { id: true } } }
+            });
+
+            if (!product) {
+                return reply.status(404).send(createErrorResponse('Product not found'));
+            }
+
+            const productIdsToCollect = [productId, ...(product.variants?.map((v: any) => v.id) || [])];
+
             const reviews = await (fastify.prisma as any).review.findMany({
-                where: { productId, deletedAt: null },
+                where: { 
+                  productId: { in: productIdsToCollect }, 
+                  status: 'APPROVED',
+                  deletedAt: null 
+                },
                 select: {
                     id: true,
                     rating: true,
@@ -862,19 +888,35 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     customerName: true,
                     customerLocation: true,
                     customerImageUrl: true,
+                    images: true,
                     isVerified: true,
                     createdAt: true,
-                    user: {
-                        select: {
-                            firstName: true,
-                            lastName: true
-                        }
-                    }
                 },
                 orderBy: { createdAt: 'desc' }
             });
 
-            return reply.send(createResponse(reviews));
+            // Calculate distribution and average
+            const totalReviews = reviews.length;
+            const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+            let sum = 0;
+
+            reviews.forEach((r: any) => {
+                sum += r.rating;
+                if (distribution[r.rating as keyof typeof distribution] !== undefined) {
+                    distribution[r.rating as keyof typeof distribution]++;
+                }
+            });
+
+            const averageRating = totalReviews > 0 ? Number((sum / totalReviews).toFixed(1)) : 0;
+
+            return reply.send(createResponse({
+                reviews,
+                summary: {
+                    averageRating,
+                    totalReviews,
+                    distribution
+                }
+            }));
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send(createErrorResponse(err.message));

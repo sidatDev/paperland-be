@@ -497,6 +497,7 @@ model Review {
   customerName     String?   @map("customer_name")
   customerLocation String?   @map("customer_location")
   customerImageUrl String?   @map("customer_image_url")
+  status           String    @default("PENDING") // PENDING, APPROVED, REJECTED
   product          Product   @relation(fields: [productId], references: [id])
   user             User?     @relation(fields: [userId], references: [id])
 
