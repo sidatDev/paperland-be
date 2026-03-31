@@ -5,7 +5,9 @@ import {
   getNewsletterWelcomeTemplate, 
   getContactUsConfirmationTemplate, 
   getOrderConfirmationTemplate, 
-  getOrderStatusUpdateTemplate 
+  getOrderStatusUpdateTemplate,
+  getIndividualWelcomeTemplate,
+  getB2BReviewConfirmationTemplate
 } from '../templates/email-templates';
 
 interface EmailOptions {
@@ -608,6 +610,30 @@ Paperland Team
 
     await this.sendEmail({ to, subject, html, text });
     console.log(`📧 Order Status Update Email sent to: ${to} | New Status: ${newStatus}`);
+  }
+
+  /**
+   * Send Welcome email to individual (B2C) customer
+   */
+  async sendIndividualWelcomeEmail(to: string, userName: string): Promise<void> {
+    const subject = 'Welcome to Paperland - Your account is ready!';
+    const html = getIndividualWelcomeTemplate(userName);
+    const text = `Hello ${userName}, welcome to Paperland! Your account has been successfully created and is ready for use.`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 Individual Welcome Email sent to: ${to}`);
+  }
+
+  /**
+   * Send B2B Review Confirmation email to business applicant
+   */
+  async sendB2BReviewConfirmationEmail(to: string, userName: string, companyName: string): Promise<void> {
+    const subject = `B2B Application Received - ${companyName}`;
+    const html = getB2BReviewConfirmationTemplate(userName, companyName);
+    const text = `Hello ${userName}, thank you for your B2B application for ${companyName}. Our team is reviewing your details.`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 B2B Review Confirmation Email sent to: ${to} | Company: ${companyName}`);
   }
 }
 
