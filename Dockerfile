@@ -1,14 +1,20 @@
 # Stage 1: Build
-FROM node:20-slim AS builder
+FROM node:20-alpine AS builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install build dependencies
+RUN apk add --no-cache \
+    libc6-compat \
     openssl \
     python3 \
     make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+    g++
 
 WORKDIR /app
+
+# Increase npm network reliability
+RUN npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000
 
 COPY package*.json ./
 COPY prisma ./prisma/
@@ -24,11 +30,9 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # Stage 2: Production
-FROM node:20-slim AS runner
+FROM node:20-alpine AS runner
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 ENV NODE_ENV production
