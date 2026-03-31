@@ -3,7 +3,7 @@ import { FastifyInstance } from 'fastify';
 import Redis from 'ioredis';
 
 export default fp(async (fastify: FastifyInstance) => {
-  const redisEnabled = process.env.REDIS_ENABLED !== 'false';
+  const redisEnabled = process.env.REDIS_ENABLED === 'true';
   const redisUrl = process.env.REDIS_URL;
   
   if (!redisEnabled) {
