@@ -890,6 +890,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     customerImageUrl: true,
                     images: true,
                     isVerified: true,
+                    helpfulCount: true,
                     createdAt: true,
                 },
                 orderBy: { createdAt: 'desc' }

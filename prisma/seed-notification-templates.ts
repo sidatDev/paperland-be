@@ -209,18 +209,60 @@ async function main() {
 
         <div class="divider"></div>
         <div style="margin-bottom: 25px;">
+            <h3 style="color: #111827; margin-bottom: 15px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Financial Overview</h3>
+            {{financialOverview}}
+        </div>
+
+        <div class="divider"></div>
+        <div style="margin-bottom: 25px;">
             <h3 style="color: #111827; margin-bottom: 15px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Items Delivered</h3>
             <table width="100%" cellpadding="0" cellspacing="0">{{orderItems}}</table>
         </div>
-
-        <div style="background-color: #fff8f8; padding: 20px; border-radius: 12px; border: 1px solid #fee2e2; margin-top: 30px; text-align: center;">
-            <p style="margin: 0; color: #b91c1c; font-weight: bold;">Any issues with your delivery?</p>
-            <p style="margin: 5px 0 0 0; color: #dc2626; font-size: 13px;">Please contact our support team at info@paperland.com.pk</p>
-        </div>
       `,
-      variables: ['userName', 'orderNumber', 'orderItems', 'reviewUrl'],
+      variables: ['userName', 'orderNumber', 'orderItems', 'reviewUrl', 'financialOverview'],
       type: 'EMAIL',
       isActive: true,
+    },
+    {
+        name: 'REVIEW_APPROVED',
+        subject: 'Your review for {{productName}} is live! - Paperland',
+        description: 'Sent when an admin approves a customer review.',
+        body: `
+            <h1>Your Review is Approved!</h1>
+            <p>Hello <strong>{{userName}}</strong>,</p>
+            <p>Great news! Your review for <strong>{{productName}}</strong> has been approved and is now live on our website.</p>
+            
+            <div style="background-color: #f0fdf4; border: 1px solid #dcfce7; padding: 25px; border-radius: 12px; margin: 30px 0;">
+                <p style="margin: 0; font-weight: bold; color: #166534;">Thank you for your feedback!</p>
+                <p style="margin: 10px 0 0 0; font-size: 14px; color: #15803d;">Your contribution helps other stationery lovers make informed choices. We value your presence in the Paperland community.</p>
+            </div>
+    
+            <p>Keep sharing your experiences with us!</p>
+        `,
+        variables: ['userName', 'productName'],
+        type: 'EMAIL',
+        isActive: true,
+    },
+    {
+        name: 'REVIEW_REJECTED',
+        subject: 'Update regarding your review for {{productName}} - Paperland',
+        description: 'Sent when an admin rejects a customer review.',
+        body: `
+            <h1>Review Update</h1>
+            <p>Hello <strong>{{userName}}</strong>,</p>
+            <p>Thank you for submitting a review for <strong>{{productName}}</strong>.</p>
+            <p>We're writing to inform you that your review didn't pass our standard moderation guidelines at this time and has been removed.</p>
+            
+            <div style="background-color: #fff8f8; border: 1px solid #fee2e2; padding: 25px; border-radius: 12px; margin: 30px 0;">
+                <p style="margin: 0; font-weight: bold; color: #b91c1c;">You can submit a new review!</p>
+                <p style="margin: 10px 0 0 0; font-size: 14px; color: #dc2626;">We value your honest feedback. If you'd like, you can try submitting a new review that follows our community guidelines.</p>
+            </div>
+    
+            <p>If you have any questions, feel free to contact our support team.</p>
+        `,
+        variables: ['userName', 'productName'],
+        type: 'EMAIL',
+        isActive: true,
     }
   ];
 

@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
+import { emailService } from '../services/email.service';
 
 export default async function reviewsRoutes(fastify: FastifyInstance) {
   
@@ -173,16 +174,17 @@ export default async function reviewsRoutes(fastify: FastifyInstance) {
         return reply.status(403).send(createErrorResponse('You can only review products from delivered orders.'));
       }
 
-      // Check if user already reviewed this product
+      // Check if user already reviewed this product (Block if PENDING or APPROVED)
       const existingReview = await (fastify.prisma as any).review.findFirst({
         where: {
           userId: user.id,
-          productId
+          productId,
+          status: { in: ['PENDING', 'APPROVED'] }
         }
       });
-
+      
       if (existingReview) {
-        return reply.status(400).send(createErrorResponse('You have already reviewed this product.'));
+        return reply.status(400).send(createErrorResponse('You can only submit a review once per product.'));
       }
 
       const review = await (fastify.prisma as any).review.create({
@@ -198,7 +200,7 @@ export default async function reviewsRoutes(fastify: FastifyInstance) {
         }
       });
 
-      return createResponse(review, 'Review submitted and pending approval.');
+      return createResponse(review, 'Review submitted successfully!');
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse(err.message));
@@ -228,13 +230,73 @@ export default async function reviewsRoutes(fastify: FastifyInstance) {
 
       const review = await (fastify.prisma as any).review.update({
         where: { id },
-        data: { status }
+        data: { status },
+        include: {
+            user: true,
+            product: true
+        }
       });
+
+      // Send status update email if applicable
+      if (review.user?.email && (status === 'APPROVED' || status === 'REJECTED')) {
+          emailService.sendReviewStatusEmail(
+              review.user.email,
+              review.user.firstName || 'Customer',
+              review.product?.name || 'Product',
+              status as any
+          ).catch(e => fastify.log.error(e, 'Failed to send review status email'));
+      }
 
       return createResponse(review, `Review ${status.toLowerCase()} successfully`);
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse(err.message));
     }
+  });
+
+  // 7. POST /api/v1/reviews/:id/helpful - Vote a review as helpful
+  fastify.post('/reviews/:id/helpful', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Mark a review as helpful',
+        tags: ['Reviews'],
+        security: [{ bearerAuth: [] }],
+        params: { type: 'object', properties: { id: { type: 'string' } } }
+    }
+  }, async (request, reply) => {
+      try {
+          const user = (request as any).user;
+          const { id: reviewId } = request.params as any;
+
+          // Check if already voted
+          const existingVote = await (fastify.prisma as any).reviewHelpfulVote.findUnique({
+              where: {
+                  reviewId_userId: {
+                      reviewId,
+                      userId: user.id
+                  }
+              }
+          });
+
+          if (existingVote) {
+              return reply.status(400).send(createErrorResponse('You have already marked this review as helpful.'));
+          }
+
+          // Create vote and increment counter
+          await (fastify.prisma as any).$transaction([
+              (fastify.prisma as any).reviewHelpfulVote.create({
+                  data: { reviewId, userId: user.id }
+              }),
+              (fastify.prisma as any).review.update({
+                  where: { id: reviewId },
+                  data: { helpfulCount: { increment: 1 } }
+              })
+          ]);
+
+          return createResponse(null, 'Marked as helpful');
+      } catch (err: any) {
+          fastify.log.error(err);
+          return reply.status(500).send(createErrorResponse(err.message));
+      }
   });
 }

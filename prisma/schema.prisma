@@ -170,6 +170,7 @@ model User {
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
   returnRequests        ReturnRequest[]
+  helpfulVotes          ReviewHelpfulVote[]
 
   @@map("users")
 }
@@ -498,10 +499,25 @@ model Review {
   customerLocation String?   @map("customer_location")
   customerImageUrl String?   @map("customer_image_url")
   status           String    @default("PENDING") // PENDING, APPROVED, REJECTED
+  helpfulCount     Int       @default(0) @map("helpful_count")
   product          Product   @relation(fields: [productId], references: [id])
   user             User?     @relation(fields: [userId], references: [id])
+  helpfulVotes     ReviewHelpfulVote[]
 
   @@map("reviews")
+}
+
+model ReviewHelpfulVote {
+  id        String   @id @default(uuid())
+  reviewId  String   @map("review_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@map("review_helpful_votes")
 }
 
 model ProductImportLog {

@@ -635,7 +635,8 @@ Paperland Team
         courierPartner: orderData.deliveryMethod || 'Standard Shipping',
         orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),
         deliveryDetails: this.buildDeliveryDetailsHtml(orderData),
-        orderSummary: this.buildOrderSummaryHtml(orderData)
+        orderSummary: this.buildOrderSummaryHtml(orderData),
+        financialOverview: this.buildFinancialOverviewHtml(orderData)
       });
     } catch (error) {
        console.warn(`⚠️ Dynamic status update [${newStatus}] failed, falling back to hardcoded template`);
@@ -643,6 +644,21 @@ Paperland Team
        const html = getOrderStatusUpdateTemplate(orderData, newStatus);
        const text = `Hi ${orderData.user?.firstName}, your order #${orderData.orderNumber} status has been updated to ${newStatus.toUpperCase()}.`;
        await this.sendEmail({ to, subject, html, text });
+    }
+  }
+
+  /**
+   * Send notification to user when their review is approved or rejected
+   */
+  async sendReviewStatusEmail(to: string, userName: string, productName: string, status: 'APPROVED' | 'REJECTED'): Promise<void> {
+    const templateKey = status === 'APPROVED' ? 'REVIEW_APPROVED' : 'REVIEW_REJECTED';
+    try {
+      await this.sendDynamicEmail(templateKey, to, {
+        userName,
+        productName
+      });
+    } catch (error) {
+      console.warn(`⚠️ Failed to send dynamic review status email [${status}] to ${to}`);
     }
   }
 
@@ -779,6 +795,51 @@ Paperland Team
         <div>${snapshot.city || order.address?.city || ''}${snapshot.province || order.address?.state ? ', ' + (snapshot.province || order.address?.state) : ''}</div>
         <div>${snapshot.country || 'Pakistan'}</div>
         <div style="margin-top: 10px; font-weight: bold; color: #111827;">Phone: ${snapshot.phone || order.address?.phone || 'N/A'}</div>
+      </div>
+    `;
+  }
+
+  private buildFinancialOverviewHtml(order: any): string {
+    const currency = order.currency?.code || 'PKR';
+    const subtotal = Number(order.subTotal || (Number(order.totalAmount) - Number(order.taxAmount) - Number(order.shippingAmount) + Number(order.discountAmount || 0)));
+    const discount = Number(order.discountAmount || 0);
+    const tax = Number(order.taxAmount || 0);
+    const grandTotal = Number(order.totalAmount);
+    const downPayment = Number(order.downPayment || 0);
+    const remainingBalance = grandTotal - downPayment;
+
+    return `
+      <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 20px 0;">
+        <div style="border-bottom: 1px dashed #e5e7eb; padding-bottom: 15px; margin-bottom: 15px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #6b7280; font-size: 14px;">Sale Price</span>
+            <span style="color: #111827; font-weight: bold; font-size: 14px;">${currency} ${subtotal.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #6b7280; font-size: 14px;">Discount</span>
+            <span style="color: #ef4444; font-weight: bold; font-size: 14px;">-${currency} ${discount.toLocaleString()}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="color: #6b7280; font-size: 14px;">Taxes</span>
+            <span style="color: #111827; font-weight: bold; font-size: 14px;">${currency} ${tax.toLocaleString()}</span>
+          </div>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+          <span style="color: #111827; font-weight: 800; font-size: 16px; text-transform: uppercase;">Total Amount</span>
+          <span style="color: #E31E24; font-weight: 800; font-size: 24px;">${currency} ${grandTotal.toLocaleString()}</span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+          <div style="background-color: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #f3f4f6;">
+            <p style="margin: 0; font-size: 10px; color: #6b7280; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Down Payment</p>
+            <p style="margin: 4px 0 0 0; font-size: 14px; color: #111827; font-weight: bold;">${currency} ${downPayment.toLocaleString()}</p>
+          </div>
+          <div style="background-color: #fff1f2; padding: 12px; border-radius: 8px; border: 1px solid #ffe4e6;">
+            <p style="margin: 0; font-size: 10px; color: #e11d48; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Remaining Balance</p>
+            <p style="margin: 4px 0 0 0; font-size: 14px; color: #be123c; font-weight: bold;">${currency} ${remainingBalance.toLocaleString()}</p>
+          </div>
+        </div>
       </div>
     `;
   }
