@@ -56,9 +56,10 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                     <table class="content-table" cellpadding="0" cellspacing="0" border="0">
                         <!-- Red Header with Logo -->
                         <tr>
-                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 20px;">
-                                <a href="${WEBSITE_URL}">
-                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 180px; height: auto; border:0; outline:none; text-decoration:none; display:block; margin: 0 auto; max-width:100%;">
+                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 25px 20px;">
+                                <a href="${WEBSITE_URL}" style="text-decoration: none;">
+                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 140px; height: auto; border:0; outline:none; text-decoration:none; display:inline-block; vertical-align: middle; margin: 0 auto; max-width:100%;">
+                                    <div style="color: #E31E24; font-size: 28px; font-weight: 800; font-family: 'Arial Black', sans-serif; margin-top: 5px; letter-spacing: 1px;">PAPERLAND</div>
                                 </a>
                             </td>
                         </tr>
@@ -306,6 +307,16 @@ export function getOrderStatusUpdateTemplate(order: any, newStatus: string): str
                Tracking Number: <strong>${order.trackingNumber}</strong></p>
             <a href="${WEBSITE_URL}/en/order-tracking?orderId=${order.orderNumber}" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">
                 Track Your Order
+            </a>
+        </div>
+        ` : ''}
+
+        ${(newStatus.toUpperCase() === 'DELIVERED') ? `
+        <div style="text-align: center; margin: 40px 0; background-color: #f0fdf4; border: 1px solid #dcfce7; padding: 30px; border-radius: 16px;">
+            <p style="margin-top: 0; font-weight: bold; color: #166534; font-size: 18px;">How was your experience?</p>
+            <p style="margin-bottom: 25px; color: #15803d; font-size: 14px;">Your feedback helps us grow and assists other customers in making informed choices!</p>
+            <a href="${WEBSITE_URL}/en/dashboard/orders/${order.id}" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 16px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(227, 30, 36, 0.2);">
+                Add a Review & Feedback
             </a>
         </div>
         ` : ''}

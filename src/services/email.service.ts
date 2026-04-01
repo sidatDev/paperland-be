@@ -592,24 +592,58 @@ Paperland Team
    * Send order confirmation email to customer
    */
   async sendOrderConfirmationEmail(to: string, orderData: any): Promise<void> {
-    const subject = `Your order is placed! #${orderData.orderNumber} - Paperland`;
-    const html = getOrderConfirmationTemplate(orderData);
-    const text = `Hi ${orderData.user?.firstName}, thank you for shopping with Paperland! Your order #${orderData.orderNumber} has been successfully placed.`;
-
-    await this.sendEmail({ to, subject, html, text });
-    console.log(`📧 Order Confirmation Email sent to: ${to}`);
+    try {
+      const portalUrl = process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com';
+      await this.sendDynamicEmail('ORDER_PLACED', to, {
+        userName: orderData.user?.firstName || 'Customer',
+        orderNumber: orderData.orderNumber,
+        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}`,
+        orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),
+        deliveryDetails: this.buildDeliveryDetailsHtml(orderData),
+        orderSummary: this.buildOrderSummaryHtml(orderData)
+      });
+    } catch (error) {
+      console.warn('⚠️ Dynamic order confirmation failed, falling back to hardcoded template');
+      const subject = `Your order is placed! #${orderData.orderNumber} - Paperland`;
+      const html = getOrderConfirmationTemplate(orderData);
+      const text = `Hi ${orderData.user?.firstName}, thank you for shopping with Paperland! Your order #${orderData.orderNumber} has been successfully placed.`;
+      await this.sendEmail({ to, subject, html, text });
+    }
   }
 
   /**
    * Send order status update email to customer
    */
   async sendOrderStatusUpdateEmail(to: string, orderData: any, newStatus: string): Promise<void> {
-    const subject = `Status Update for Order #${orderData.orderNumber} - Paperland`;
-    const html = getOrderStatusUpdateTemplate(orderData, newStatus);
-    const text = `Hi ${orderData.user?.firstName}, your order #${orderData.orderNumber} status has been updated to ${newStatus.toUpperCase()}.`;
+    const portalUrl = process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com';
+    const statusMap: Record<string, string> = {
+      'PENDING': 'ORDER_PLACED',
+      'PROCESSING': 'ORDER_PROCESSING',
+      'SHIPPED': 'ORDER_SHIPPED',
+      'DELIVERED': 'ORDER_DELIVERED'
+    };
 
-    await this.sendEmail({ to, subject, html, text });
-    console.log(`📧 Order Status Update Email sent to: ${to} | New Status: ${newStatus}`);
+    const templateKey = statusMap[newStatus.toUpperCase()] || 'ORDER_PLACED';
+
+    try {
+      await this.sendDynamicEmail(templateKey, to, {
+        userName: orderData.user?.firstName || 'Customer',
+        orderNumber: orderData.orderNumber,
+        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}`,
+        reviewUrl: `${portalUrl}/en/dashboard/orders/${orderData.id}`,
+        trackingNumber: orderData.trackingNumber || 'Not Yet Assigned',
+        courierPartner: orderData.deliveryMethod || 'Standard Shipping',
+        orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),
+        deliveryDetails: this.buildDeliveryDetailsHtml(orderData),
+        orderSummary: this.buildOrderSummaryHtml(orderData)
+      });
+    } catch (error) {
+       console.warn(`⚠️ Dynamic status update [${newStatus}] failed, falling back to hardcoded template`);
+       const subject = `Status Update for Order #${orderData.orderNumber} - Paperland`;
+       const html = getOrderStatusUpdateTemplate(orderData, newStatus);
+       const text = `Hi ${orderData.user?.firstName}, your order #${orderData.orderNumber} status has been updated to ${newStatus.toUpperCase()}.`;
+       await this.sendEmail({ to, subject, html, text });
+    }
   }
 
   /**
@@ -643,14 +677,15 @@ Paperland Team
    */
   async sendDynamicEmail(key: string, to: string, data: any): Promise<void> {
     try {
-      const template = await this.prisma.notificationTemplate.findUnique({
+      const template = await (this.prisma as any).notificationTemplate.findUnique({
         where: { name: key, isActive: true }
       });
 
       if (!template) {
-        throw new Error(`Notification template '${key}' not found or inactive`);
+        throw new Error(`Template [${key}] not found or is inactive in database`);
       }
 
+      console.log(`📧 Building dynamic email from template: ${key}`);
       let htmlBody = template.body;
       let subject = template.subject;
 
@@ -676,6 +711,76 @@ Paperland Team
       console.error(`❌ Failed to send dynamic email [${key}]:`, error.message);
       throw error;
     }
+  }
+
+  private buildOrderItemsHtml(items: any[], currency: string): string {
+    const portalUrl = (process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com').replace(/\/+$/, '');
+    if (!items || items.length === 0) return '<tr><td colspan="4">No items found</td></tr>';
+    
+    return items.map(item => `
+      <tr style="border-bottom: 1px solid #eee;">
+        <td style="padding: 15px 0; width: 60px;">
+          <img src="${item.product?.imageUrl?.startsWith('http') ? item.product.imageUrl : portalUrl + (item.product?.imageUrl ? (item.product.imageUrl.startsWith('/') ? item.product.imageUrl : '/' + item.product.imageUrl) : '/images/placeholder.png')}" alt="${item.product?.name || 'Item'}" style="width: 50px; height: 50px; object-fit: contain; border-radius: 8px; border: 1px solid #fafafa; display: block;">
+        </td>
+        <td style="padding: 15px 10px;">
+          <div style="font-weight: bold; color: #111827; font-size: 14px;">${item.product?.name || item.sku || 'Product'}</div>
+          <div style="font-size: 11px; color: #6b7280;">SKU: ${item.sku || 'N/A'}</div>
+        </td>
+        <td style="padding: 15px 10px; color: #4b5563; font-size: 14px; text-align: center;">x${item.quantity}</td>
+        <td style="padding: 15px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(item.price).toLocaleString()}</td>
+      </tr>
+    `).join('');
+  }
+
+  private buildOrderSummaryHtml(order: any): string {
+    const currency = order.currency?.code || 'PKR';
+    const subtotal = (Number(order.totalAmount) - Number(order.taxAmount) - Number(order.shippingAmount)) + Number(order.discountAmount || 0);
+    
+    return `
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px; border-top: 2px solid #f3f4f6; padding-top: 15px;">
+        <tr>
+          <td style="padding: 5px 0; color: #6b7280; font-size: 14px;">Subtotal</td>
+          <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${subtotal.toLocaleString()}</td>
+        </tr>
+        ${Number(order.discountAmount) > 0 ? `
+        <tr>
+          <td style="padding: 5px 0; color: #E31E24; font-size: 14px;">Discount</td>
+          <td style="padding: 5px 0; font-weight: bold; color: #E31E24; text-align: right; font-size: 14px;">- ${currency} ${Number(order.discountAmount).toLocaleString()}</td>
+        </tr>` : ''}
+        <tr>
+          <td style="padding: 5px 0; color: #6b7280; font-size: 14px;">Shipping</td>
+          <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(order.shippingAmount).toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td style="padding: 5px 0; color: #6b7280; font-size: 14px;">Tax (Included)</td>
+          <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(order.taxAmount).toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td style="padding: 15px 0 0 0; color: #111827; font-weight: bold; font-size: 18px;">Grand Total</td>
+          <td style="padding: 15px 0 0 0; color: #E31E24; font-weight: 800; text-align: right; font-size: 20px;">${currency} ${Number(order.totalAmount).toLocaleString()}</td>
+        </tr>
+        <tr>
+          <td colspan="2" style="padding-top: 20px;">
+            <div style="background-color: #f9fafb; padding: 12px; border-radius: 12px; font-size: 12px; color: #6b7280; text-align: center; border: 1px dashed #e5e7eb;">
+              Payment Method: <strong>${order.paymentMethod || 'COD'}</strong>
+            </div>
+          </td>
+        </tr>
+      </table>
+    `;
+  }
+
+  private buildDeliveryDetailsHtml(order: any): string {
+    const snapshot = order.shippingSnapshot || {};
+    return `
+      <div style="color: #4b5563; font-size: 14px; line-height: 1.5; background-color: #f9fafb; padding: 15px; border-radius: 12px; border: 1px solid #f3f4f6;">
+        <div style="font-weight: bold; color: #111827; margin-bottom: 5px; font-size: 15px;">${snapshot.fullName || (snapshot.firstName ? snapshot.firstName + ' ' + (snapshot.lastName || '') : 'Customer')}</div>
+        <div>${snapshot.streetAddress || order.address?.street1 || 'No address provided'}</div>
+        <div>${snapshot.city || order.address?.city || ''}${snapshot.province || order.address?.state ? ', ' + (snapshot.province || order.address?.state) : ''}</div>
+        <div>${snapshot.country || 'Pakistan'}</div>
+        <div style="margin-top: 10px; font-weight: bold; color: #111827;">Phone: ${snapshot.phone || order.address?.phone || 'N/A'}</div>
+      </div>
+    `;
   }
 }
 
