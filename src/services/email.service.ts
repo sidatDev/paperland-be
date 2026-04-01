@@ -1,13 +1,14 @@
 import nodemailer from 'nodemailer';
 import { PrismaClient } from '@prisma/client';
 import { 
-  getOTPEmailTemplate, 
-  getNewsletterWelcomeTemplate, 
-  getContactUsConfirmationTemplate, 
-  getOrderConfirmationTemplate, 
+  getOTPEmailTemplate,
+  getNewsletterWelcomeTemplate,
+  getContactUsConfirmationTemplate,
+  getOrderConfirmationTemplate,
   getOrderStatusUpdateTemplate,
   getIndividualWelcomeTemplate,
-  getB2BReviewConfirmationTemplate
+  getB2BReviewConfirmationTemplate,
+  getEmailLayout
 } from '../templates/email-templates';
 
 interface EmailOptions {
@@ -116,23 +117,20 @@ export class EmailService {
     console.log('=================================================');
     console.log(`🔑 DEV OTP for ${to}: ${otpCode}`);
     console.log('=================================================');
-    
-    const html = getOTPEmailTemplate(otpCode, userName);
     const text = `
       Hello${userName ? ' ' + userName : ''},
-      
-      Thank you for registering with Paperland!
-      
       Your verification code is: ${otpCode}
-      
       This code will expire in 10 minutes.
-      
-      If you didn't request this code, you can safely ignore this email.
-      
       © ${new Date().getFullYear()} Paperland. All rights reserved.
     `;
 
-    await this.sendEmail({ to, subject, html, text });
+    try {
+      await this.sendDynamicEmail('OTP_VERIFICATION', to, { otpCode, userName: userName || 'Customer' });
+    } catch (error) {
+      console.warn('⚠️ Dynamic OTP email failed, falling back to hardcoded template');
+      const html = getOTPEmailTemplate(otpCode, userName);
+      await this.sendEmail({ to, subject, html, text });
+    }
   }
 
   /**
@@ -638,6 +636,46 @@ Paperland Team
 
     await this.sendEmail({ to, subject, html, text });
     console.log(`✅ DEBUG: sendB2BReviewConfirmationEmail exit. Successfully sent to: ${to}`);
+  }
+
+  /**
+   * Send a dynamic email using a template key from database
+   */
+  async sendDynamicEmail(key: string, to: string, data: any): Promise<void> {
+    try {
+      const template = await this.prisma.notificationTemplate.findUnique({
+        where: { name: key, isActive: true }
+      });
+
+      if (!template) {
+        throw new Error(`Notification template '${key}' not found or inactive`);
+      }
+
+      let htmlBody = template.body;
+      let subject = template.subject;
+
+      // Replace variables in format {{variableName}}
+      Object.keys(data).forEach(varName => {
+        const value = data[varName];
+        const regex = new RegExp(`{{${varName}}}`, 'g');
+        htmlBody = htmlBody.replace(regex, value !== undefined && value !== null ? String(value) : '');
+        subject = subject.replace(regex, value !== undefined && value !== null ? String(value) : '');
+      });
+
+      const finalHtml = getEmailLayout(htmlBody, subject);
+
+      await this.sendEmail({
+        to,
+        subject,
+        html: finalHtml,
+        text: htmlBody.replace(/<[^>]*>?/gm, '') // Simple HTML strip for text fallback
+      });
+
+      console.log(`✅ Dynamic email sent: [${key}] to ${to}`);
+    } catch (error: any) {
+      console.error(`❌ Failed to send dynamic email [${key}]:`, error.message);
+      throw error;
+    }
   }
 }
 

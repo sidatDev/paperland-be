@@ -3,7 +3,7 @@
  * Optimized for Paperland brand guidelines (Red #E31E24, Yellow #FDB714)
  */
 
-const LOGO_URL = 'https://pl-portal.sidattech.com/logo.png';
+const LOGO_URL = 'https://pl-portal.sidattech.com/images/logo/Paperland%20logo.png';
 const WEBSITE_URL = 'https://pl-portal.sidattech.com';
 const PHONE = '+92 300 1234567';
 const EMAIL = 'info@paperland.com.pk';
@@ -56,9 +56,9 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                     <table class="content-table" cellpadding="0" cellspacing="0" border="0">
                         <!-- Red Header with Logo -->
                         <tr>
-                            <td class="header">
+                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 20px;">
                                 <a href="${WEBSITE_URL}">
-                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" width="80" style="border:0; outline:none; text-decoration:none; display:inline-block; max-width:100%;">
+                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 180px; height: auto; border:0; outline:none; text-decoration:none; display:block; margin: 0 auto; max-width:100%;">
                                 </a>
                             </td>
                         </tr>

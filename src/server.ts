@@ -138,6 +138,7 @@ const start = async () => {
     await fastify.register(import('./routes/system.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/logs.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/backup.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/notification-template.routes'), { prefix: '/api/v1' });
 
     // Homepage & Shop Discovery Routes
     await fastify.register(import('./routes/homepage.routes'), { prefix: '/api/v1' });
