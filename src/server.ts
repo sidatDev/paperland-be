@@ -42,7 +42,7 @@ const start = async () => {
 
     // Register Rate Limit
     await fastify.register(import('@fastify/rate-limit'), {
-      max: 100,
+      max: 1000,
       timeWindow: '1 minute'
     });
 

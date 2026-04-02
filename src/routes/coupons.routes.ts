@@ -140,6 +140,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           usageLimit: { type: 'number', minimum: 1 },
           usageLimitPerCustomer: { type: 'number', minimum: 1 },
           budgetCap: { type: 'number', minimum: 0 },
+          couponType: { type: 'string', enum: ['STATIC', 'DYNAMIC'], default: 'STATIC' },
           applicationType: { type: 'string', enum: ['ALL', 'SPECIFIC_PRODUCTS', 'SPECIFIC_CATEGORIES'] },
           customerType: { type: 'string', enum: ['ALL', 'NEW_CUSTOMERS', 'B2B_ONLY'] },
           visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'] },
@@ -155,7 +156,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
       const {
         code, title, description, discountType, discountValue,
         minOrderAmount, maxDiscountAmount, startDate, endDate,
-        usageLimit, usageLimitPerCustomer, budgetCap,
+        usageLimit, usageLimitPerCustomer, budgetCap, couponType,
         applicationType, customerType, visibility, isStackable, isActive,
         productIds, categoryIds
       } = request.body as any;
@@ -183,6 +184,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
             usageLimit: usageLimit || null,
             usageLimitPerCustomer: usageLimitPerCustomer || null,
             budgetCap: budgetCap || null,
+            couponType: couponType || 'STATIC',
             applicationType: applicationType || 'ALL',
             customerType: customerType || 'ALL',
             visibility: visibility || 'PRIVATE',
@@ -288,6 +290,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           usageLimit: { type: 'number', minimum: 1 },
           usageLimitPerCustomer: { type: 'number', minimum: 1 },
           budgetCap: { type: 'number', minimum: 0 },
+          couponType: { type: 'string', enum: ['STATIC', 'DYNAMIC'] },
           applicationType: { type: 'string', enum: ['ALL', 'SPECIFIC_PRODUCTS', 'SPECIFIC_CATEGORIES'] },
           customerType: { type: 'string', enum: ['ALL', 'NEW_CUSTOMERS', 'B2B_ONLY'] },
           visibility: { type: 'string', enum: ['PUBLIC', 'PRIVATE'] },
@@ -404,6 +407,73 @@ export default async function couponRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Failed to delete coupon' });
+    }
+  });
+
+  // GET coupon analytics (Admin)
+  fastify.get('/admin/coupons/:id/analytics', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_view')],
+    schema: {
+      tags: ['Admin Coupons'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string' } }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params as any;
+      const coupon = await (fastify.prisma as any).coupon.findUnique({
+        where: { id },
+        include: {
+          orders: {
+            include: { user: { select: { firstName: true, lastName: true, email: true } } },
+            orderBy: { createdAt: 'desc' },
+            take: 50 // Limit to last 50 orders for now
+          },
+          _count: { select: { orders: true } }
+        }
+      });
+
+      if (!coupon || coupon.deletedAt) {
+        return reply.status(404).send({ message: 'Coupon not found' });
+      }
+
+      // Calculate summary stats
+      const stats = {
+        totalOrders: coupon._count.orders,
+        totalRevenue: coupon.orders.reduce((sum: number, order: any) => sum + Number(order.totalAmount), 0),
+        totalDiscount: coupon.orders.reduce((sum: number, order: any) => sum + (Number(order.discountAmount) || 0), 0),
+        redemptionRate: coupon.usageLimit ? (coupon.usedCount / coupon.usageLimit) * 100 : null,
+      };
+
+      return reply.send({
+        coupon: {
+          id: coupon.id,
+          code: coupon.code,
+          title: coupon.title,
+          usageLimit: coupon.usageLimit,
+          usedCount: coupon.usedCount,
+        },
+        stats,
+        recentOrders: coupon.orders.map((o: any) => {
+          const customerName = o.user ? `${o.user.firstName || ''} ${o.user.lastName || ''}`.trim() : 'Guest';
+          return {
+            id: o.id,
+            orderNumber: o.orderNumber,
+            customerName: customerName || 'Guest',
+            totalAmount: o.totalAmount,
+            discountAmount: o.discountAmount,
+            createdAt: o.createdAt,
+            status: o.status
+          };
+        })
+      });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to fetch coupon analytics' });
     }
   });
 

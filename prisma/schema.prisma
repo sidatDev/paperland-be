@@ -1213,6 +1213,7 @@ model Coupon {
   code                  String           @unique
   title                 String?
   description           String?
+  couponType            String           @default("STATIC") @map("coupon_type")
   discountType          String           @map("discount_type") // PERCENTAGE, FIXED
   discountValue         Decimal          @map("discount_value") @db.Decimal(10, 2)
   minOrderAmount        Decimal?         @map("min_order_amount") @db.Decimal(10, 2)
