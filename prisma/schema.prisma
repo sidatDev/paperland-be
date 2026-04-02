@@ -275,7 +275,8 @@ model Category {
   parentId      String?    @map("parent_id")
   parent        Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
   subCategories Category[] @relation("CategoryHierarchy")
-  products      Product[]
+  products         Product[]
+  couponCategories CouponCategory[]
 
   @@map("categories")
 }
@@ -382,6 +383,7 @@ model Product {
   discountOverrides    ProductDiscountOverride[]
   returnItems          ReturnItem[]
   flashSaleItems       FlashSaleItem[]
+  couponProducts       CouponProduct[]
 
   // Product Relations (Related, FBT, Upsell)
   sourceRelations   ProductRelation[] @relation("SourceRelations")
@@ -1207,24 +1209,57 @@ model ProductDiscountOverride {
 }
 
 model Coupon {
-  id                String    @id @default(uuid())
-  code              String    @unique
-  discountType      String    @map("discount_type") // PERCENTAGE, FIXED
-  discountValue     Decimal   @map("discount_value") @db.Decimal(10, 2)
-  minOrderAmount    Decimal?  @map("min_order_amount") @db.Decimal(10, 2)
-  maxDiscountAmount Decimal?  @map("max_discount_amount") @db.Decimal(10, 2)
-  startDate         DateTime  @map("start_date")
-  endDate           DateTime  @map("end_date")
-  usageLimit        Int?      @map("usage_limit")
-  usedCount         Int       @default(0) @map("used_count")
-  isActive          Boolean   @default(true) @map("is_active")
-  createdAt         DateTime  @default(now()) @map("created_at")
-  updatedAt         DateTime  @updatedAt @map("updated_at")
-  deletedAt         DateTime? @map("deleted_at")
+  id                    String           @id @default(uuid())
+  code                  String           @unique
+  title                 String?
+  description           String?
+  discountType          String           @map("discount_type") // PERCENTAGE, FIXED
+  discountValue         Decimal          @map("discount_value") @db.Decimal(10, 2)
+  minOrderAmount        Decimal?         @map("min_order_amount") @db.Decimal(10, 2)
+  maxDiscountAmount     Decimal?         @map("max_discount_amount") @db.Decimal(10, 2)
+  startDate             DateTime         @map("start_date")
+  endDate               DateTime         @map("end_date")
+  usageLimit            Int?             @map("usage_limit")
+  usageLimitPerCustomer Int?             @map("usage_limit_per_customer")
+  usedCount             Int              @default(0) @map("used_count")
+  budgetCap             Decimal?         @map("budget_cap") @db.Decimal(12, 2)
+  totalDiscountGiven    Decimal          @default(0) @map("total_discount_given") @db.Decimal(12, 2)
+  applicationType       String           @default("ALL") @map("application_type") // ALL, SPECIFIC_PRODUCTS, SPECIFIC_CATEGORIES
+  customerType          String           @default("ALL") @map("customer_type") // ALL, NEW_CUSTOMERS, B2B_ONLY
+  visibility            String           @default("PRIVATE") @map("visibility") // PUBLIC, PRIVATE
+  isStackable           Boolean          @default(false) @map("is_stackable")
+  isActive              Boolean          @default(true) @map("is_active")
+  createdAt             DateTime         @default(now()) @map("created_at")
+  updatedAt             DateTime         @updatedAt @map("updated_at")
+  deletedAt             DateTime?        @map("deleted_at")
 
-  orders Order[]
+  orders     Order[]
+  products   CouponProduct[]
+  categories CouponCategory[]
 
   @@map("coupons")
+}
+
+model CouponProduct {
+  id        String  @id @default(uuid())
+  couponId  String  @map("coupon_id")
+  productId String  @map("product_id")
+  coupon    Coupon  @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, productId])
+  @@map("coupon_products")
+}
+
+model CouponCategory {
+  id         String   @id @default(uuid())
+  couponId   String   @map("coupon_id")
+  categoryId String   @map("category_id")
+  coupon     Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@unique([couponId, categoryId])
+  @@map("coupon_categories")
 }
 
 model ReturnRequest {
