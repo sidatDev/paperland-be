@@ -1434,4 +1434,163 @@ export default async function orderRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET /orders/my (Customer History)
+  fastify.get('/orders/my', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Get List of Orders for Current User',
+        tags: ['Orders'],
+        querystring: {
+            type: 'object',
+            properties: {
+                page: { type: 'integer', default: 1 },
+                limit: { type: 'integer', default: 10 },
+                status: { type: 'string' },
+                search: { type: 'string' },
+                startDate: { type: 'string', format: 'date' },
+                endDate: { type: 'string', format: 'date' }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const userId = (request.user as any).id;
+    const { page = 1, limit = 10, status, search, startDate, endDate } = request.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const where: any = { userId, deletedAt: null };
+    if (status && status !== 'All') where.status = status;
+    if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate) where.createdAt.lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+    }
+    if (search) {
+        where.OR = [
+            { orderNumber: { contains: search, mode: 'insensitive' } },
+            { items: { some: { product: { name: { contains: search, mode: 'insensitive' } } } } }
+        ];
+    }
+
+    const [orders, total] = await Promise.all([
+        (fastify.prisma as any).order.findMany({
+            where,
+            include: { currency: true, _count: { select: { items: true } } },
+            skip,
+            take: Number(limit),
+            orderBy: { createdAt: 'desc' }
+        }),
+        (fastify.prisma as any).order.count({ where })
+    ]);
+
+    return createResponse(
+        { 
+            orders, 
+            pagination: { 
+                total, 
+                page: Number(page), 
+                pages: Math.ceil(total / Number(limit)),
+                limit: Number(limit) 
+            } 
+        }, 
+        "My Orders Retrieved", 
+        { page: Number(page), limit: Number(limit), total }
+    );
+  });
+
+  // GET /orders/:id (Customer Detail)
+  fastify.get('/orders/:id', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Get Order Details for Customer',
+        tags: ['Orders'],
+        params: { type: 'object', properties: { id: { type: 'string' } } }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    const userId = (request.user as any).id;
+
+    const order = await (fastify.prisma as any).order.findFirst({
+        where: { id, userId, deletedAt: null },
+        include: { 
+            items: { include: { product: { select: { name: true, slug: true, imageUrl: true, sku: true } } } }, 
+            currency: true,
+            address: true
+        }
+    });
+
+    if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+    return createResponse(order);
+  });
+
+  // PATCH /orders/:id/cancel (Customer Cancellation)
+  fastify.patch('/orders/:id/cancel', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Cancel Order by Customer',
+        tags: ['Orders'],
+        params: { type: 'object', properties: { id: { type: 'string' } } }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    const userId = (request.user as any).id;
+
+    try {
+        const order = await (fastify.prisma as any).order.findFirst({
+            where: { id, userId, deletedAt: null },
+            include: { items: true }
+        });
+
+        if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+        if (order.status !== 'PENDING' && order.status !== 'PROCESSING') {
+            return reply.status(400).send(createErrorResponse("Order cannot be cancelled in its current state"));
+        }
+
+        const updatedOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
+            // Release Stock Reservations
+            for (const item of order.items) {
+                if (item.productId) {
+                    const stock = await tx.stock.findFirst({ 
+                        where: { productId: item.productId },
+                        orderBy: { reservedQty: 'desc' }
+                    });
+                    if (stock) {
+                        await tx.stock.update({
+                            where: { id: stock.id },
+                            data: { reservedQty: { decrement: Math.min(Number(item.quantity), stock.reservedQty) } }
+                        });
+                    }
+                }
+            }
+
+            return await tx.order.update({
+                where: { id: order.id },
+                data: { status: 'CANCELLED' }
+            });
+        });
+
+        // Log to History
+        await (fastify.prisma as any).orderStatusHistory.create({
+            data: {
+                orderId: order.id,
+                status: 'CANCELLED',
+                notes: "Cancelled by Customer",
+                changedBy: userId
+            }
+        });
+
+        await logActivity(fastify, {
+            entityType: 'ORDER',
+            entityId: id,
+            action: 'UPDATE_STATUS',
+            performedBy: userId,
+            details: { oldStatus: order.status, newStatus: 'CANCELLED', reason: 'User Cancelled' }
+        });
+
+        return createResponse(updatedOrder, "Order Cancelled Successfully");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
 }

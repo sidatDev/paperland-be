@@ -10,7 +10,8 @@ import { swaggerConfig, swaggerUiConfig } from './_docs/swagger';
 
 const fastify = Fastify({
   logger: true,
-  pluginTimeout: 30000
+  pluginTimeout: 30000,
+  bodyLimit: 10 * 1024 * 1024 // 10MB
 });
 
 import path from 'path';
