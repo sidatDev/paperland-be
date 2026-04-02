@@ -9,11 +9,12 @@ export default async function searchRoutes(fastify: FastifyInstance) {
         properties: {
           q: { type: 'string' },
           limit: { type: 'integer', default: 5 },
+          category: { type: 'string' },
         },
       },
     },
   }, async (request: any, reply) => {
-    const { q, limit } = request.query;
+    const { q, limit, category } = request.query;
     if (!q) return { results: [] };
 
     try {
@@ -25,7 +26,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
 
       const searchParameters: any = {
         q: q,
-        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,category',
+        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,category,brand',
         per_page: limit,
         prefix: true,
         num_typos: 1,
@@ -34,8 +35,10 @@ export default async function searchRoutes(fastify: FastifyInstance) {
       };
 
       let filters = ['isActive:=true'];
-      if (matchingCategory) {
-        // Apply strict filter if exact category match found
+      if (category) {
+        filters.push(`category:=[${category}]`);
+      } else if (matchingCategory) {
+        // Apply strict filter if exact category match found in query string
         filters.push(`category:=[${matchingCategory.name}]`);
       }
       searchParameters.filter_by = filters.join(' && ');

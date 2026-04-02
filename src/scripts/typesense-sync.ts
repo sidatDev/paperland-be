@@ -5,11 +5,16 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const prisma = new PrismaClient();
+const host = (process.env.TYPESENSE_HOST || 'localhost')
+  .replace('http://', '')
+  .replace('https://', '')
+  .split(':')[0];
+
 const typesense = new Client({
   nodes: [
     {
-      host: process.env.TYPESENSE_HOST || 'localhost',
-      port: parseInt(process.env.TYPESENSE_PORT || '8108'),
+      host: host,
+      port: parseInt(process.env.TYPESENSE_PORT || '80'),
       protocol: process.env.TYPESENSE_PROTOCOL || 'http',
     },
   ],
