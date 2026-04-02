@@ -47,6 +47,7 @@ async function syncProducts() {
         { name: 'description', type: 'string', optional: true },
         { name: 'brand', type: 'string', facet: true },
         { name: 'category', type: 'string', facet: true },
+        { name: 'sub_category', type: 'string', facet: true, optional: true },
         { name: 'price', type: 'float', facet: true },
         { name: 'currency', type: 'string', facet: true },
         { name: 'image_url', type: 'string', facet: false, optional: true },
@@ -121,7 +122,11 @@ async function syncProducts() {
       },
       include: {
         brand: true,
-        category: true,
+        category: {
+          include: {
+            parent: true,
+          },
+        },
         industries: {
           include: {
             industry: true,
@@ -149,7 +154,8 @@ async function syncProducts() {
       normalized_part_no: (p.specifications as any)?.partNo ? normalizeSKU((p.specifications as any).partNo) : '',
       description: p.description || '',
       brand: p.brand?.name || 'Unknown',
-      category: p.category?.name || 'Uncategorized',
+      category: p.category?.parent ? p.category.parent.name : (p.category?.name || 'Uncategorized'),
+      sub_category: p.category?.parent ? p.category.name : '',
       price: Number(p.prices[0]?.priceRetail || 0),
       currency: p.prices[0]?.currency?.code || 'SAR',
       image_url: p.imageUrl || '',

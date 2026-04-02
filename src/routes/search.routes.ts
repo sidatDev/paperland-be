@@ -26,7 +26,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
 
       const searchParameters: any = {
         q: q,
-        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,category,brand',
+        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,category,sub_category,brand',
         per_page: limit,
         prefix: true,
         num_typos: 1,
