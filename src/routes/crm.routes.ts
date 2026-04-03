@@ -504,6 +504,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         await emailService.sendB2BApprovalEmail(
             user.email,
             user.firstName || 'Valued Customer',
+            user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
             creditLimit
         );
 
@@ -595,7 +596,12 @@ export default async function crmRoutes(fastify: FastifyInstance) {
 
         // Send Rejection Email
         const { emailService } = await import('../services/email.service');
-        await emailService.sendB2BRejectionEmail(user.email, user.firstName || 'Applicant', reason);
+        await emailService.sendB2BRejectionEmail(
+            user.email, 
+            user.firstName || 'Applicant', 
+            user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
+            reason
+        );
 
         // Log Activity
         await logActivity(fastify, {

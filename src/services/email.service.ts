@@ -244,82 +244,44 @@ export class EmailService {
   /**
    * Send B2B account approval notification email
    */
-  async sendB2BApprovalEmail(to: string, userName: string, creditLimit: number): Promise<void> {
-    const subject = '🎉 Your B2B Account Has Been Approved - Paperland';
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #22c55e; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">✅ Account Approved!</h1>
-        </div>
-        
-        <div style="padding: 30px; background-color: #f9fafb;">
-          <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
-          
-          <p style="font-size: 16px; color: #374151; line-height: 1.6;">
-            Congratulations! Your B2B account application has been <strong>approved</strong>.
-          </p>
-          
-          <div style="background-color: white; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0;">
-            <h3 style="margin-top: 0; color: #059669;">Account Details:</h3>
-            <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> PKR ${creditLimit.toLocaleString()}</p>
-            <p style="margin: 5px 0;">🚀 <strong>Status:</strong> Active</p>
+  async sendB2BApprovalEmail(to: string, userName: string, companyName: string, creditLimit: number): Promise<void> {
+    try {
+      await this.sendDynamicEmail('B2B_APPROVAL', to, {
+        userName,
+        companyName,
+        creditLimit: creditLimit.toLocaleString()
+      });
+    } catch (error) {
+      console.warn('⚠️ Dynamic B2B approval email failed, falling back to hardcoded template');
+      const subject = '🎉 Your B2B Account Has Been Approved - Paperland';
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #22c55e; padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">✅ Account Approved!</h1>
           </div>
           
-          <h3 style="color: #374151;">What's Next?</h3>
-          <ul style="color: #374151; line-height: 1.8;">
-            <li>You can now <strong>login to your account</strong> using your registered email</li>
-            <li>Browse our complete product catalog</li>
-            <li>Place orders with your credit limit</li>
-            <li>Access exclusive B2B pricing and bulk discounts</li>
-          </ul>
-          
-          <div style="text-align: center; margin: 30px 0;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3002'}/en/login" 
-               style="background-color: #dc2626; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: bold;">
-              Login to Your Account
-            </a>
+          <div style="padding: 30px; background-color: #f9fafb;">
+            <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
+            
+            <p style="font-size: 16px; color: #374151; line-height: 1.6;">
+              Congratulations! Your B2B account application for <strong>${companyName}</strong> has been <strong>approved</strong>.
+            </p>
+            
+            <div style="background-color: white; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0;">
+              <h3 style="margin-top: 0; color: #059669;">Account Details:</h3>
+              <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> PKR ${creditLimit.toLocaleString()}</p>
+              <p style="margin: 5px 0;">🚀 <strong>Status:</strong> Active</p>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+              Best regards,<br>
+              <strong>Paperland Team</strong>
+            </p>
           </div>
-          
-          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            If you have any questions, feel free to contact our support team.
-          </p>
-          
-          <p style="color: #6b7280; font-size: 14px;">
-            Best regards,<br>
-            <strong>Paperland Team</strong>
-          </p>
         </div>
-      </div>
-    `;
-
-    const textContent = `
-Dear ${userName},
-
-Congratulations! Your B2B account has been APPROVED.
-
-Account Details:
-- Initial Credit Limit: PKR ${creditLimit.toLocaleString()}
-- Status: Active
-
-What's Next?
-- Login to your account using your registered email
-- Browse our complete product catalog
-- Place orders with your credit limit
-- Access exclusive B2B pricing
-
-Login here: ${process.env.FRONTEND_URL || 'http://localhost:3002'}/en/login
-
-Best regards,
-Paperland Team
-    `;
-
-    await this.sendEmail({
-      to,
-      subject,
-      html: htmlContent,
-      text: textContent
-    });
+      `;
+      await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+    }
     
     console.log(`✅ B2B Approval Email sent to: ${to}`);
   }
@@ -327,65 +289,38 @@ Paperland Team
   /**
    * Send B2B account rejection notification email
    */
-  async sendB2BRejectionEmail(to: string, userName: string, reason?: string): Promise<void> {
-    const subject = 'B2B Account Application Update - Paperland';
-    
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <div style="background-color: #ef4444; padding: 20px; text-align: center;">
-          <h1 style="color: white; margin: 0;">Application Status Update</h1>
-        </div>
-        
-        <div style="padding: 30px; background-color: #f9fafb;">
-          <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
-          
-          <p style="font-size: 16px; color: #374151; line-height: 1.6;">
-            Your B2B account application was rejected due to <strong>${reason || 'unspecified reasons'}</strong>. Contact support for more info.
-          </p>
-          
-          <h3 style="color: #374151;">Need Help?</h3>
-          <p style="color: #374151; line-height: 1.6;">
-            If you have any questions about this decision or would like to discuss your application further, 
-            please don't hesitate to contact our support team.
-          </p>
-          
-          <div style="background-color: white; padding: 20px; margin: 20px 0; border-radius: 6px;">
-            <p style="margin: 5px 0; color: #374151;">📧 <strong>Email:</strong> support@paperland.com.pk</p>
-            <p style="margin: 5px 0; color: #374151;">📞 <strong>Phone:</strong> +92 (000) 000-0000</p>
+  async sendB2BRejectionEmail(to: string, userName: string, companyName: string, reason?: string): Promise<void> {
+    try {
+      await this.sendDynamicEmail('B2B_REJECTION', to, {
+        userName,
+        companyName,
+        reason: reason || 'Information provided did not meet our requirements.'
+      });
+    } catch (error) {
+      console.warn('⚠️ Dynamic B2B rejection email failed, falling back to hardcoded template');
+      const subject = 'B2B Account Application Update - Paperland';
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <div style="background-color: #ef4444; padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Application Status Update</h1>
           </div>
           
-          <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-            We appreciate your interest in partnering with Paperland.
-          </p>
-          
-          <p style="color: #6b7280; font-size: 14px;">
-            Best regards,<br>
-            <strong>Paperland Team</strong>
-          </p>
+          <div style="padding: 30px; background-color: #f9fafb;">
+            <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
+            
+            <p style="font-size: 16px; color: #374151; line-height: 1.6;">
+              Your B2B account application for <strong>${companyName}</strong> was rejected due to <strong>${reason || 'unspecified reasons'}</strong>. Contact support for more info.
+            </p>
+            
+            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+              Best regards,<br>
+              <strong>Paperland Team</strong>
+            </p>
+          </div>
         </div>
-      </div>
-    `;
-
-    const textContent = `
-Dear ${userName},
-
-Your B2B account application was rejected due to ${reason || 'unspecified reasons'}. Contact support for more info.
-
-Need Help?
-If you have any questions, please contact our support team:
-- Email: support@paperland.com.pk
-- Phone: +92 (000) 000-0000
-
-Best regards,
-Paperland Team
-    `;
-
-    await this.sendEmail({
-      to,
-      subject,
-      html: htmlContent,
-      text: textContent
-    });
+      `;
+      await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+    }
     
     console.log(`📧 B2B Rejection Email sent to: ${to}`);
   }
