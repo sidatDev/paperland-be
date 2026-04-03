@@ -5,17 +5,24 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const prisma = new PrismaClient();
-const host = (process.env.TYPESENSE_HOST || 'localhost')
+const rawHost = process.env.TYPESENSE_HOST || 'localhost';
+const protocol = process.env.TYPESENSE_PROTOCOL || 'http';
+const port = parseInt(process.env.TYPESENSE_PORT || '80');
+
+const host = rawHost
   .replace('http://', '')
   .replace('https://', '')
+  .replace(/\/$/, '')
   .split(':')[0];
+
+console.log(`🔌 Connecting to Typesense at: ${protocol}://${host}:${port}`);
 
 const typesense = new Client({
   nodes: [
     {
       host: host,
-      port: parseInt(process.env.TYPESENSE_PORT || '80'),
-      protocol: process.env.TYPESENSE_PROTOCOL || 'http',
+      port: port,
+      protocol: protocol,
     },
   ],
   apiKey: process.env.TYPESENSE_API_KEY || 'xyz',
