@@ -230,6 +230,39 @@ export default async function couponRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET coupon stats (Admin)
+  fastify.get('/admin/coupons/stats', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_view')],
+    schema: {
+      tags: ['Admin Coupons'],
+      security: [{ bearerAuth: [] }]
+    }
+  }, async (request, reply) => {
+    try {
+      const [totalCoupons, activeCoupons, aggregates] = await Promise.all([
+        (fastify.prisma as any).coupon.count({ where: { deletedAt: null } }),
+        (fastify.prisma as any).coupon.count({ where: { deletedAt: null, isActive: true } }),
+        (fastify.prisma as any).coupon.aggregate({
+          where: { deletedAt: null },
+          _sum: {
+            usedCount: true,
+            totalDiscountGiven: true
+          }
+        })
+      ]);
+
+      return reply.send({
+        totalCoupons,
+        activeCoupons,
+        totalRedemptions: Number(aggregates._sum.usedCount || 0),
+        totalDiscountGiven: Number(aggregates._sum.totalDiscountGiven || 0)
+      });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to fetch coupon stats' });
+    }
+  });
+
   // GET a single coupon (Admin)
   fastify.get('/admin/coupons/:id', {
     preHandler: [fastify.authenticate, fastify.hasPermission('product_view')],
@@ -445,7 +478,10 @@ export default async function couponRoutes(fastify: FastifyInstance) {
       const stats = {
         totalOrders: coupon._count.orders,
         totalRevenue: coupon.orders.reduce((sum: number, order: any) => sum + Number(order.totalAmount), 0),
-        totalDiscount: coupon.orders.reduce((sum: number, order: any) => sum + (Number(order.discountAmount) || 0), 0),
+        totalDiscount: coupon.orders.reduce((sum: number, order: any) => {
+          const pricing = typeof order.pricingSummary === 'string' ? JSON.parse(order.pricingSummary as string) : (order.pricingSummary || {});
+          return sum + Number(pricing.couponDiscount || 0);
+        }, 0),
         redemptionRate: coupon.usageLimit ? (coupon.usedCount / coupon.usageLimit) * 100 : null,
       };
 
@@ -460,12 +496,14 @@ export default async function couponRoutes(fastify: FastifyInstance) {
         stats,
         recentOrders: coupon.orders.map((o: any) => {
           const customerName = o.user ? `${o.user.firstName || ''} ${o.user.lastName || ''}`.trim() : 'Guest';
+          const pricing = typeof o.pricingSummary === 'string' ? JSON.parse(o.pricingSummary) : (o.pricingSummary || {});
           return {
             id: o.id,
             orderNumber: o.orderNumber,
             customerName: customerName || 'Guest',
-            totalAmount: o.totalAmount,
-            discountAmount: o.discountAmount,
+            subtotal: Number(pricing.subtotal || 0),
+            totalAmount: Number(o.totalAmount),
+            discountAmount: Number(pricing.couponDiscount || 0),
             createdAt: o.createdAt,
             status: o.status
           };

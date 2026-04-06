@@ -223,8 +223,6 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             default: shippingCost = (city?.toLowerCase() === 'karachi' ? 150 : 250);
         }
 
-        const tax = subtotal * 0.18;
-        
         // 2.5 Coupon Calculation (NEW)
         let couponDiscount = 0;
         let couponId = null;
@@ -251,6 +249,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             }
         }
 
+        const tax = (subtotal - couponDiscount) * 0.15;
         const total = (subtotal - couponDiscount) + shippingCost + tax;
 
         // 3. Currency (Locked to PKR)
@@ -395,7 +394,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     include: { 
                         product: true 
                     } 
-                } 
+                },
+                coupon: true
             }
         });
 
@@ -420,6 +420,167 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             ...order,
             items: mappedItems
         };
+    });
+
+    // PATCH /checkout/draft/:id/apply-coupon
+    fastify.patch('/checkout/draft/:id/apply-coupon', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            body: {
+                type: 'object',
+                required: ['couponCode'],
+                properties: {
+                    couponCode: { type: 'string' }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        const userId = (request.user as any)?.id;
+        const { id } = request.params as any;
+        const { couponCode } = request.body as any;
+
+        // 1. Get Draft Order
+        const order = await fastify.prisma.order.findUnique({
+            where: { id, userId, status: 'DRAFT' },
+            include: { items: true }
+        });
+
+        if (!order) return reply.code(404).send({ message: 'Draft order not found' });
+
+        // 2. Validate Coupon
+        const coupon = await (fastify.prisma as any).coupon.findUnique({
+            where: { code: couponCode.toUpperCase(), isActive: true, deletedAt: null }
+        });
+
+        if (!coupon || new Date() < coupon.startDate || new Date() > coupon.endDate) {
+            return reply.code(400).send({ message: 'Invalid or expired coupon' });
+        }
+
+        if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
+            return reply.code(400).send({ message: 'Coupon usage limit reached' });
+        }
+
+        if (coupon.usageLimitPerCustomer && userId) {
+            const userUsageCount = await (fastify.prisma as any).order.count({
+                where: { couponId: coupon.id, userId, deletedAt: null }
+            });
+            if (userUsageCount >= coupon.usageLimitPerCustomer) {
+                return reply.code(400).send({ message: 'You have reached the usage limit for this coupon' });
+            }
+        }
+
+        // 3. Recalculate
+        let pricingSummary = typeof order.pricingSummary === 'string' ? JSON.parse(order.pricingSummary as string) : (order.pricingSummary || {});
+        const subtotal = pricingSummary?.subtotal || Number(order.totalAmount);
+        
+        if (subtotal < Number(coupon.minOrderAmount)) {
+            return reply.code(400).send({ message: `Minimum order amount for this coupon is PKR ${coupon.minOrderAmount}` });
+        }
+
+        let couponDiscount = 0;
+        if (coupon.discountType === 'PERCENTAGE') {
+            couponDiscount = subtotal * (Number(coupon.discountValue) / 100);
+            if (coupon.maxDiscountAmount !== null && Number(coupon.maxDiscountAmount) > 0 && couponDiscount > Number(coupon.maxDiscountAmount)) {
+                couponDiscount = Number(coupon.maxDiscountAmount);
+            }
+        } else {
+            couponDiscount = Number(coupon.discountValue);
+        }
+
+        const shippingCost = pricingSummary?.shippingCost || Number(order.shippingAmount) || 0;
+        const tax = (subtotal - couponDiscount) * 0.15; // Recalculate tax with discount
+        const total = (subtotal - couponDiscount) + shippingCost + tax;
+
+        pricingSummary = {
+            ...pricingSummary,
+            couponDiscount,
+            total
+        };
+
+        // 4. Update Draft
+        const updatedOrder = await fastify.prisma.order.update({
+            where: { id },
+            data: {
+                totalAmount: total,
+                couponId: coupon.id,
+                pricingSummary,
+                updatedAt: new Date()
+            },
+            include: { 
+                items: { include: { product: true } },
+                coupon: true
+            }
+        });
+
+        const mappedItems = updatedOrder.items.map((item: any) => ({
+            id: item.id,
+            productId: item.productId,
+            title: item.product.name,
+            price: item.price,
+            originalPrice: item.pricingSnapshot?.basePrice || undefined,
+            quantity: item.quantity,
+            image: item.product.imageUrl,
+            partNumber: item.product.sku,
+            pricingSnapshot: item.pricingSnapshot
+        }));
+
+        return { ...updatedOrder, items: mappedItems };
+    });
+
+    // PATCH /checkout/draft/:id/remove-coupon
+    fastify.patch('/checkout/draft/:id/remove-coupon', {
+        preHandler: [fastify.authenticate]
+    }, async (request, reply) => {
+        const userId = (request.user as any)?.id;
+        const { id } = request.params as any;
+
+        const order = await fastify.prisma.order.findUnique({
+            where: { id, userId, status: 'DRAFT' }
+        });
+
+        if (!order) return reply.code(404).send({ message: 'Draft order not found' });
+
+        if (!order.couponId) return reply.send({ message: 'No coupon applied to this order' });
+
+        let pricingSummary = order.pricingSummary as any;
+        const subtotal = pricingSummary?.subtotal || Number(order.totalAmount);
+        const shippingCost = pricingSummary?.shippingCost || Number(order.shippingAmount) || 0;
+        const tax = subtotal * 0.15; // Restored tax without discount
+        const total = subtotal + shippingCost + tax;
+
+        pricingSummary = {
+            ...pricingSummary,
+            couponDiscount: 0,
+            total
+        };
+
+        const updatedOrder = await fastify.prisma.order.update({
+            where: { id },
+            data: {
+                totalAmount: total,
+                coupon: { disconnect: true },
+                pricingSummary,
+                updatedAt: new Date()
+            },
+            include: { 
+                items: { include: { product: true } },
+                coupon: true
+            }
+        });
+
+        const mappedItems = updatedOrder.items.map((item: any) => ({
+            id: item.id,
+            productId: item.productId,
+            title: item.product.name,
+            price: item.price,
+            originalPrice: item.pricingSnapshot?.basePrice || undefined,
+            quantity: item.quantity,
+            image: item.product.imageUrl,
+            partNumber: item.product.sku,
+            pricingSnapshot: item.pricingSnapshot
+        }));
+
+        return { ...updatedOrder, items: mappedItems };
     });
 
     // POST /checkout/validate-shipping
@@ -518,6 +679,25 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 updatedAt: new Date()
             }
         });
+
+        // Update Coupon Usage Tracking
+        if (order.couponId) {
+            try {
+                const pricing = typeof order.pricingSummary === 'string' ? JSON.parse(order.pricingSummary as string) : (order.pricingSummary || {});
+                const discount = Number(pricing.couponDiscount || 0);
+                
+                await (fastify.prisma as any).coupon.update({
+                    where: { id: order.couponId },
+                    data: {
+                        usedCount: { increment: 1 },
+                        totalDiscountGiven: { increment: discount }
+                    }
+                });
+            } catch (couponErr) {
+                fastify.log.error(couponErr, 'Failed to update coupon usage on checkout submit');
+                // We DON'T fail the order if coupon stats update fails
+            }
+        }
 
         // 3. Create Transaction Record
         await (fastify.prisma as any).transaction.create({

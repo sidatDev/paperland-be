@@ -42,6 +42,8 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
         },
         include: {
           currency: true,
+          coupon: true,
+          items: { include: { product: true } },
           address: { include: { country: true }},
           history: {
             orderBy: { createdAt: 'desc' },
@@ -131,7 +133,14 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
           name: latestCallLog.agent.name,
           phone: latestCallLog.agent.phone
         } : null,
-        timeline: combinedTimeline
+        timeline: combinedTimeline,
+        items: order.items,
+        pricingSummary: order.pricingSummary,
+        taxAmount: order.taxAmount ? parseFloat(order.taxAmount.toString()) : 0,
+        shippingAmount: order.shippingAmount ? parseFloat(order.shippingAmount.toString()) : 0,
+        subtotal: order.subtotal ? parseFloat(order.subtotal.toString()) : null,
+        couponDiscount: order.couponDiscount ? parseFloat(order.couponDiscount.toString()) : null,
+        coupon: order.coupon || null
       };
 
       return createResponse(responseData);
