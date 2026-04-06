@@ -161,7 +161,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             subtotal,
             currency: 'PKR',
             defaultAddress,
-            taxRate: 0.18 // Standard 18% VAT
+            taxRate: 0.15 // Standard 15% VAT
         };
     });
 
@@ -223,26 +223,65 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             default: shippingCost = (city?.toLowerCase() === 'karachi' ? 150 : 250);
         }
 
-        // 2.5 Coupon Calculation (NEW)
+        // 2.5 Coupon Calculation (Fixed Logic)
         let couponDiscount = 0;
         let couponId = null;
 
         if (couponCode) {
             const coupon = await (fastify.prisma as any).coupon.findUnique({
-                where: { code: (couponCode as string).toUpperCase(), isActive: true, deletedAt: null }
+                where: { code: (couponCode as string).toUpperCase(), isActive: true, deletedAt: null },
+                include: { products: true, categories: true }
             });
 
             if (coupon && new Date() >= coupon.startDate && new Date() <= coupon.endDate) {
-                if (!coupon.usageLimit || coupon.usedCount < coupon.usageLimit) {
-                    if (subtotal >= Number(coupon.minOrderAmount)) {
+                // Check Global Usage Limit
+                const isLimitAvailable = !coupon.usageLimit || coupon.usedCount < coupon.usageLimit;
+                
+                // Check Customer-Specific Usage Limit
+                let isCustomerLimitAvailable = true;
+                if (coupon.usageLimitPerCustomer) {
+                    const userUsageCount = await (fastify.prisma as any).order.count({
+                        where: { couponId: coupon.id, userId, status: { not: 'DRAFT' }, deletedAt: null }
+                    });
+                    if (userUsageCount >= coupon.usageLimitPerCustomer) {
+                        isCustomerLimitAvailable = false;
+                    }
+                }
+
+                if (isLimitAvailable && isCustomerLimitAvailable) {
+                    // Identify ELIGIBLE Items
+                    let eligibleSubtotal = 0;
+                    
+                    pricedItems.forEach(pi => {
+                        const cartItem = cart.items.find(i => i.productId === pi.productId);
+                        const qty = cartItem?.quantity || 0;
+                        const product = cartItem?.product;
+
+                        let isEligible = false;
+                        if (coupon.applicationType === 'ALL') {
+                            isEligible = true;
+                        } else if (coupon.applicationType === 'SPECIFIC_PRODUCTS') {
+                            isEligible = coupon.products.some((p: any) => p.productId === pi.productId);
+                        } else if (coupon.applicationType === 'SPECIFIC_CATEGORIES') {
+                            isEligible = product?.categoryId ? coupon.categories.some((c: any) => c.categoryId === product.categoryId) : false;
+                        }
+
+                        if (isEligible) {
+                            eligibleSubtotal += (pi.finalPrice * qty);
+                        }
+                    });
+
+                    // Validate Min Order Amount on Eligible Total
+                    if (eligibleSubtotal > 0 && eligibleSubtotal >= Number(coupon.minOrderAmount || 0)) {
                         couponId = coupon.id;
                         if (coupon.discountType === 'PERCENTAGE') {
-                            couponDiscount = subtotal * (Number(coupon.discountValue) / 100);
+                            couponDiscount = eligibleSubtotal * (Number(coupon.discountValue) / 100);
                             if (coupon.maxDiscountAmount && couponDiscount > Number(coupon.maxDiscountAmount)) {
                                 couponDiscount = Number(coupon.maxDiscountAmount);
                             }
                         } else {
-                            couponDiscount = Number(coupon.discountValue);
+                            // Fixed discount shouldn't exceed eligible subtotal
+                            couponDiscount = Math.min(Number(coupon.discountValue), eligibleSubtotal);
                         }
                     }
                 }
@@ -449,7 +488,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
 
         // 2. Validate Coupon
         const coupon = await (fastify.prisma as any).coupon.findUnique({
-            where: { code: couponCode.toUpperCase(), isActive: true, deletedAt: null }
+            where: { code: couponCode.toUpperCase(), isActive: true, deletedAt: null },
+            include: { products: true, categories: true }
         });
 
         if (!coupon || new Date() < coupon.startDate || new Date() > coupon.endDate) {
@@ -462,38 +502,63 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
 
         if (coupon.usageLimitPerCustomer && userId) {
             const userUsageCount = await (fastify.prisma as any).order.count({
-                where: { couponId: coupon.id, userId, deletedAt: null }
+                where: { couponId: coupon.id, userId, status: { not: 'DRAFT' }, deletedAt: null }
             });
             if (userUsageCount >= coupon.usageLimitPerCustomer) {
                 return reply.code(400).send({ message: 'You have reached the usage limit for this coupon' });
             }
         }
 
-        // 3. Recalculate
-        let pricingSummary = typeof order.pricingSummary === 'string' ? JSON.parse(order.pricingSummary as string) : (order.pricingSummary || {});
-        const subtotal = pricingSummary?.subtotal || Number(order.totalAmount);
+        // 3. Recalculate based on ELIGIBLE items
+        const pricingSummary: any = typeof order.pricingSummary === 'string' ? JSON.parse(order.pricingSummary as string) : (order.pricingSummary || {});
         
-        if (subtotal < Number(coupon.minOrderAmount)) {
-            return reply.code(400).send({ message: `Minimum order amount for this coupon is PKR ${coupon.minOrderAmount}` });
+        const subtotal = order.items.reduce((acc, item) => acc + (Number(item.price) * item.quantity), 0);
+        let eligibleSubtotal = 0;
+        for (const item of order.items) {
+            let isEligible = false;
+            if (coupon.applicationType === 'ALL') {
+                isEligible = true;
+            } else if (coupon.applicationType === 'SPECIFIC_PRODUCTS') {
+                isEligible = coupon.products.some((p: any) => p.productId === item.productId);
+            } else if (coupon.applicationType === 'SPECIFIC_CATEGORIES') {
+                // We need the categoryId of the product in the order item
+                // The order.items includes product because of the findUnique include
+                const product = (item as any).product;
+                isEligible = product?.categoryId ? coupon.categories.some((c: any) => c.categoryId === product.categoryId) : false;
+            }
+
+            if (isEligible) {
+                eligibleSubtotal += (Number(item.price) * item.quantity);
+            }
+        }
+
+        if (eligibleSubtotal <= 0) {
+            return reply.code(400).send({ message: 'This coupon is not applicable to any items in your cart' });
+        }
+
+        if (eligibleSubtotal < Number(coupon.minOrderAmount || 0)) {
+            return reply.code(400).send({ message: `Minimum eligible order amount for this coupon is PKR ${coupon.minOrderAmount}` });
         }
 
         let couponDiscount = 0;
         if (coupon.discountType === 'PERCENTAGE') {
-            couponDiscount = subtotal * (Number(coupon.discountValue) / 100);
+            couponDiscount = eligibleSubtotal * (Number(coupon.discountValue) / 100);
             if (coupon.maxDiscountAmount !== null && Number(coupon.maxDiscountAmount) > 0 && couponDiscount > Number(coupon.maxDiscountAmount)) {
                 couponDiscount = Number(coupon.maxDiscountAmount);
             }
         } else {
-            couponDiscount = Number(coupon.discountValue);
+            couponDiscount = Math.min(Number(coupon.discountValue), eligibleSubtotal);
         }
 
         const shippingCost = pricingSummary?.shippingCost || Number(order.shippingAmount) || 0;
         const tax = (subtotal - couponDiscount) * 0.15; // Recalculate tax with discount
         const total = (subtotal - couponDiscount) + shippingCost + tax;
 
-        pricingSummary = {
+        const updatedPricingSummary = {
             ...pricingSummary,
+            subtotal,
             couponDiscount,
+            tax,
             total
         };
 
@@ -503,7 +568,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             data: {
                 totalAmount: total,
                 couponId: coupon.id,
-                pricingSummary,
+                pricingSummary: updatedPricingSummary,
                 updatedAt: new Date()
             },
             include: { 
@@ -516,15 +581,18 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             id: item.id,
             productId: item.productId,
             title: item.product.name,
-            price: item.price,
-            originalPrice: item.pricingSnapshot?.basePrice || undefined,
+            sku: item.sku,
+            price: Number(item.price),
             quantity: item.quantity,
-            image: item.product.imageUrl,
-            partNumber: item.product.sku,
-            pricingSnapshot: item.pricingSnapshot
+            total: Number(item.price) * item.quantity,
+            image: item.product.images?.[0] || item.product.imageUrl
         }));
 
-        return { ...updatedOrder, items: mappedItems };
+        return {
+            ...updatedOrder,
+            items: mappedItems,
+            pricingSummary: updatedPricingSummary
+        };
     });
 
     // PATCH /checkout/draft/:id/remove-coupon
