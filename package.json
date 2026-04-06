@@ -11,7 +11,7 @@
     "verify-auth": "ts-node src/scripts/verify-auth.ts",
     "migrate:deploy": "prisma migrate deploy",
     "studio": "prisma studio --port 5555 --browser none",
-    "typesense:sync": "ts-node src/scripts/typesense-sync.ts",
+    "typesense:sync": "node dist/scripts/typesense-sync.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

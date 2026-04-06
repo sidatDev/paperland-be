@@ -19,44 +19,58 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'IN_REVIEW'] },
-          limit: { type: 'integer', default: 50 }
+          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'IN_REVIEW', 'ALL'] },
+          limit: { type: 'integer', default: 50 },
+          page: { type: 'integer', default: 1 }
         }
       }
     }
   }, async (request, reply) => {
     try {
-      const { status, limit = 50 } = request.query as any;
+      const { status, limit = 50, page = 1 } = request.query as any;
+      const skip = (page - 1) * limit;
 
       // Build query filter
       const where: any = {};
-      if (status) {
+      
+      if (status && status !== 'ALL') {
         where.accountStatus = status;
-      } else {
+      } else if (!status) {
         // Default: Show pending, pending_docs and in-review
         where.accountStatus = { in: ['PENDING', 'PENDING_DOCS', 'IN_REVIEW'] };
       }
+      // If status is 'ALL', where.accountStatus is not set, showing everything
 
       // Fetch users with B2B company details
-      const users = await fastify.prisma.user.findMany({
-        where: {
-          ...where,
-          role: {
-            name: { in: ['CUSTOMER', 'BUSINESS'] }
+      const [users, total] = await Promise.all([
+        fastify.prisma.user.findMany({
+          where: {
+            ...where,
+            role: {
+              name: { in: ['CUSTOMER', 'BUSINESS', 'B2B_ADMIN'] }
+            },
+            b2bCompanyDetails: { isNot: null }
+          },
+          include: {
+            role: true,
+            b2bCompanyDetails: true
+          },
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' }
+        }),
+        fastify.prisma.user.count({
+          where: {
+            ...where,
+            role: {
+              name: { in: ['CUSTOMER', 'BUSINESS', 'B2B_ADMIN'] }
+            },
+            b2bCompanyDetails: { isNot: null }
           }
-        },
-        include: {
-          role: true,
-          b2bCompanyDetails: true
-        },
-        take: limit,
-        orderBy: { createdAt: 'desc' }
-      });
+        })
+      ]);
 
-      // Filter only users with company details (B2B)
-      const b2bRequests = users
-        .filter(user => user.b2bCompanyDetails)
-        .map(user => ({
+      const data = users.map(user => ({
           user: {
             id: user.id,
             email: user.email,
@@ -88,7 +102,12 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
           }
         }));
 
-      return b2bRequests;
+      return {
+        data,
+        total,
+        page,
+        totalPages: Math.ceil(total / limit)
+      };
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Failed to fetch B2B requests' });
@@ -236,6 +255,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         await emailService.sendB2BApprovalEmail(
           user.email,
           user.firstName || 'Valued Customer',
+          user.b2bCompanyDetails.companyName,
           creditLimit
         );
 
@@ -271,6 +291,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         await emailService.sendB2BRejectionEmail(
           user.email,
           user.firstName || 'Applicant',
+          user.b2bCompanyDetails.companyName,
           rejectionReason
         );
 

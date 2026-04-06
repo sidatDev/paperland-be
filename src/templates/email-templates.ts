@@ -85,7 +85,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                                 <p style="margin: 5px 0;">Phone: ${PHONE} | Email: ${EMAIL}</p>
                                 <div class="divider"></div>
                                 <p style="font-size: 11px;">You are receiving this email because you registered on our website or subscribed to our newsletter. If you wish to unsubscribe, please contact us.</p>
-                                <p style="font-size: 11px; margin-top: 10px;">&copy; ${new Date().getFullYear()} Paperland. All rights reserved.</p>
+                                <p style="font-size: 11px; margin-top: 10px;">&copy; ${new Date().getFullYear()} • All rights reserved by PaperLand Designed & Developed By Sidat Technologies</p>
                             </td>
                         </tr>
                     </table>
