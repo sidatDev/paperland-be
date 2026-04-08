@@ -177,7 +177,7 @@ model User {
 
 model Address {
   id        String    @id @default(uuid())
-  userId    String    @map("user_id")
+  userId    String?   @map("user_id")
   type      String    @default("SHIPPING")
   isDefault Boolean   @default(false) @map("is_default")
   firstName String    @map("first_name")
@@ -194,7 +194,7 @@ model Address {
   deletedAt DateTime? @map("deleted_at")
   countryId String    @map("country_id")
   country   Country   @relation(fields: [countryId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
+  user      User?     @relation(fields: [userId], references: [id])
   orders    Order[]
 
   @@index([countryId])
@@ -528,7 +528,7 @@ model ProductImportLog {
 model Order {
   id                    String               @id @default(uuid())
   orderNumber           String               @unique @map("order_number")
-  userId                String               @map("user_id")
+  userId                String?              @map("user_id")
   status                String               @default("PENDING")
   totalAmount           Decimal              @map("total_amount") @db.Decimal(12, 2)
   taxAmount             Decimal              @map("tax_amount") @db.Decimal(12, 2)
@@ -559,15 +559,18 @@ model Order {
   processingDate        DateTime?            @map("processing_date")
   shippedDate           DateTime?            @map("shipped_date")
   trackingTimeline      Json?                @map("tracking_timeline")
-  couponId              String?              @map("coupon_id")
+  guestEmail            String?              @map("guest_email")
+  guestPhone            String?              @map("guest_phone")
+  isGuestOrder          Boolean              @default(false) @map("is_guest_order")
+  guestToken            String?              @map("guest_token")
   shipperBookingId      String?              @map("shipper_booking_id")
-  shipperLabelUrl       String?              @map("shipper_label_url")
+  couponId              String?              @map("coupon_id")
   items                 OrderItem[]
   history               OrderStatusHistory[]
-  address               Address              @relation(fields: [addressId], references: [id])
+  address               Address?             @relation(fields: [addressId], references: [id])
   coupon                Coupon?              @relation(fields: [couponId], references: [id])
   currency              Currency             @relation(fields: [currencyId], references: [id])
-  user                  User                 @relation(fields: [userId], references: [id])
+  user                  User?                @relation(fields: [userId], references: [id])
   purchase_orders       purchase_orders?
   returnRequests        ReturnRequest[]
   transactions          Transaction[]
@@ -838,7 +841,7 @@ model Banner {
 model Transaction {
   id                    String   @id @default(uuid())
   orderId               String   @map("order_id")
-  userId                String   @map("user_id")
+  userId                String?  @map("user_id")
   amount                Decimal  @db.Decimal(12, 2)
   status                String   @default("PENDING")
   type                  String   @default("PAYMENT")
@@ -850,7 +853,7 @@ model Transaction {
   currencyId            String   @map("currency_id")
   currency              Currency @relation(fields: [currencyId], references: [id])
   order                 Order    @relation(fields: [orderId], references: [id])
-  user                  User     @relation(fields: [userId], references: [id])
+  user                  User?    @relation(fields: [userId], references: [id])
 
   @@index([orderId])
   @@index([userId])

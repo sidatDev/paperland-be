@@ -528,9 +528,11 @@ export class EmailService {
    */
   async sendOrderConfirmationEmail(to: string, orderData: any): Promise<void> {
     try {
-      const portalUrl = process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com';
+      const portalUrl = (process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com').replace(/\/+$/, '');
+      const userName = orderData.user?.firstName || (orderData.shippingSnapshot as any)?.firstName || 'Customer';
+      
       await this.sendDynamicEmail('ORDER_PLACED', to, {
-        userName: orderData.user?.firstName || 'Customer',
+        userName,
         orderNumber: orderData.orderNumber,
         trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}`,
         orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),

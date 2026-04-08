@@ -66,7 +66,7 @@ export class CourierService {
 
       if (response.success && response.trackingNumber) {
         // Update Order with booking data
-        await this.prisma.order.update({
+        await (this.prisma.order as any).update({
           where: { id: orderId },
           data: {
             trackingNumber: response.trackingNumber,
@@ -75,7 +75,7 @@ export class CourierService {
             shipperLabelUrl: response.labelUrl,
             status: 'SHIPPED',
             shippedDate: new Date()
-          }
+          } as any
         });
 
         // Send Status Update Email (SHIPPED)

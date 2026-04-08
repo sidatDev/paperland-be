@@ -117,8 +117,13 @@ export default fp(async (fastify: FastifyInstance) => {
       return;
     }
 
-    // 3. Cart Paths (Special Case: Guests need POST/PUT/DELETE)
-    if (normalizedPath.startsWith('/cart') || path.startsWith('/api/v1/cart')) {
+    // 3. Cart & Guest Checkout Paths (Special Case: Guests need POST/PUT/DELETE)
+    const isGuestFlow = normalizedPath.startsWith('/cart') || 
+                       path.startsWith('/api/v1/cart') || 
+                       normalizedPath.startsWith('/guest-checkout') || 
+                       path.startsWith('/api/v1/guest-checkout');
+                       
+    if (isGuestFlow) {
       try {
          await request.jwtVerify();
       } catch (e) {}

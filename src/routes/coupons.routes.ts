@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import * as crypto from 'crypto';
 
 export default async function couponRoutes(fastify: FastifyInstance) {
 
@@ -137,8 +138,8 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           maxDiscountAmount: { type: 'number', minimum: 0 },
           startDate: { type: 'string' },
           endDate: { type: 'string' },
-          usageLimit: { type: 'number', minimum: 1 },
-          usageLimitPerCustomer: { type: 'number', minimum: 1 },
+          usageLimit: { type: 'number', minimum: 0 },
+          usageLimitPerCustomer: { type: 'number', minimum: 0 },
           budgetCap: { type: 'number', minimum: 0 },
           couponType: { type: 'string', enum: ['STATIC', 'DYNAMIC'], default: 'STATIC' },
           applicationType: { type: 'string', enum: ['ALL', 'SPECIFIC_PRODUCTS', 'SPECIFIC_CATEGORIES'] },
@@ -161,18 +162,73 @@ export default async function couponRoutes(fastify: FastifyInstance) {
         productIds, categoryIds
       } = request.body as any;
 
+      let finalCode = code.toUpperCase();
+      
+      // If dynamic, generate a unique random code to avoid P2002
+      if (couponType === 'DYNAMIC' || finalCode === 'AUTO_GENERATED') {
+        finalCode = `PL-${crypto.randomBytes(3).toString('hex').toUpperCase()}-${new Date().getFullYear()}`;
+      }
+
       const existing = await (fastify.prisma as any).coupon.findUnique({
-        where: { code: code.toUpperCase() }
+        where: { code: finalCode }
       });
 
       if (existing && !existing.deletedAt) {
-        return reply.status(400).send({ message: 'A coupon with this code already exists' });
+        return reply.status(400).send({ message: `A coupon with code "${finalCode}" already exists` });
       }
 
       const coupon = await (fastify.prisma as any).$transaction(async (tx: any) => {
+        // If it exists but was deleted, restore and update it
+        if (existing && existing.deletedAt) {
+          // Clear old product/category relations to avoid conflicts
+          await tx.couponProduct.deleteMany({ where: { couponId: existing.id } });
+          await tx.couponCategory.deleteMany({ where: { couponId: existing.id } });
+
+          const restored = await tx.coupon.update({
+            where: { id: existing.id },
+            data: {
+              code: finalCode,
+              title: title || null,
+              description: description || null,
+              discountType,
+              discountValue,
+              minOrderAmount: minOrderAmount || null,
+              maxDiscountAmount: maxDiscountAmount || null,
+              startDate: new Date(startDate),
+              endDate: new Date(endDate),
+              usageLimit: usageLimit || null,
+              usedCount: 0, // Reset counter
+              isActive: isActive !== undefined ? isActive : true,
+              usageLimitPerCustomer: usageLimitPerCustomer || null,
+              budgetCap: budgetCap || null,
+              totalDiscountGiven: 0, // Reset
+              couponType: couponType || 'STATIC',
+              applicationType: applicationType || 'ALL',
+              customerType: customerType || 'ALL',
+              visibility: visibility || 'PRIVATE',
+              isStackable: isStackable !== undefined ? isStackable : false,
+              deletedAt: null // Restore
+            }
+          });
+
+          // Create new relations
+          if (productIds && productIds.length > 0) {
+            await tx.couponProduct.createMany({
+              data: productIds.map((pid: string) => ({ couponId: existing.id, productId: pid }))
+            });
+          }
+          if (categoryIds && categoryIds.length > 0) {
+            await tx.couponCategory.createMany({
+              data: categoryIds.map((cid: string) => ({ couponId: existing.id, categoryId: cid }))
+            });
+          }
+          return restored;
+        }
+
+        // Otherwise, create fresh
         const created = await tx.coupon.create({
           data: {
-            code: code.toUpperCase(),
+            code: finalCode,
             title: title || null,
             description: description || null,
             discountType,
@@ -320,8 +376,8 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           maxDiscountAmount: { type: 'number', minimum: 0 },
           startDate: { type: 'string' },
           endDate: { type: 'string' },
-          usageLimit: { type: 'number', minimum: 1 },
-          usageLimitPerCustomer: { type: 'number', minimum: 1 },
+          usageLimit: { type: 'number', minimum: 0 },
+          usageLimitPerCustomer: { type: 'number', minimum: 0 },
           budgetCap: { type: 'number', minimum: 0 },
           couponType: { type: 'string', enum: ['STATIC', 'DYNAMIC'] },
           applicationType: { type: 'string', enum: ['ALL', 'SPECIFIC_PRODUCTS', 'SPECIFIC_CATEGORIES'] },
@@ -344,19 +400,37 @@ export default async function couponRoutes(fastify: FastifyInstance) {
       const coupon = await (fastify.prisma as any).coupon.findUnique({ where: { id } });
       if (!coupon || coupon.deletedAt) return reply.status(404).send({ message: 'Coupon not found' });
 
-      if (data.code && data.code.toUpperCase() !== coupon.code) {
-        const existing = await (fastify.prisma as any).coupon.findUnique({ where: { code: data.code.toUpperCase() } });
-        if (existing && !existing.deletedAt) {
-          return reply.status(400).send({ message: 'A coupon with this code already exists' });
+      let finalCode = data.code ? data.code.toUpperCase() : undefined;
+
+      // Handle Dynamic/Auto-generated codes in PUT
+      if (finalCode === 'AUTO_GENERATED' || (data.couponType === 'DYNAMIC' && !finalCode && coupon.code === 'AUTO_GENERATED')) {
+        finalCode = `PL-${crypto.randomBytes(3).toString('hex').toUpperCase()}-${new Date().getFullYear()}`;
+      }
+
+      if (finalCode && finalCode !== coupon.code) {
+        const existing = await (fastify.prisma as any).coupon.findUnique({ where: { code: finalCode } });
+        if (existing) {
+          if (!existing.deletedAt) {
+            return reply.status(400).send({ message: `A coupon with code "${finalCode}" already exists.` });
+          } else {
+            return reply.status(400).send({ 
+              message: `The code "${finalCode}" is reserved by a deleted coupon. Please use a different code or contact support.` 
+            });
+          }
         }
       }
 
       const updated = await (fastify.prisma as any).$transaction(async (tx: any) => {
         const updateData: any = {
           ...data,
-          code: data.code ? data.code.toUpperCase() : undefined,
+          code: finalCode,
           startDate: data.startDate ? new Date(data.startDate) : undefined,
-          endDate: data.endDate ? new Date(data.endDate) : undefined
+          endDate: data.endDate ? new Date(data.endDate) : undefined,
+          minOrderAmount: data.minOrderAmount === 0 ? null : (data.minOrderAmount || undefined),
+          maxDiscountAmount: data.maxDiscountAmount === 0 ? null : (data.maxDiscountAmount || undefined),
+          usageLimit: data.usageLimit === 0 ? null : (data.usageLimit || undefined),
+          usageLimitPerCustomer: data.usageLimitPerCustomer === 0 ? null : (data.usageLimitPerCustomer || undefined),
+          budgetCap: data.budgetCap === 0 ? null : (data.budgetCap || undefined),
         };
 
         if (applicationType !== undefined) {
@@ -557,6 +631,16 @@ export default async function couponRoutes(fastify: FastifyInstance) {
         if (userUsageCount >= coupon.usageLimitPerCustomer) {
           return reply.status(400).send({ valid: false, message: 'You have reached the usage limit for this coupon' });
         }
+      }
+
+      // Guest eligibility check (from query param or inferred)
+      const isGuest = (request.query as any)?.isGuest === 'true';
+      if (isGuest && coupon.customerType === 'B2B_ONLY') {
+        return reply.status(400).send({ valid: false, message: 'This coupon is not available for guest users' });
+      }
+      if (isGuest && coupon.customerType === 'NEW_CUSTOMERS') {
+        // For guest checkout, treat as new customer (they don't have order history)
+        // Allow the coupon
       }
 
       // Budget cap check

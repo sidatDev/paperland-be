@@ -1,0 +1,218 @@
+﻿[
+  {
+    "migration_name": "20260207133833_add_profile_fields"
+  },
+  {
+    "migration_name": "20260101135041_convert_role_to_model"
+  },
+  {
+    "migration_name": "20260127140632_add_homepage_sections_v2"
+  },
+  {
+    "migration_name": "20260101140028_add_permissions_to_role"
+  },
+  {
+    "migration_name": "20260101140145_add_permissions_and_isactive_to_staff"
+  },
+  {
+    "migration_name": "20260202165500_add_cms_json_fields"
+  },
+  {
+    "migration_name": "20260105120142_sync_full_schema"
+  },
+  {
+    "migration_name": "20260127145024_add_ecommerce_visibility"
+  },
+  {
+    "migration_name": "20260105131535_refine_schema_with_permissions_and_reviews"
+  },
+  {
+    "migration_name": "20260105140753_add_transaction_model"
+  },
+  {
+    "migration_name": "20260107063412_add_order_status_history"
+  },
+  {
+    "migration_name": "20260128131523_add_custom_subtitle"
+  },
+  {
+    "migration_name": "20260107064849_add_shopping_cart_models"
+  },
+  {
+    "migration_name": "20260107065943_add_unique_constraints_to_price_and_stock"
+  },
+  {
+    "migration_name": "20260115_add_product_tech_specs"
+  },
+  {
+    "migration_name": "20260129065446_add_slug_to_products"
+  },
+  {
+    "migration_name": "20260126112558_add_seo_fields"
+  },
+  {
+    "migration_name": "20260127074425_add_order_customer_fields"
+  },
+  {
+    "migration_name": "20260206123426_add_blog_news_cms"
+  },
+  {
+    "migration_name": "20260127084909_add_order_tracking_dates"
+  },
+  {
+    "migration_name": "20260130081513_add_full_description_to_products"
+  },
+  {
+    "migration_name": "20260202070922_add_seo_settings"
+  },
+  {
+    "migration_name": "20260212100352_add_blog_subscriber"
+  },
+  {
+    "migration_name": "20260202113951_allow_multiple_carts_per_user"
+  },
+  {
+    "migration_name": "20260206141320_restore_product_price"
+  },
+  {
+    "migration_name": "20260202153000_add_cart_guest_token"
+  },
+  {
+    "migration_name": "20260207143257_add_user_profile_extensions"
+  },
+  {
+    "migration_name": "20260206_add_shipper_tracking_fields"
+  },
+  {
+    "migration_name": "20260207103245_add_multiple_registration_proofs"
+  },
+  {
+    "migration_name": "20260210162202_add_cross_reference"
+  },
+  {
+    "migration_name": "20260207151217_b2b_fix"
+  },
+  {
+    "migration_name": "20260211083456_add_pending_registration"
+  },
+  {
+    "migration_name": "20260207213305_add_rejection_fields"
+  },
+  {
+    "migration_name": "20260211064821_add_state_to_user"
+  },
+  {
+    "migration_name": "20260216083941_add_zip_and_state_fields"
+  },
+  {
+    "migration_name": "20260216134500_add_zip_and_state_persistence"
+  },
+  {
+    "migration_name": "20260217122500_manual_add_sitemap_content"
+  },
+  {
+    "migration_name": "20260218100000_add_warehouse_model"
+  },
+  {
+    "migration_name": "20260218120000_add_stock_unique"
+  },
+  {
+    "migration_name": "20260218130000_remove_legacy_stock_unique"
+  },
+  {
+    "migration_name": "20260313094300_add_return_management"
+  },
+  {
+    "migration_name": "20260220111000_add_wishlist_models"
+  },
+  {
+    "migration_name": "20260305100500_add_user_tracking_fields"
+  },
+  {
+    "migration_name": "20260306110000_add_quoted_price_to_rfq_item"
+  },
+  {
+    "migration_name": "20260315133926_add_product_variants_support"
+  },
+  {
+    "migration_name": "20260306225500_admin_managed_reviews"
+  },
+  {
+    "migration_name": "20260307000000_support_tickets_enhancements"
+  },
+  {
+    "migration_name": "20260309100000_b2b_pricing"
+  },
+  {
+    "migration_name": "20260315145009_add_payment_gateways"
+  },
+  {
+    "migration_name": "20260309100505_add_exempt_skus"
+  },
+  {
+    "migration_name": "20260312081136_clean_product_paperland"
+  },
+  {
+    "migration_name": "20260312081528_restore_group_number"
+  },
+  {
+    "migration_name": "20260315151241_add_shipping_couriers"
+  },
+  {
+    "migration_name": "20260312081709_add_group_id"
+  },
+  {
+    "migration_name": "20260313062959_paperland_rebrand_phase1"
+  },
+  {
+    "migration_name": "20260313093712_add_coupon_model"
+  },
+  {
+    "migration_name": "20260316054958_add_admin_gaps_models"
+  },
+  {
+    "migration_name": "20260317155338_remove_category_name_unique"
+  },
+  {
+    "migration_name": "20260317155619_remove_category_name_unique_v2"
+  },
+  {
+    "migration_name": "20260402134500_add_coupon_type"
+  },
+  {
+    "migration_name": "20260318084000_add_free_shipping_settings"
+  },
+  {
+    "migration_name": "20260324180500_add_warehouse_type"
+  },
+  {
+    "migration_name": "20260324182000_add_social_auth_fields"
+  },
+  {
+    "migration_name": "20260402160000_add_return_images"
+  },
+  {
+    "migration_name": "20260327120500_add_category_position"
+  },
+  {
+    "migration_name": "20260327120000_add_product_relations"
+  },
+  {
+    "migration_name": "20260406000000_rfq_enhancements"
+  },
+  {
+    "migration_name": "20260331000000_add_review_status"
+  },
+  {
+    "migration_name": "20260406000000_rfq_enhancements"
+  },
+  {
+    "migration_name": "20260401114700_add_notification_templates"
+  },
+  {
+    "migration_name": "20260401121700_add_review_helpful_votes"
+  },
+  {
+    "migration_name": "20260402060000_add_coupon_enhancements"
+  }
+]

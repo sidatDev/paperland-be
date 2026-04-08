@@ -89,7 +89,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                             deletedAt: null,
                                             parentId: null // Ensure only parent products are featured
                                         },
-                                        include: { prices: { include: { currency: true } } }
+                                        include: { 
+                                            prices: { include: { currency: true } },
+                                            stocks: true
+                                        }
                                     }
                                 },
                                 orderBy: { sortOrder: 'asc' }
@@ -109,20 +112,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
-                            orderBy: { orderItems: { _count: 'desc' } }, // REAL Popularity (Sales)
-                            include: { prices: { include: { currency: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                            include: { prices: { include: { currency: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { updatedAt: 'desc' },
-                            include: { prices: { include: { currency: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true }
                         })
                     ]);
 
@@ -171,7 +173,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 const pkr = i.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                                 return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
                             })(),
-                            currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge
+                            currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
+                            totalStock: i.product ? Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) : undefined
                         }))
                     };
                 }
@@ -199,7 +202,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 id: i.product.id, name: i.product.name, image: i.product.imageUrl || '',
                                 price: p.finalPrice,
                                 originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
-                                currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge
+                                currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
+                                totalStock: Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0)
                             };
                         }
                         return {
