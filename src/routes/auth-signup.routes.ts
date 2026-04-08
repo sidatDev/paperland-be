@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import * as crypto from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { logActivity } from '../utils/audit';
 import { mergeGuestCart } from '../services/cart.service';
@@ -479,8 +480,10 @@ fastify.post('/auth/verify-otp', {
         // Send Welcome Email for B2C
         try {
           await emailService.sendIndividualWelcomeEmail(user.email, user.firstName || 'Customer');
+          // Issue dynamic coupons if any
+          await issueDynamicCoupons(fastify, user, 'B2C');
         } catch (e) {
-          fastify.log.error(e, `Failed to send welcome email to ${user.email}`);
+          fastify.log.error(e, `Failed to send welcome email/coupons to ${user.email}`);
         }
 
         return {
@@ -899,6 +902,9 @@ fastify.post('/auth/verify-otp', {
           ip: request.ip,
           userAgent: request.headers['user-agent']
         });
+
+        // Issue dynamic coupons for B2B
+        await issueDynamicCoupons(fastify, user, 'B2B');
       }
 
       return {
@@ -914,5 +920,81 @@ fastify.post('/auth/verify-otp', {
   // ==================================================
   // EXISTING AUTH ROUTES (Keep existing code below)
   // ==================================================
+}
+
+/**
+ * Helper to issue unique coupons to a user based on DYNAMIC templates
+ */
+async function issueDynamicCoupons(fastify: FastifyInstance, user: any, accountType: 'B2C' | 'B2B') {
+  try {
+    const customerTypeFilter = accountType === 'B2C' 
+      ? ['ALL', 'NEW_CUSTOMERS'] 
+      : ['ALL', 'B2B_ONLY'];
+
+    // Find active dynamic templates
+    const templates = await (fastify.prisma as any).coupon.findMany({
+      where: {
+        couponType: 'DYNAMIC',
+        isActive: true,
+        deletedAt: null,
+        customerType: { in: customerTypeFilter }
+      },
+      include: {
+        products: true,
+        categories: true
+      }
+    });
+
+    if (!templates.length) return;
+
+    for (const template of templates) {
+      // Generate unique code for this user: TemplateCode-UserInitials-Random
+      const templateCodePrefix = template.code.includes('PL-') ? template.code : `PL-${template.code}`;
+      const randomSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
+      const userPart = user.firstName?.substring(0, 2).toUpperCase() || 'USR';
+      const uniqueCode = `${templateCodePrefix}-${userPart}-${randomSuffix}`.substring(0, 30);
+
+      // Create a static instance for this user
+      const newCoupon = await (fastify.prisma as any).coupon.create({
+        data: {
+          code: uniqueCode,
+          title: `${template.title || 'Welcome Discount'} (Personal)`,
+          description: template.description || `Special personalized offer for ${user.email}`,
+          discountType: template.discountType,
+          discountValue: template.discountValue,
+          minOrderAmount: template.minOrderAmount,
+          maxDiscountAmount: template.maxDiscountAmount,
+          startDate: new Date(),
+          endDate: template.endDate,
+          usageLimit: 1, // Individual code is single use
+          usageLimitPerCustomer: 1,
+          budgetCap: null,
+          isActive: true,
+          couponType: 'STATIC',
+          applicationType: template.applicationType,
+          customerType: template.customerType,
+          visibility: 'PRIVATE', // Don't show in public store-wide lists
+          isStackable: template.isStackable
+        }
+      });
+
+      // Clone product/category relations
+      if (template.products.length > 0) {
+        await (fastify.prisma as any).couponProduct.createMany({
+          data: template.products.map((p: any) => ({ couponId: newCoupon.id, productId: p.productId }))
+        });
+      }
+      if (template.categories.length > 0) {
+        await (fastify.prisma as any).couponCategory.createMany({
+          data: template.categories.map((c: any) => ({ couponId: newCoupon.id, categoryId: c.categoryId }))
+        });
+      }
+      
+      console.log(`✅ [COUPON ISSUED]: ${uniqueCode} to ${user.email} (Template: ${template.id})`);
+    }
+  } catch (err) {
+    fastify.log.error(err, 'Failed to issue dynamic coupons');
+    console.error('❌ [COUPON ERROR]:', err);
+  }
 }
 
