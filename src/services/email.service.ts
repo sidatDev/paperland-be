@@ -534,7 +534,7 @@ export class EmailService {
       await this.sendDynamicEmail('ORDER_PLACED', to, {
         userName,
         orderNumber: orderData.orderNumber,
-        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}`,
+        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}${orderData.guestToken ? `&guestToken=${orderData.guestToken}` : ''}`,
         orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),
         deliveryDetails: this.buildDeliveryDetailsHtml(orderData),
         orderSummary: this.buildOrderSummaryHtml(orderData)
@@ -566,7 +566,7 @@ export class EmailService {
       await this.sendDynamicEmail(templateKey, to, {
         userName: orderData.user?.firstName || 'Customer',
         orderNumber: orderData.orderNumber,
-        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}`,
+        trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}${orderData.guestToken ? `&guestToken=${orderData.guestToken}` : ''}`,
         reviewUrl: `${portalUrl}/en/dashboard/orders/${orderData.id}`,
         trackingNumber: orderData.trackingNumber || 'Not Yet Assigned',
         courierPartner: orderData.deliveryMethod || 'Standard Shipping',

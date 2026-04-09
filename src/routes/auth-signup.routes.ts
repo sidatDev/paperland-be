@@ -566,6 +566,11 @@ fastify.post('/auth/verify-otp', {
           return newUser;
         });
 
+        // Merge Guest Cart if token provided (Preserve guest cart items for B2B)
+        if (guestToken && user) {
+          await mergeGuestCart(fastify.prisma as any, user.id, guestToken);
+        }
+
         // Trigger Application Received Email for B2B now (Step 5 completion)
         try {
           const finalUser = await fastify.prisma.user.findUnique({ where: { id: user.id } });

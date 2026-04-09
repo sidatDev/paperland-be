@@ -16,13 +16,14 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
         required: ['search'],
         properties: {
           search: { type: 'string', description: 'Order number OR tracking number' },
-          region: { type: 'string', enum: ['SA', 'AE', 'PK'], description: 'Region override (optional)' }
+          region: { type: 'string', enum: ['SA', 'AE', 'PK'], description: 'Region override (optional)' },
+          guestToken: { type: 'string', description: 'Magic Auth Token for Guest Orders (optional)' }
         }
       }
     }
   }, async (request: any, reply: any) => {
     try {
-      const { search, region } = request.query;
+      const { search, region, guestToken } = request.query;
       const prisma = fastify.prisma as any;
 
       if (!search || search.trim().length === 0) {
@@ -113,6 +114,10 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
       // Sort by date desc
       combinedTimeline.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+      // Magic Link Security: Hide PII if it's a guest order and no matching guestToken is provided
+      const isAuthorizedGuest = order.isGuestOrder ? (order.guestToken === guestToken) : false;
+      const hidePII = order.isGuestOrder && !isAuthorizedGuest;
+
       const responseData = {
         orderNumber: order.orderNumber,
         orderDate: order.createdAt,
@@ -120,10 +125,15 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
         status: order.status,
         carrier: timelineData?.carrier || order.courierPartner || 'Standard Delivery',
         trackingNumber: order.trackingNumber,
-        totalAmount: order.totalAmount ? parseFloat(order.totalAmount.toString()) : 0,
+        totalAmount: hidePII ? 0 : (order.totalAmount ? parseFloat(order.totalAmount.toString()) : 0),
         currency: order.currency?.code || 'PKR',
-        paymentMethod: order.paymentMethod,
-        shippingAddress: {
+        paymentMethod: hidePII ? 'Hidden' : order.paymentMethod,
+        shippingAddress: hidePII ? {
+          fullName: 'Hidden for security',
+          streetAddress: '***',
+          city: order.address?.city,
+          country: order.address?.country?.name
+        } : {
           fullName: `${order.address?.firstName} ${order.address?.lastName}`,
           streetAddress: order.address?.street1,
           city: order.address?.city,
@@ -134,13 +144,14 @@ export default async function publicTrackingRoutes(fastify: FastifyInstance) {
           phone: latestCallLog.agent.phone
         } : null,
         timeline: combinedTimeline,
-        items: order.items,
-        pricingSummary: order.pricingSummary,
-        taxAmount: order.taxAmount ? parseFloat(order.taxAmount.toString()) : 0,
-        shippingAmount: order.shippingAmount ? parseFloat(order.shippingAmount.toString()) : 0,
-        subtotal: order.subtotal ? parseFloat(order.subtotal.toString()) : null,
-        couponDiscount: order.couponDiscount ? parseFloat(order.couponDiscount.toString()) : null,
-        coupon: order.coupon || null
+        items: hidePII ? [] : order.items,
+        pricingSummary: hidePII ? null : order.pricingSummary,
+        taxAmount: hidePII ? 0 : (order.taxAmount ? parseFloat(order.taxAmount.toString()) : 0),
+        shippingAmount: hidePII ? 0 : (order.shippingAmount ? parseFloat(order.shippingAmount.toString()) : 0),
+        subtotal: hidePII ? null : (order.subtotal ? parseFloat(order.subtotal.toString()) : null),
+        couponDiscount: hidePII ? null : (order.couponDiscount ? parseFloat(order.couponDiscount.toString()) : null),
+        coupon: hidePII ? null : (order.coupon || null),
+        isSecured: hidePII
       };
 
       return createResponse(responseData);
