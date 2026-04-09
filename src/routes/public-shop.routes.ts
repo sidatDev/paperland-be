@@ -262,7 +262,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     return reply.send(createResponse({ categories: cached }));
                 }
 
-                const categories = await (fastify.prisma as any).category.findMany({
+                 const categories = await (fastify.prisma as any).category.findMany({
                         where: { isActive: true, deletedAt: null },
                         select: { id: true, name: true, slug: true, imageUrl: true, parentId: true },
                         orderBy: { position: 'asc' }
@@ -375,14 +375,21 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 });
 
                 if (matchingCategory) {
-                    // If it matches a category, restrict results to that category only
+                    // Recursive subcategories for matching category
+                    let categoryIds = [matchingCategory.id];
+                    let currentParentIds = [matchingCategory.id];
+                    for (let i = 0; i < 5 && currentParentIds.length > 0; i++) {
+                        const children = await (fastify.prisma as any).category.findMany({
+                            where: { parentId: { in: currentParentIds }, deletedAt: null },
+                            select: { id: true }
+                        });
+                        currentParentIds = children.map((c: any) => c.id);
+                        categoryIds = [...categoryIds, ...currentParentIds];
+                    }
+
+                    // If it matches a category, restrict results to that category and its descendants
                     where.AND.push({
-                        category: {
-                            OR: [
-                                { id: matchingCategory.id },
-                                { slug: matchingCategory.slug }
-                            ]
-                        }
+                        categoryId: { in: categoryIds }
                     });
                 } else {
                     // Otherwise do general search including category name
@@ -409,17 +416,37 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             };
 
             if (category) {
-                const categories = ensureArray(category);
-                where.AND.push({
-                    category: {
-                        OR: categories.map((cat: string) => ({
+                const categoryParams = ensureArray(category);
+                
+                // Find initial categories to get their IDs
+                const initialCategories = await (fastify.prisma as any).category.findMany({
+                    where: {
+                        OR: categoryParams.map((c: string) => ({
                             OR: [
-                                { id: cat },
-                                { slug: cat },
-                                { name: { equals: cat, mode: 'insensitive' } }
+                                { id: c },
+                                { slug: c },
+                                { name: { equals: c, mode: 'insensitive' } }
                             ]
                         }))
-                    }
+                    },
+                    select: { id: true }
+                });
+                
+                let allCategoryIds = initialCategories.map((c: any) => c.id);
+                let currentParentIds = [...allCategoryIds];
+                
+                // Iterative approach for descendants (up to depth 5)
+                for (let i = 0; i < 5 && currentParentIds.length > 0; i++) {
+                    const children = await (fastify.prisma as any).category.findMany({
+                        where: { parentId: { in: currentParentIds }, deletedAt: null },
+                        select: { id: true }
+                    });
+                    currentParentIds = children.map((c: any) => c.id);
+                    allCategoryIds = [...allCategoryIds, ...currentParentIds];
+                }
+
+                where.AND.push({
+                    categoryId: { in: allCategoryIds }
                 });
             }
 
