@@ -58,9 +58,13 @@ export default async function authRoutes(fastify: FastifyInstance) {
 
     try {
       // Check if verified user already exists
-      const existingUser = await fastify.prisma.user.findUnique({ where: { email } });
+      const existingUser = await fastify.prisma.user.findUnique({ where: { email: email.toLowerCase() } });
       if (existingUser) {
-        return (reply as any).status(400).send({ message: 'Email already in use. Please login instead.' });
+        // If it exists but is a guest account, we allow signup to proceed (claim/upgrade account)
+        const prefs = existingUser.preferences as any;
+        if (!prefs?.isGuestAccount) {
+          return (reply as any).status(400).send({ message: 'Email already in use. Please login instead.' });
+        }
       }
 
       // Generate OTP
@@ -402,23 +406,28 @@ fastify.post('/auth/verify-otp', {
         const customerRole = await fastify.prisma.role.findUnique({ where: { name: 'CUSTOMER' } });
         if (!customerRole) throw new Error('CUSTOMER role not found');
 
-        // B2C: Create actual User and complete registration
+        // B2C: Create or Upgrade actual User and complete registration
         const user = await fastify.prisma.$transaction(async (tx) => {
-          const newUser = await tx.user.create({
-            data: {
-              email: pendingReg.email,
-              passwordHash: pendingReg.passwordHash!,
-              firstName: pendingReg.firstName,
-              lastName: pendingReg.lastName,
-              phoneNumber: pendingReg.phoneNumber,
-              phoneCountryCode: pendingReg.phoneCountryCode,
-              state: pendingReg.state,
-              zipCode: pendingReg.zipCode,
-              roleId: customerRole.id,
-              isActive: true,
-              emailVerified: true,
-              accountStatus: 'APPROVED'
-            } as any,
+          const userData = {
+            email: pendingReg.email,
+            passwordHash: pendingReg.passwordHash!,
+            firstName: pendingReg.firstName,
+            lastName: pendingReg.lastName,
+            phoneNumber: pendingReg.phoneNumber,
+            phoneCountryCode: pendingReg.phoneCountryCode,
+            state: pendingReg.state,
+            zipCode: pendingReg.zipCode,
+            roleId: customerRole.id,
+            isActive: true,
+            emailVerified: true,
+            accountStatus: 'APPROVED',
+            preferences: {} // Clear guest account flags
+          };
+
+          const newUser = await tx.user.upsert({
+            where: { email: pendingReg.email },
+            update: userData,
+            create: userData,
             include: { role: true }
           });
 
@@ -504,21 +513,26 @@ fastify.post('/auth/verify-otp', {
         }
 
         const user = await fastify.prisma.$transaction(async (tx) => {
-          const newUser = await tx.user.create({
-            data: {
-              email: pendingReg.email,
-              passwordHash: pendingReg.passwordHash!,
-              firstName: pendingReg.firstName,
-              lastName: pendingReg.lastName,
-              phoneNumber: pendingReg.phoneNumber,
-              phoneCountryCode: pendingReg.phoneCountryCode,
-              state: pendingReg.state,
-              zipCode: pendingReg.zipCode,
-              roleId: businessRole.id,
-              isActive: true, // Allow login to finish setup
-              emailVerified: true,
-              accountStatus: 'PENDING_DETAILS'
-            } as any,
+          const userData = {
+            email: pendingReg.email,
+            passwordHash: pendingReg.passwordHash!,
+            firstName: pendingReg.firstName,
+            lastName: pendingReg.lastName,
+            phoneNumber: pendingReg.phoneNumber,
+            phoneCountryCode: pendingReg.phoneCountryCode,
+            state: pendingReg.state,
+            zipCode: pendingReg.zipCode,
+            roleId: businessRole.id,
+            isActive: true, // Allow login to finish setup
+            emailVerified: true,
+            accountStatus: 'PENDING_DETAILS',
+            preferences: {} // Clear guest account flags
+          };
+
+          const newUser = await tx.user.upsert({
+            where: { email: pendingReg.email },
+            update: userData,
+            create: userData,
             include: { role: true }
           });
 
