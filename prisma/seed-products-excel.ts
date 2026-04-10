@@ -163,11 +163,27 @@ async function main() {
             const sku = `${sheetDef.prefix}-${skuNum}`;
             const slug = slugify(title) + '-' + slugify(sku);
 
+            const images = [getVal('Image 1'), getVal('Image 2'), getVal('Image 3'), getVal('Image 4'), getVal('Image 5')].filter(Boolean);
+            const specifications: any = {
+                original_image_sources: images,
+                import_source: sheetDef.name
+            };
+
+            // Skip or Update Metadata if already exists
+            const existing = await prisma.product.findFirst({ where: { name: title } });
+            if (existing) {
+                console.log(`  🔄 Updating Metadata: [${existing.sku}] ${title}`);
+                await prisma.product.update({
+                    where: { id: existing.id },
+                    data: { specifications }
+                });
+                continue;
+            }
+
             const description = getVal('Description');
             const rawBrand = getVal('Vendor/Brand') || getVal('Vendor');
             const typeStr = getVal('Type');
             const pricePkr = parseFloat(getVal('Price (PKR)')) || 0;
-            const images = [getVal('Image 1'), getVal('Image 2'), getVal('Image 3'), getVal('Image 4'), getVal('Image 5')].filter(Boolean);
 
             // Determine Brand
             let brandId = othersBrand.id;
@@ -214,6 +230,7 @@ async function main() {
                         brandId: brandId,
                         imageUrl: s3Urls[0] || null,
                         images: s3Urls,
+                        specifications,
                         prices: {
                             create: {
                                 currencyId: currencyRec.id,

@@ -264,21 +264,40 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
                  const categories = await (fastify.prisma as any).category.findMany({
                         where: { isActive: true, deletedAt: null },
-                        select: { id: true, name: true, slug: true, imageUrl: true, parentId: true },
+                        select: { 
+                            id: true, 
+                            name: true, 
+                            slug: true, 
+                            imageUrl: true, 
+                            parentId: true,
+                            _count: {
+                                select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
+                            }
+                        },
                         orderBy: { position: 'asc' }
                     });
 
                 const hierarchy = ((cats: any[]) => {
-                    const categoryMap = new Map(cats.map(c => [c.id, { ...c, subCategories: [] }]));
+                    const categoryMap = new Map(cats.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
                     const rootCategories: any[] = [];
+                    
                     cats.forEach(c => {
+                        const node = categoryMap.get(c.id);
                         if (c.parentId && categoryMap.has(c.parentId)) {
-                            categoryMap.get(c.parentId).subCategories.push(categoryMap.get(c.id));
+                            categoryMap.get(c.parentId).subCategories.push(node);
                         } else if (!c.parentId) {
-                            rootCategories.push(categoryMap.get(c.id));
+                            rootCategories.push(node);
                         }
                     });
-                    return rootCategories;
+
+                    const pruneEmpty = (nodes: any[]) => {
+                        return nodes.filter(node => {
+                            node.subCategories = pruneEmpty(node.subCategories);
+                            return node.productsCount > 0 || node.subCategories.length > 0;
+                        });
+                    };
+
+                    return pruneEmpty(rootCategories);
                 })(categories);
 
                 await fastify.cache.set(cacheKey, hierarchy, 3600);
@@ -561,8 +580,20 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 }),
                 (fastify.prisma as any).product.count({ where }),
                 (fastify.prisma as any).category.findMany({ 
-                    where: { isActive: true, deletedAt: null }, 
-                    select: { id: true, name: true, slug: true, imageUrl: true, parentId: true },
+                    where: { 
+                        isActive: true, 
+                        deletedAt: null 
+                    }, 
+                    select: { 
+                        id: true, 
+                        name: true, 
+                        slug: true, 
+                        imageUrl: true, 
+                        parentId: true,
+                        _count: {
+                            select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
+                        }
+                    },
                     orderBy: { name: 'asc' }
                 }),
                 (fastify.prisma as any).brand.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } }),
@@ -573,17 +604,26 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 metadata: {
                     total_results: total,
                     categories: ((categories: any[]) => {
-                        const categoryMap = new Map(categories.map(c => [c.id, { ...c, subCategories: [] }]));
+                        const categoryMap = new Map(categories.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
                         const rootCategories: any[] = [];
                         
                         categories.forEach(c => {
+                            const node = categoryMap.get(c.id);
                             if (c.parentId && categoryMap.has(c.parentId)) {
-                                categoryMap.get(c.parentId).subCategories.push(categoryMap.get(c.id));
+                                categoryMap.get(c.parentId).subCategories.push(node);
                             } else if (!c.parentId) {
-                                rootCategories.push(categoryMap.get(c.id));
+                                rootCategories.push(node);
                             }
                         });
-                        return rootCategories;
+
+                        const pruneEmpty = (nodes: any[]) => {
+                            return nodes.filter(node => {
+                                node.subCategories = pruneEmpty(node.subCategories);
+                                return node.productsCount > 0 || node.subCategories.length > 0;
+                            });
+                        };
+
+                        return pruneEmpty(rootCategories);
                     })(totalCategories),
                     brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
                     industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
