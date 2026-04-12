@@ -776,7 +776,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
       }
     }, async (request: any, reply: any) => {
-        const { slug } = request.params;
+        const slug = decodeURIComponent(request.params.slug);
         const userId = (request.user as any)?.id;
         const cacheKey = `product:${slug}:${userId || 'guest'}`;
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
@@ -804,7 +804,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         },
                         {
                             OR: [
-                                { slug },
+                                { slug: { equals: slug, mode: 'insensitive' } },
                                 ...(isUUID ? [{ id: slug }] : [])
                             ]
                         }
