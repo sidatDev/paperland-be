@@ -74,3 +74,26 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
         // Don't throw, just log. Login should succeed even if cart merge fails (critical UX).
     }
 };
+
+export const detachUserCart = async (prisma: PrismaClient, userId: string, guestToken: string) => {
+    if (!userId || !guestToken) return;
+
+    try {
+        const userCart = await prisma.cart.findFirst({
+            where: { userId, status: 'ACTIVE' }
+        });
+
+        if (!userCart) return;
+
+        await prisma.cart.update({
+            where: { id: userCart.id },
+            data: {
+                userId: null,
+                guestToken: guestToken
+            }
+        });
+    } catch (error) {
+        console.error("Failed to detach cart:", error);
+    }
+};
+

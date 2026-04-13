@@ -91,7 +91,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                         },
                                         include: { 
                                             prices: { include: { currency: true } },
-                                            stocks: true
+                                            stocks: true,
+                                            reviews: {
+                                                where: { status: 'APPROVED' },
+                                                select: { rating: true }
+                                            }
                                         }
                                     }
                                 },
@@ -112,19 +116,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
-                            include: { prices: { include: { currency: true } }, stocks: true }
+                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                            include: { prices: { include: { currency: true } }, stocks: true }
+                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { updatedAt: 'desc' },
-                            include: { prices: { include: { currency: true } }, stocks: true }
+                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         })
                     ]);
 
@@ -177,7 +181,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             totalStock: i.product ? (() => {
                                 if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
                                 return Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                            })() : undefined
+                            })() : undefined,
+                            rating: i.product?.reviews?.length > 0 
+                                ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
+                                : 0,
+                            reviewsCount: i.product?.reviews?.length || 0
                         }))
                     };
                 }
@@ -208,8 +216,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
                                 totalStock: (() => {
                                     if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
-                                    return Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                                })()
+                                    return Math.max(0, (i.product.stocks || []).reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                                })(),
+                                rating: i.product.reviews?.length > 0 
+                                    ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
+                                    : 0,
+                                reviewsCount: i.product.reviews?.length || 0
                             };
                         }
                         return {
@@ -552,7 +564,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         brand: true,
                         stocks: true, 
                         prices: { include: { currency: true } },
-                        industries: { include: { industry: true } }
+                        industries: { include: { industry: true } },
+                        reviews: {
+                            where: { status: 'APPROVED' },
+                            select: { rating: true }
+                        }
                     },
                     skip,
                     take: limit,
@@ -585,7 +601,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         totalStock: (() => {
                             if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return 0;
                             return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                        })()
+                        })(),
+                        rating: p.reviews?.length > 0 
+                            ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
+                            : 0,
+                        reviewsCount: p.reviews?.length || 0
                     }));
                 }),
                 (fastify.prisma as any).product.count({ where }),
@@ -652,6 +672,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : null,
                     industries: p.industries?.map((i: any) => ({ id: i.industry.id, name: i.industry.name })) || [],
                     totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                    rating: p.rating || 0,
+                    reviewsCount: p.reviewsCount || 0,
                     tags: [p.category?.name, p.brand?.name, ...(p.industries?.map((i: any) => i.industry.name) || [])].filter(Boolean)
                 })),
                 pagination: {
@@ -673,7 +695,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
     // 3. GET /api/shop/product/:id
     fastify.get('/shop/product/:id', {
       schema: {
-        description: 'Get public product details (masked)',
+        description: 'Get public product details by ID',
         tags: ['Public Shop'],
         params: { type: 'object', properties: { id: { type: 'string' } } },
         response: {
@@ -712,6 +734,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             prices: { include: { currency: true } },
                             stocks: true
                         }
+                    },
+                    reviews: {
+                        where: { status: 'APPROVED' },
+                        select: { rating: true }
                     }
                 }
             });
@@ -741,6 +767,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 category: product.category?.name,
                 brand: product.brand?.name,
                 totalStock: Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                rating: product.reviews?.length > 0 
+                    ? (product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / product.reviews.length) 
+                    : 0,
+                reviewsCount: product.reviews?.length || 0,
                 // Dimensions
                 width: product.width,
                 length: product.length,
@@ -830,6 +860,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             prices: { include: { currency: true } },
                             stocks: true
                         }
+                    },
+                    reviews: {
+                        where: { status: 'APPROVED' },
+                        select: { rating: true }
                     }
                 }
             });
@@ -862,6 +896,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (product.status === 'Out of Stock' || (product.specifications as any)?.status === 'Out of Stock') return 0;
                     return Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
                 })(),
+                rating: product.reviews?.length > 0 
+                    ? (product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / product.reviews.length) 
+                    : 0,
+                reviewsCount: product.reviews?.length || 0,
                 width: product.width,
                 length: product.length,
                 weight: product.weight,

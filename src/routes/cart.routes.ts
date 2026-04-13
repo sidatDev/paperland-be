@@ -1,8 +1,10 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { PricingEngine } from '../utils/pricing.engine';
+import { detachUserCart } from '../services/cart.service';
 
 export default async function cartRoutes(fastify: FastifyInstance) {
+
   
   // Helper to find cart
   const findCart = async (request: any, includeItems = true) => {
@@ -440,4 +442,35 @@ export default async function cartRoutes(fastify: FastifyInstance) {
           return reply.status(500).send(createErrorResponse(err.message));
       }
   });
+
+  // POST Detach Cart (Assign user cart back to guest on logout)
+  fastify.post('/cart/detach', {
+      preHandler: [fastify.authenticate],
+      schema: {
+          description: 'Detach cart from user and assign to guestToken on logout',
+          tags: ['Cart'],
+          body: {
+              type: 'object',
+              required: ['guestToken'],
+              properties: {
+                  guestToken: { type: 'string' }
+              }
+          }
+      }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+          const { guestToken } = request.body as any;
+          const userId = (request as any).user?.id;
+
+          if (!userId) {
+              return reply.status(401).send(createErrorResponse("Unauthorized"));
+          }
+
+          await detachUserCart(fastify.prisma as any, userId, guestToken);
+          return createResponse(null, "Cart detached and assigned to guest token");
+      } catch (err: any) {
+          return reply.status(500).send(createErrorResponse(err.message));
+      }
+  });
 }
+
