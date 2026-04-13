@@ -1010,10 +1010,10 @@ export default async function productRoutes(fastify: FastifyInstance) {
         try {
             await fastify.cache.del('shop:home');
             await fastify.cache.clearPattern('shop:products:*');
-            if (updated.slug) await fastify.cache.del(`product:${updated.slug}`);
+            if (updated.slug) await fastify.cache.clearPattern(`product:${updated.slug}:*`);
             // Also invalidate the old slug if it changed
             if (existing.slug && existing.slug !== updated.slug) {
-                await fastify.cache.del(`product:${existing.slug}`);
+                await fastify.cache.clearPattern(`product:${existing.slug}:*`);
             }
         } catch (cacheErr) {
             fastify.log.error(cacheErr, 'Failed to invalidate cache on update');

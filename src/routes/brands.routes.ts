@@ -224,13 +224,8 @@ export default async function brandRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     const { id } = request.params as any;
     try {
-      // Check for products (only active/visible ones?)
-      const productCount = await (fastify.prisma as any).product.count({ 
-        where: { brandId: id, deletedAt: null } 
-      });
-      if (productCount > 0) {
-        return reply.status(400).send({ message: 'Cannot deactivate brand with associated active products' });
-      }
+      // Deactivating a brand will automatically hide its products on the frontend
+      // because product fetch routes filter by brand.isActive: true
 
       await (fastify.prisma as any).brand.update({
         where: { id },

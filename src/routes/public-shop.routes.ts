@@ -174,7 +174,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
                             })(),
                             currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
-                            totalStock: i.product ? Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) : undefined
+                            totalStock: i.product ? (() => {
+                                if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
+                                return Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                            })() : undefined
                         }))
                     };
                 }
@@ -203,7 +206,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 price: p.finalPrice,
                                 originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
                                 currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
-                                totalStock: Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0)
+                                totalStock: (() => {
+                                    if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
+                                    return Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                                })()
                             };
                         }
                         return {
@@ -575,7 +581,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     return prods.map((p: any, idx: number) => ({
                         ...p,
                         originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
-                        price: priced[idx].finalPrice
+                        price: priced[idx].finalPrice,
+                        totalStock: (() => {
+                            if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return 0;
+                            return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                        })()
                     }));
                 }),
                 (fastify.prisma as any).product.count({ where }),
@@ -651,7 +661,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 }
             };
 
-            await fastify.cache.set(cacheKey, result, 600); // Cache for 10 minutes
+            await fastify.cache.set(cacheKey, result, 60); // Cache for 60 seconds
             reply.header('X-Cache', 'MISS');
             return reply.send(createResponse(result));
         } catch (err) {
@@ -848,7 +858,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 images: product.images,
                 category: product.category?.name,
                 brand: product.brand?.name,
-                totalStock: Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                totalStock: (() => {
+                    if (product.status === 'Out of Stock' || (product.specifications as any)?.status === 'Out of Stock') return 0;
+                    return Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                })(),
                 width: product.width,
                 length: product.length,
                 weight: product.weight,
@@ -868,7 +881,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         originalPrice: vBase !== vFinal ? vBase : undefined,
                         currency: 'PKR',
                         image_url: v.imageUrl,
-                        totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                        totalStock: (() => {
+                            if (v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock') return 0;
+                            return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                        })(),
                         variantAttributes: v.variantAttributes
                     };
                 })),

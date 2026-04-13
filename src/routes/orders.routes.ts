@@ -2,6 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
+import { syncProductStockStatus } from '../utils/product-status-sync';
 import { emailService } from '../services/email.service';
 import { z } from 'zod';
 
@@ -551,6 +552,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                                           reservedQty: { decrement: Math.min(Number(item.quantity), stock.reservedQty) }
                                       }
                                   });
+                                  await syncProductStockStatus(tx, item.productId);
                               }
                           }
                       }
@@ -576,6 +578,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                                           reservedQty: { decrement: Math.min(Number(item.quantity), stock.reservedQty) }
                                       }
                                   });
+                                  await syncProductStockStatus(tx, item.productId);
                               }
                           }
                       }
@@ -1406,11 +1409,13 @@ export default async function orderRoutes(fastify: FastifyInstance) {
             include: {
               product: {
                 select: {
+                  id: true,
                   name: true,
                   sku: true,
                   images: true,
                   slug: true,
-                  price: true
+                  price: true,
+                  stocks: true
                 }
               }
             }
@@ -1426,7 +1431,27 @@ export default async function orderRoutes(fastify: FastifyInstance) {
         return reply.status(404).send(createErrorResponse("Order not found or access denied"));
       }
 
-      return createResponse(order, "Order details fetched successfully");
+      // Add totalStock to each item's product for frontend reorder logic
+      const mappedItems = order.items.map((item: any) => {
+        if (item.product) {
+          const totalStock = Math.max(0, item.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+          return {
+            ...item,
+            product: {
+              ...item.product,
+              totalStock
+            }
+          };
+        }
+        return item;
+      });
+
+      const responseData = {
+        ...order,
+        items: mappedItems
+      };
+
+      return createResponse(responseData, "Order details fetched successfully");
 
     } catch (err: any) {
       fastify.log.error(err);
@@ -1512,14 +1537,49 @@ export default async function orderRoutes(fastify: FastifyInstance) {
     const order = await (fastify.prisma as any).order.findFirst({
         where: { id, userId, deletedAt: null },
         include: { 
-            items: { include: { product: { select: { name: true, slug: true, imageUrl: true, sku: true } } } }, 
+            items: { 
+                include: { 
+                    product: { 
+                        select: { 
+                            id: true,
+                            name: true, 
+                            slug: true, 
+                            imageUrl: true, 
+                            sku: true,
+                            stocks: true,
+                            price: true
+                        } 
+                    } 
+                } 
+            }, 
             currency: true,
             address: true
         }
     });
 
     if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
-    return createResponse(order);
+
+    // Add totalStock to each item's product for frontend reorder logic
+    const mappedItems = order.items.map((item: any) => {
+        if (item.product) {
+            const totalStock = Math.max(0, item.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+            return {
+                ...item,
+                product: {
+                    ...item.product,
+                    totalStock
+                }
+            };
+        }
+        return item;
+    });
+
+    const responseData = {
+        ...order,
+        items: mappedItems
+    };
+
+    return createResponse(responseData);
   });
 
   // PATCH /orders/:id/cancel (Customer Cancellation)

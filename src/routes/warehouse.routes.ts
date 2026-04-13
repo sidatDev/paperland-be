@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { logActivity } from '../utils/audit';
+import { syncProductStockStatus } from '../utils/product-status-sync';
 
 // Shared Validation Schemas
 const warehouseSchema = z.object({
@@ -357,6 +358,9 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
         performedBy: (request as any).user?.id,
         details: { warehouseId, productId, quantity, reason, reorderLevel }
       });
+
+      // Sync product status label with inventory
+      await syncProductStockStatus(fastify.prisma, productId);
 
       // Invalidate Cache
       try {

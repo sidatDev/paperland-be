@@ -807,6 +807,9 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     where: { id: targetStock.id },
                     data: { reservedQty: { increment: Number(item.quantity) } }
                 });
+                // Sync product status label with inventory
+                const { syncProductStockStatus } = require('../utils/product-status-sync');
+                await syncProductStockStatus(fastify.prisma, item.productId);
             }
         }
 

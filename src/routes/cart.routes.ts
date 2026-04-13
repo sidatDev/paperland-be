@@ -220,13 +220,18 @@ export default async function cartRoutes(fastify: FastifyInstance) {
         });
         if (!product) return reply.status(404).send(createErrorResponse("Product not found"));
 
+        // Check if manually marked as out of stock
+        if (product.status === 'Out of Stock' || (product.specifications as any)?.status === 'Out of Stock') {
+            return reply.status(400).send(createErrorResponse("This item is currently out of stock."));
+        }
+
         // 3. Upsert Cart Item
         const existingItem = await fastify.prisma.cartItem.findFirst({
             where: { cartId: cart.id, productId }
         });
 
-        const currentPrice = product.prices?.[0]?.priceRetail || 0;
-        const availableStock = Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - s.reservedQty), 0) || 0);
+        const currentPrice = (product as any).prices?.[0]?.priceRetail || 0;
+        const availableStock = Math.max(0, (product as any).stocks?.reduce((acc: number, s: any) => acc + (s.qty - s.reservedQty), 0) || 0);
 
         if (existingItem) {
             const newQuantity = existingItem.quantity + quantity;
