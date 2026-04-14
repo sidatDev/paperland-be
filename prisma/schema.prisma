@@ -171,6 +171,8 @@ model User {
   b2bProfile            B2BProfile?          @relation(fields: [b2bProfileId], references: [id])
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
+  companyId             String?              @map("company_id")
+  company               Company?             @relation(fields: [companyId], references: [id])
 
   @@map("users")
 }
@@ -254,6 +256,8 @@ model B2BProfile {
   purchase_orders   purchase_orders[]
   securityDeposits  SecurityDeposit[]
   users             User[]
+  companyId         String?                   @map("company_id")
+  company           Company?                  @relation(fields: [companyId], references: [id])
 
   @@index([currencyId])
   @@index([discountTierId])
@@ -389,6 +393,9 @@ model Product {
   rfqItems             RFQItem[]
   stocks               Stock[]
   wishlistItems        WishlistItem[]
+  catalogProducts      CatalogProduct[]
+  catalogVariants      CatalogVariant[]
+  catalogPricing       CatalogPricing[]
 
   @@map("products")
 }
@@ -902,6 +909,9 @@ model CartItem {
   priceSnapshot Decimal? @map("price_snapshot") @db.Decimal(10, 2)
   cart          Cart     @relation(fields: [cartId], references: [id])
   product       Product  @relation(fields: [productId], references: [id])
+  catalogId     String?  @map("catalog_id")
+  catalog       Catalog? @relation(fields: [catalogId], references: [id])
+  status        String   @default("VALID")
 
   @@unique([cartId, productId])
   @@index([productId])
@@ -1411,4 +1421,114 @@ model NotificationTemplate {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   @@map("notification_templates")
+}
+
+model Company {
+  id        String    @id @default(uuid())
+  name      String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // Merged from B2BCompanyDetails
+  registrationCountry           String?   @map("registration_country")
+  taxId                         String?   @map("tax_id")
+  registrationDate              DateTime? @map("registration_date")
+  companyAddress                String?   @map("company_address")
+  registrationProofUrls         String[]  @default([]) @map("registration_proof_urls")
+  doingBusinessAs               String?   @map("doing_business_as")
+  primaryContactName            String?   @map("primary_contact_name")
+  jobTitle                      String?   @map("job_title")
+  contactPhone                  String?   @map("contact_phone")
+  contactCountryCode            String?   @map("contact_country_code")
+  billingEmail                  String?   @map("billing_email")
+  shippingAddress               String?   @map("shipping_address")
+  apContactName                 String?   @map("ap_contact_name")
+  apPhone                       String?   @map("ap_phone")
+  apCountryCode                 String?   @map("ap_country_code")
+  authorizedRepresentativeEmail String?   @map("authorized_rep_email")
+  authorizedRepresentativeName  String?   @map("authorized_rep_name")
+  registeredLegalEntity         String?   @map("registered_legal_entity")
+
+  users       User[]
+  b2bProfiles B2BProfile[]
+  catalogs    CompanyCatalog[]
+
+  @@map("companies")
+}
+
+model Catalog {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+  validFrom   DateTime? @map("valid_from")
+  validUntil  DateTime? @map("valid_until")
+
+  products         CatalogProduct[]
+  variants         CatalogVariant[]
+  pricingOverrides CatalogPricing[]
+  companies        CompanyCatalog[]
+  cartItems        CartItem[]
+
+  @@map("catalogs")
+}
+
+model CatalogProduct {
+  id        String   @id @default(uuid())
+  catalogId String   @map("catalog_id")
+  productId String   @map("product_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([catalogId, productId])
+  @@map("catalog_products")
+}
+
+model CatalogVariant {
+  id        String   @id @default(uuid())
+  catalogId String   @map("catalog_id")
+  variantId String   @map("variant_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  variant Product @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([catalogId, variantId])
+  @@map("catalog_variants")
+}
+
+model CatalogPricing {
+  id              String   @id @default(uuid())
+  catalogId       String   @map("catalog_id")
+  variantId       String   @map("variant_id")
+  customPrice     Decimal  @map("custom_price") @db.Decimal(10, 2)
+  minimumQuantity Int      @default(1) @map("minimum_quantity")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  variant Product @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([catalogId, variantId])
+  @@map("catalog_pricing")
+}
+
+model CompanyCatalog {
+  id        String   @id @default(uuid())
+  companyId String   @map("company_id")
+  catalogId String   @map("catalog_id")
+  priority  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, catalogId])
+  @@map("company_catalogs")
 }

@@ -372,6 +372,39 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const { q, page, limit, sort, price_min, price_max, groupNo, category, brand, industry, availability } = request.query;
             const skip = (page - 1) * limit;
 
+            // Fetch user's catalogs for filtering if logged in
+            let catalogIds: string[] = [];
+            if (userId && userId !== 'guest') {
+                const user = await (fastify.prisma as any).user.findUnique({
+                    where: { id: userId },
+                    select: {
+                        company: {
+                            select: {
+                                catalogs: {
+                                    where: {
+                                        catalog: {
+                                            isActive: true,
+                                            deletedAt: null,
+                                            OR: [
+                                                { validFrom: null, validUntil: null },
+                                                {
+                                                    validFrom: { lte: new Date() },
+                                                    validUntil: { gte: new Date() }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    select: { catalogId: true }
+                                }
+                            }
+                        }
+                    }
+                });
+                if (user?.company?.catalogs) {
+                    catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
+                }
+            }
+
             const where: any = {
                 AND: [
                     { isActive: true },
@@ -388,6 +421,17 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     }
                 ]
             };
+
+            // Catalog Visibility Filter for B2B Users
+            if (catalogIds.length > 0) {
+                where.AND.push({
+                    catalogProducts: {
+                        some: {
+                            catalogId: { in: catalogIds }
+                        }
+                    }
+                });
+            }
 
             // Availability (Status) Filter
             if (availability === 'in_stock') {
@@ -705,8 +749,43 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
       }
     }, async (request: any, reply: any) => {
-        const { id } = request.params;
         try {
+            const { id } = request.params;
+            const userId = (request.user as any)?.id;
+
+            // Fetch user's catalogs for filtering if logged in
+            let catalogIds: string[] = [];
+            if (userId) {
+                const user = await (fastify.prisma as any).user.findUnique({
+                    where: { id: userId },
+                    select: {
+                        company: {
+                            select: {
+                                catalogs: {
+                                    where: {
+                                        catalog: {
+                                            isActive: true,
+                                            deletedAt: null,
+                                            OR: [
+                                                { validFrom: null, validUntil: null },
+                                                {
+                                                    validFrom: { lte: new Date() },
+                                                    validUntil: { gte: new Date() }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    select: { catalogId: true }
+                                }
+                            }
+                        }
+                    }
+                });
+                if (user?.company?.catalogs) {
+                    catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
+                }
+            }
+
             const product = await (fastify.prisma as any).product.findFirst({
                 where: { 
                     id, 
@@ -721,7 +800,14 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { industries: { none: {} } },
                                 { industries: { some: { industry: { isActive: true, deletedAt: null } } } }
                             ]
-                        }
+                        },
+                        catalogIds.length > 0 ? {
+                            catalogProducts: {
+                                some: {
+                                    catalogId: { in: catalogIds }
+                                }
+                            }
+                        } : {}
                     ]
                 },
                 include: {
@@ -735,6 +821,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             stocks: true
                         }
                     },
+                    catalogVariants: true,
                     reviews: {
                         where: { status: 'APPROVED' },
                         select: { rating: true }
@@ -744,12 +831,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
 
-            const userId = (request.user as any)?.id;
+            const currentUserId = (request.user as any)?.id;
             const basePrice = (() => {
                 const pkr = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                 return pkr ? Number(pkr.priceRetail) : Number(product.prices?.[0]?.priceRetail || product.price || 0);
             })();
-            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
+            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, currentUserId, product.sku);
 
             return reply.send(createResponse({
                 id: product.id,
@@ -779,23 +866,44 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 specifications: product.specifications || {},
                 variantOptions: product.variantOptions,
                 variantAttributes: product.variantAttributes,
-                variants: await Promise.all((product.variants || []).map(async (v: any) => {
-                    const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                    const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
-                    const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
-                    
-                    return {
-                        id: v.id,
-                        name: v.name,
-                        sku: v.sku,
-                        price: vFinal,
-                        originalPrice: vBase !== vFinal ? vBase : undefined,
-                        currency: 'PKR',
-                        image_url: v.imageUrl,
-                        totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
-                        variantAttributes: v.variantAttributes
-                    };
-                }))
+                variants: await Promise.all((product.variants || [])
+                    .filter((v: any) => {
+                        if (catalogIds.length === 0) return true;
+                        // For B2B with catalogs, variants must also be in the catalog
+                        return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
+                    })
+                    .map(async (v: any) => {
+                        const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                        const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
+                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, currentUserId, v.sku);
+                        
+                        // Extract MOQ if in catalog
+                        let moq = 1;
+                        if (catalogIds.length > 0) {
+                            const catalogPricing = await (fastify.prisma as any).catalogPricing.findFirst({
+                                where: {
+                                    variantId: v.id,
+                                    catalogId: { in: catalogIds }
+                                },
+                            });
+                            if (catalogPricing) {
+                                moq = catalogPricing.minimumQuantity;
+                            }
+                        }
+
+                        return {
+                            id: v.id,
+                            name: v.name,
+                            sku: v.sku,
+                            price: vFinal,
+                            originalPrice: vBase !== vFinal ? vBase : undefined,
+                            currency: 'PKR',
+                            image_url: v.imageUrl,
+                            totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                            variantAttributes: v.variantAttributes,
+                            minimumQuantity: moq
+                        };
+                    }))
             }));
         } catch (err) {
             fastify.log.error(err);
@@ -828,6 +936,39 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 return reply.send(createResponse(cached));
             }
 
+            // Fetch user's catalogs for filtering if logged in
+            let catalogIds: string[] = [];
+            if (userId && userId !== 'guest') {
+                const user = await (fastify.prisma as any).user.findUnique({
+                    where: { id: userId },
+                    select: {
+                        company: {
+                            select: {
+                                catalogs: {
+                                    where: {
+                                        catalog: {
+                                            isActive: true,
+                                            deletedAt: null,
+                                            OR: [
+                                                { validFrom: null, validUntil: null },
+                                                {
+                                                    validFrom: { lte: new Date() },
+                                                    validUntil: { gte: new Date() }
+                                                }
+                                            ]
+                                        }
+                                    },
+                                    select: { catalogId: true }
+                                }
+                            }
+                        }
+                    }
+                });
+                if (user?.company?.catalogs) {
+                    catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
+                }
+            }
+
             const product = await (fastify.prisma as any).product.findFirst({
                 where: { 
                     isActive: true, 
@@ -847,7 +988,14 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { slug: { equals: slug, mode: 'insensitive' } },
                                 ...(isUUID ? [{ id: slug }] : [])
                             ]
-                        }
+                        },
+                        catalogIds.length > 0 ? {
+                            catalogProducts: {
+                                some: {
+                                    catalogId: { in: catalogIds }
+                                }
+                            }
+                        } : {}
                     ]
                 },
                 include: {
@@ -861,6 +1009,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             stocks: true
                         }
                     },
+                    catalogVariants: true,
                     reviews: {
                         where: { status: 'APPROVED' },
                         select: { rating: true }
@@ -906,26 +1055,48 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 volume: product.volume,
                 variantOptions: product.variantOptions,
                 variantAttributes: product.variantAttributes,
-                variants: await Promise.all((product.variants || []).map(async (v: any) => {
-                    const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                    const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
-                    const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
+                variants: await Promise.all((product.variants || [])
+                    .filter((v: any) => {
+                        if (catalogIds.length === 0) return true;
+                        // For B2B with catalogs, variants must also be in the catalog
+                        return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
+                    })
+                    .map(async (v: any) => {
+                        const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                        const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
+                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
+                        
+                        // Extract MOQ if in catalog
+                        let moq = 1;
+                        if (catalogIds.length > 0) {
+                            const catalogPricing = await (fastify.prisma as any).catalogPricing.findFirst({
+                                where: {
+                                    variantId: v.id,
+                                    catalogId: { in: catalogIds }
+                                },
+                                
+                            });
+                            if (catalogPricing) {
+                                moq = catalogPricing.minimumQuantity;
+                            }
+                        }
 
-                    return {
-                        id: v.id,
-                        name: v.name,
-                        sku: v.sku,
-                        price: vFinal,
-                        originalPrice: vBase !== vFinal ? vBase : undefined,
-                        currency: 'PKR',
-                        image_url: v.imageUrl,
-                        totalStock: (() => {
-                            if (v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock') return 0;
-                            return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                        })(),
-                        variantAttributes: v.variantAttributes
-                    };
-                })),
+                        return {
+                            id: v.id,
+                            name: v.name,
+                            sku: v.sku,
+                            price: vFinal,
+                            originalPrice: vBase !== vFinal ? vBase : undefined,
+                            currency: 'PKR',
+                            image_url: v.imageUrl,
+                            totalStock: (() => {
+                                if (v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock') return 0;
+                                return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                            })(),
+                            variantAttributes: v.variantAttributes,
+                            minimumQuantity: moq
+                        };
+                    })),
                 seo: (() => {
                     // If product has manual SEO from CMS, use it
                     const manualSeo = product.seo as any;

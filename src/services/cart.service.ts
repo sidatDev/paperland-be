@@ -18,12 +18,63 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
     });
 
     try {
+        // Fetch user's catalogs for initial validation
+        const user = await prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                company: {
+                    include: {
+                        catalogs: {
+                            where: {
+                                catalog: {
+                                    isActive: true,
+                                    deletedAt: null,
+                                    OR: [
+                                        { validFrom: null, validUntil: null },
+                                        {
+                                            validFrom: { lte: new Date() },
+                                            validUntil: { gte: new Date() }
+                                        }
+                                    ]
+                                }
+                            },
+                            select: { catalogId: true }
+                        }
+                    }
+                }
+            }
+        });
+
+        const catalogIds = user?.company?.catalogs.map((c: any) => c.catalogId) || [];
+
         await prisma.$transaction(async (tx) => {
             if (userCart) {
                 // MERGE: Move items from guest cart to user cart
                 const MAX_QUANTITY = 99999;
                 
                 for (const item of guestCart.items) {
+                    let status = 'VALID';
+                    let selectedCatalogId: string | null = null;
+
+                    if (catalogIds.length > 0) {
+                        const catalogProduct = await tx.catalogProduct.findFirst({
+                            where: { productId: item.productId, catalogId: { in: catalogIds } }
+                        });
+
+                        if (!catalogProduct) {
+                            status = 'INVALID_CATALOG';
+                        } else {
+                            selectedCatalogId = catalogProduct.catalogId;
+                            const catalogPricing = await tx.catalogPricing.findFirst({
+                                where: { variantId: item.productId, catalogId: { in: catalogIds } },
+                                
+                            });
+                            if (catalogPricing && item.quantity < catalogPricing.minimumQuantity) {
+                                status = 'INVALID_MOQ';
+                            }
+                        }
+                    }
+
                     const existingItem = await tx.cartItem.findFirst({
                         where: { cartId: userCart.id, productId: item.productId }
                     });
@@ -37,7 +88,11 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
                         
                         await tx.cartItem.update({
                             where: { id: existingItem.id },
-                            data: { quantity: newQuantity }
+                            data: { 
+                                quantity: newQuantity,
+                                status,
+                                catalogId: selectedCatalogId
+                            }
                         });
                     } else {
                         await tx.cartItem.create({
@@ -45,7 +100,9 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
                                 cartId: userCart.id,
                                 productId: item.productId,
                                 quantity: Math.min(item.quantity, MAX_QUANTITY),
-                                priceSnapshot: item.priceSnapshot // Preserve original price snapshot if available
+                                priceSnapshot: item.priceSnapshot,
+                                status,
+                                catalogId: selectedCatalogId
                             }
                         });
                     }
@@ -59,7 +116,7 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
                 });
 
             } else {
-                // ASSIGN: Simply re-assign guest cart to user
+                // ASSIGN: Simply re-assign guest cart to user and validate items
                 await tx.cart.update({
                     where: { id: guestCart.id },
                     data: { 
@@ -67,6 +124,36 @@ export const mergeGuestCart = async (prisma: PrismaClient, userId: string, guest
                         guestToken: null 
                     }
                 });
+
+                // Re-validate assignment
+                for (const item of guestCart.items) {
+                    let status = 'VALID';
+                    let selectedCatalogId: string | null = null;
+
+                    if (catalogIds.length > 0) {
+                        const catalogProduct = await tx.catalogProduct.findFirst({
+                            where: { productId: item.productId, catalogId: { in: catalogIds } }
+                        });
+
+                        if (!catalogProduct) {
+                            status = 'INVALID_CATALOG';
+                        } else {
+                            selectedCatalogId = catalogProduct.catalogId;
+                            const catalogPricing = await tx.catalogPricing.findFirst({
+                                where: { variantId: item.productId, catalogId: { in: catalogIds } },
+                                
+                            });
+                            if (catalogPricing && item.quantity < catalogPricing.minimumQuantity) {
+                                status = 'INVALID_MOQ';
+                            }
+                        }
+                    }
+
+                    await tx.cartItem.update({
+                        where: { id: item.id },
+                        data: { status, catalogId: selectedCatalogId }
+                    });
+                }
             }
         });
     } catch (error) {

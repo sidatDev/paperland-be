@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 
 export default async function b2bRoutes(fastify: FastifyInstance) {
   
@@ -242,13 +243,55 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
 
       if (action === 'APPROVE') {
         // Approve: Set active, update status
+        const companyDetails = user.b2bCompanyDetails;
+        
+        // Find or create company
+        let company = await (fastify.prisma as any).company.findFirst({
+            where: { name: companyDetails.companyName, deletedAt: null }
+        });
+
+        if (!company) {
+            company = await (fastify.prisma as any).company.create({
+                data: {
+                    name: companyDetails.companyName,
+                    registrationCountry: companyDetails.registrationCountry,
+                    taxId: companyDetails.taxId,
+                    registrationDate: companyDetails.registrationDate,
+                    companyAddress: companyDetails.companyAddress,
+                    registrationProofUrls: companyDetails.registrationProofUrls,
+                    doingBusinessAs: companyDetails.doingBusinessAs,
+                    primaryContactName: companyDetails.primaryContactName,
+                    jobTitle: companyDetails.jobTitle,
+                    contactPhone: companyDetails.contactPhone,
+                    contactCountryCode: companyDetails.contactCountryCode,
+                    billingEmail: companyDetails.billingEmail,
+                    shippingAddress: companyDetails.shippingAddress,
+                    apContactName: companyDetails.apContactName,
+                    apPhone: companyDetails.apPhone,
+                    apCountryCode: companyDetails.apCountryCode,
+                    authorizedRepresentativeEmail: companyDetails.authorizedRepresentativeEmail,
+                    authorizedRepresentativeName: companyDetails.authorizedRepresentativeName,
+                    registeredLegalEntity: companyDetails.registeredLegalEntity
+                }
+            });
+        }
+
         const updatedUser = await fastify.prisma.user.update({
           where: { id: userId },
           data: {
             isActive: true,
-            accountStatus: 'APPROVED'
+            accountStatus: 'APPROVED',
+            companyId: company.id
           }
         });
+
+        // Also link the B2B Profile if it exists
+        if (user.b2bProfileId) {
+            await (fastify.prisma as any).b2BProfile.update({
+                where: { id: user.b2bProfileId },
+                data: { companyId: company.id }
+            });
+        }
 
         // Send approval email
         const { emailService } = await import('../services/email.service');
@@ -266,7 +309,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
           entityId: user.id,
           action: 'B2B_APPROVED',
           performedBy: (request.user as any).id,
-          details: { companyName: user.b2bCompanyDetails.companyName, creditLimit },
+          details: { companyName: user.b2bCompanyDetails.companyName, creditLimit, companyId: company.id },
           ip: request.ip,
           userAgent: request.headers['user-agent']
         });
@@ -901,29 +944,52 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
   fastify.get('/b2b/catalogs', {
     preHandler: [fastify.authenticate],
     schema: {
-      description: 'Get all custom catalogs for the logged in B2B user',
+      description: 'Get all active catalogs assigned to the logged in B2B user',
       tags: ['B2B Operations'],
       security: [{ bearerAuth: [] }]
     }
   }, async (request, reply) => {
     try {
       const userId = (request.user as any).id;
+      
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },
-        select: { b2bProfileId: true }
+        include: {
+          company: {
+            include: {
+              catalogs: {
+                where: {
+                  catalog: {
+                    isActive: true,
+                    deletedAt: null,
+                    OR: [
+                      { validFrom: null, validUntil: null },
+                      {
+                        validFrom: { lte: new Date() },
+                        validUntil: { gte: new Date() }
+                      }
+                    ]
+                  }
+                },
+                orderBy: { priority: 'desc' },
+                include: { catalog: true }
+              }
+            }
+          }
+        }
       });
 
-      if (!user?.b2bProfileId) {
-        return reply.status(403).send({ message: 'No B2B profile associated with this account' });
+      if (!user?.company) {
+        return reply.status(403).send({ message: 'No active B2B company associated with this account' });
       }
 
-      const catalogs = await fastify.prisma.custom_catalogs.findMany({
-        where: { 
-          b2b_profile_id: user.b2bProfileId,
-          is_active: true
-        },
-        orderBy: { created_at: 'desc' }
-      });
+      const catalogs = user.company.catalogs.map((c: any) => ({
+        id: c.catalog.id,
+        name: c.catalog.name,
+        description: c.catalog.description,
+        priority: c.priority,
+        assignedAt: c.createdAt
+      }));
 
       return reply.send(catalogs);
     } catch (err: any) {
@@ -948,28 +1014,48 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
       
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },
-        select: { b2bProfileId: true }
+        include: { company: true }
       });
 
-      if (!user?.b2bProfileId) {
-        return reply.status(403).send({ message: 'Unauthorized: No B2B profile' });
+      if (!user?.companyId) {
+        return reply.status(403).send({ message: 'Not authorized for B2B catalogs' });
       }
 
-      const catalog = await fastify.prisma.custom_catalogs.findFirst({
-        where: { 
-          id, 
-          b2b_profile_id: user.b2bProfileId 
-        },
+      // Check if catalog exists and is assigned to the company
+      const companyCatalog = await (fastify.prisma as any).companyCatalog.findUnique({
+        where: {
+          companyId_catalogId: {
+            companyId: user.companyId,
+            catalogId: id
+          }
+        }
+      });
+
+      if (!companyCatalog) {
+         return reply.status(404).send({ message: 'Catalog not assigned to your company' });
+      }
+
+      const catalog = await (fastify.prisma as any).catalog.findUnique({
+        where: { id },
         include: {
-          custom_catalog_items: {
+          products: {
             include: {
-              products: {
-                select: {
-                  id: true,
-                  name: true,
-                  sku: true,
-                  price: true,
-                  images: true
+              product: {
+                include: {
+                  variants: {
+                    where: {
+                      catalogVariants: {
+                        some: { catalogId: id }
+                      }
+                    },
+                    include: {
+                      prices: { where: { isActive: true }, take: 1 },
+                      catalogPricing: { where: { catalogId: id } }
+                    }
+                  },
+                  prices: { where: { isActive: true }, take: 1 },
+                  catalogPricing: { where: { catalogId: id } },
+                  catalogVariants: { where: { catalogId: id } }
                 }
               }
             }
@@ -977,12 +1063,53 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         }
       });
 
-      if (!catalog) return reply.status(404).send({ message: 'Catalog not found' });
+      if (!catalog || !catalog.isActive || catalog.deletedAt) {
+        return reply.status(404).send({ message: 'Catalog not found or inactive' });
+      }
 
-      return reply.send(catalog);
+      // Format response strictly as requested
+      const formattedResponse = {
+        company_name: user.company?.name || 'Your Company',
+        catalog_name: catalog.name,
+        products: catalog.products
+          .map((cp: any) => {
+            const prod = cp.product;
+            
+            // Check if product itself is allowed (if it has no children variants but is in catalog)
+            const isSelfAllowed = prod.catalogVariants.length > 0;
+            const variantsToProcess = [...prod.variants];
+            if (isSelfAllowed) {
+              variantsToProcess.unshift(prod);
+            }
+
+            const formattedVariants = variantsToProcess.map((v: any) => {
+              const pricing = v.catalogPricing?.[0];
+              const retailPrice = v.prices?.[0]?.priceRetail || v.price || 0;
+
+              return {
+                variant_id: v.id,
+                variant_name: v.name || 'Standard',
+                image_url: v.imageUrl || prod.imageUrl || '/placeholder-product.png',
+                price: pricing ? parseFloat(pricing.customPrice.toString()) : parseFloat(retailPrice.toString()),
+                moq: pricing ? pricing.minimumQuantity : 1
+              };
+            });
+
+            if (formattedVariants.length === 0) return null;
+
+            return {
+              product_id: prod.id,
+              product_name: prod.name,
+              variants: formattedVariants
+            };
+          })
+          .filter(Boolean)
+      };
+
+      return reply.send(createResponse(formattedResponse, "Catalog details fetched"));
     } catch (err: any) {
       fastify.log.error(err);
-      return reply.status(500).send({ message: 'Failed to fetch catalog details' });
+      return reply.status(500).send(createErrorResponse('Failed to fetch catalog details: ' + err.message));
     }
   });
 

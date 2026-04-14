@@ -122,14 +122,81 @@ export default async function cartRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
         const cart = await findCart(request);
-        const totals = await calculateCartTotals(cart, (request as any).user?.id);
+        const userId = (request as any).user?.id;
+
+        // 1. Re-validate Items if logged in
+        if (cart && userId) {
+            const user = await fastify.prisma.user.findUnique({
+                where: { id: userId },
+                include: {
+                    company: {
+                        include: {
+                            catalogs: {
+                                where: {
+                                    catalog: {
+                                        isActive: true,
+                                        deletedAt: null,
+                                        OR: [
+                                            { validFrom: null, validUntil: null },
+                                            {
+                                                validFrom: { lte: new Date() },
+                                                validUntil: { gte: new Date() }
+                                            }
+                                        ]
+                                    }
+                                },
+                                select: { catalogId: true }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const catalogIds = user?.company?.catalogs.map((c: any) => c.catalogId) || [];
+
+            for (const item of (cart as any).items) {
+                let status = 'VALID';
+                let selectedCatalogId: string | null = null;
+
+                if (catalogIds.length > 0) {
+                    const catalogProduct = await fastify.prisma.catalogProduct.findFirst({
+                        where: { productId: item.productId, catalogId: { in: catalogIds } }
+                    });
+
+                    if (!catalogProduct) {
+                        status = 'INVALID_CATALOG';
+                    } else {
+                        selectedCatalogId = catalogProduct.catalogId;
+                        const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
+                            where: { variantId: item.productId, catalogId: { in: catalogIds } },
+                            
+                        });
+                        if (catalogPricing && item.quantity < catalogPricing.minimumQuantity) {
+                            status = 'INVALID_MOQ';
+                        }
+                    }
+                }
+
+                if (item.status !== status || item.catalogId !== selectedCatalogId) {
+                    await fastify.prisma.cartItem.update({
+                        where: { id: item.id },
+                        data: { status, catalogId: selectedCatalogId }
+                    });
+                    item.status = status;
+                    item.catalogId = selectedCatalogId;
+                }
+            }
+        }
+
+        const totals = await calculateCartTotals(cart, userId);
         
         const items = (cart && totals.pricedItems) ? (cart as any).items.map((item: any, idx: number) => {
             const priced = totals.pricedItems![idx];
             return {
                 ...item,
                 price: priced.finalPrice,
-                originalPrice: priced.basePrice !== priced.finalPrice ? priced.basePrice : undefined
+                originalPrice: priced.basePrice !== priced.finalPrice ? priced.basePrice : undefined,
+                status: item.status // Include status for frontend
             };
         }) : [];
 
@@ -218,7 +285,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
         // 2. Check Product
         const product = await fastify.prisma.product.findUnique({ 
             where: { id: productId },
-            include: { prices: { where: { isActive: true }, take: 1 }, stocks: true }
+            include: { prices: { where: { isActive: true }, take: 1 }, stocks: true, catalogProducts: true }
         });
         if (!product) return reply.status(404).send(createErrorResponse("Product not found"));
 
@@ -227,7 +294,68 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             return reply.status(400).send(createErrorResponse("This item is currently out of stock."));
         }
 
-        // 3. Upsert Cart Item
+        // 3. B2B Custom Catalog & MOQ Logic
+        let selectedCatalogId: string | null = null;
+        let moq = 1;
+
+        if (userId) {
+            const user = await fastify.prisma.user.findUnique({
+                where: { id: userId },
+                include: {
+                    company: {
+                        include: {
+                            catalogs: {
+                                where: {
+                                    catalog: {
+                                        isActive: true,
+                                        deletedAt: null,
+                                        OR: [
+                                            { validFrom: null, validUntil: null },
+                                            {
+                                                validFrom: { lte: new Date() },
+                                                validUntil: { gte: new Date() }
+                                            }
+                                        ]
+                                    }
+                                },
+                                orderBy: { priority: 'desc' },
+                                include: { catalog: true }
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (user?.company && user.company.catalogs.length > 0) {
+                const catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
+                
+                // Check if product is in any of the company's catalogs
+                const catalogProduct = await fastify.prisma.catalogProduct.findFirst({
+                    where: { productId, catalogId: { in: catalogIds } }
+                });
+
+                if (!catalogProduct) {
+                    return reply.status(403).send(createErrorResponse("This product is not available in your organization's catalogs."));
+                }
+
+                selectedCatalogId = catalogProduct.catalogId;
+
+                // Check for MOQ in CatalogPricing
+                const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
+                    where: { variantId: productId, catalogId: { in: catalogIds } },
+                    
+                });
+
+                if (catalogPricing) {
+                    moq = catalogPricing.minimumQuantity;
+                    if (quantity < moq) {
+                        return reply.status(400).send(createErrorResponse(`Minimum order quantity for this item is ${moq}.`));
+                    }
+                }
+            }
+        }
+
+        // 4. Upsert Cart Item
         const existingItem = await fastify.prisma.cartItem.findFirst({
             where: { cartId: cart.id, productId }
         });
@@ -245,7 +373,11 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             
             await fastify.prisma.cartItem.update({
                 where: { id: existingItem.id },
-                data: { quantity: newQuantity }
+                data: { 
+                    quantity: newQuantity,
+                    catalogId: selectedCatalogId,
+                    status: 'VALID'
+                }
             });
         } else {
             if (quantity > availableStock) {
@@ -259,7 +391,9 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                     cartId: cart.id,
                     productId,
                     quantity,
-                    priceSnapshot: currentPrice
+                    priceSnapshot: currentPrice,
+                    catalogId: selectedCatalogId,
+                    status: 'VALID'
                 } as any
             });
         }
@@ -312,6 +446,169 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             total: totals.total,
             count: totals.count
         }, "Item added to cart");
+
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // POST Bulk Add to Cart (B2B focused)
+  fastify.post('/cart/add-bulk', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Add multiple items to cart (B2B)',
+        tags: ['Cart'],
+        security: [{ bearerAuth: [] }],
+        body: {
+            type: 'object',
+            required: ['items'],
+            properties: {
+                items: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        required: ['productId', 'quantity'],
+                        properties: {
+                            productId: { type: 'string' },
+                            quantity: { type: 'integer', minimum: 1 }
+                        }
+                    }
+                }
+            }
+        }
+    }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+        const { items } = request.body as any;
+        const userId = (request as any).user?.id;
+
+        if (!userId) {
+            return reply.status(401).send(createErrorResponse("Authentication required for bulk add"));
+        }
+
+        // 1. Get User Catalog Context
+        const user = await fastify.prisma.user.findUnique({
+            where: { id: userId },
+            include: {
+                company: {
+                    include: {
+                        catalogs: {
+                            where: {
+                                catalog: {
+                                    isActive: true,
+                                    deletedAt: null,
+                                    OR: [
+                                        { validFrom: null, validUntil: null },
+                                        { validFrom: { lte: new Date() }, validUntil: { gte: new Date() } }
+                                    ]
+                                }
+                            },
+                            select: { catalogId: true }
+                        }
+                    }
+                }
+            }
+        });
+
+        const catalogIds = user?.company?.catalogs.map((c: any) => c.catalogId) || [];
+
+        // 2. Find or Create Cart
+        let cart = await fastify.prisma.cart.findFirst({
+            where: { userId, status: 'ACTIVE' }
+        });
+
+        if (!cart) {
+            cart = await fastify.prisma.cart.create({
+                data: { userId, status: 'ACTIVE' }
+            });
+        }
+
+        const results: any[] = [];
+
+        // 3. Process items in a transaction for atomicity (or sequence if preferred per-item feedback)
+        // Here we process sequentially to provide detailed feedback if required, but keep it tight
+        for (const item of items) {
+            const { productId, quantity } = item;
+
+            // Check Product
+            const product = await fastify.prisma.product.findUnique({ 
+                where: { id: productId },
+                include: { prices: { where: { isActive: true }, take: 1 }, stocks: true }
+            });
+
+            if (!product) {
+                results.push({ productId, success: false, message: "Product not found" });
+                continue;
+            }
+
+            // Catalog & MOQ Check
+            let selectedCatalogId: string | null = null;
+            if (catalogIds.length > 0) {
+                const catalogProduct = await fastify.prisma.catalogProduct.findFirst({
+                    where: { productId, catalogId: { in: catalogIds } }
+                });
+
+                if (!catalogProduct) {
+                    results.push({ productId, success: false, message: "Product not in your catalogs" });
+                    continue;
+                }
+                selectedCatalogId = catalogProduct.catalogId;
+
+                const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
+                    where: { variantId: productId, catalogId: { in: catalogIds } }
+                });
+
+                if (catalogPricing && quantity < catalogPricing.minimumQuantity) {
+                    results.push({ productId, success: false, message: `MOQ is ${catalogPricing.minimumQuantity}` });
+                    continue;
+                }
+            }
+
+            // Stock Check
+            const availableStock = Math.max(0, (product as any).stocks?.reduce((acc: number, s: any) => acc + (s.qty - s.reservedQty), 0) || 0);
+            if (quantity > availableStock) {
+                results.push({ productId, success: false, message: `Only ${availableStock} available` });
+                continue;
+            }
+
+            // Upsert
+            const existingItem = await fastify.prisma.cartItem.findFirst({
+                where: { cartId: cart.id, productId }
+            });
+
+            if (existingItem) {
+                await fastify.prisma.cartItem.update({
+                    where: { id: existingItem.id },
+                    data: { quantity: existingItem.quantity + quantity, catalogId: selectedCatalogId, status: 'VALID' }
+                });
+            } else {
+                await fastify.prisma.cartItem.create({
+                    data: {
+                        cartId: cart.id,
+                        productId,
+                        quantity,
+                        priceSnapshot: (product as any).prices?.[0]?.priceRetail || product.price || 0,
+                        catalogId: selectedCatalogId,
+                        status: 'VALID'
+                    } as any
+                });
+            }
+            results.push({ productId, success: true });
+        }
+
+        await invalidateDraftOrder(userId);
+
+        const updatedCart = await findCart(request);
+        const totals = await calculateCartTotals(updatedCart, userId);
+
+        return createResponse({
+            results,
+            cart: {
+                count: totals.count,
+                total: totals.total
+            }
+        }, "Bulk add complete");
 
     } catch (err: any) {
         fastify.log.error(err);

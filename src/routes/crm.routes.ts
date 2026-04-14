@@ -461,10 +461,49 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             await tx.$executeRawUnsafe(`ALTER TABLE b2b_profiles ADD COLUMN IF NOT EXISTS tax_id TEXT`);
             await tx.$executeRawUnsafe(`ALTER TABLE b2b_profiles ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'PENDING'`);
 
+            // 1. Resolve/Sync Company
+            const companyName = user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client';
+            let company = await (tx as any).company.findFirst({
+                where: { name: companyName, deletedAt: null }
+            });
+
+            if (!company) {
+                if (user.b2bCompanyDetails) {
+                    const details = user.b2bCompanyDetails;
+                    company = await (tx as any).company.create({
+                        data: {
+                            name: details.companyName,
+                            registrationCountry: details.registrationCountry,
+                            taxId: details.taxId,
+                            registrationDate: details.registrationDate,
+                            companyAddress: details.companyAddress,
+                            registrationProofUrls: details.registrationProofUrls,
+                            doingBusinessAs: details.doingBusinessAs,
+                            primaryContactName: details.primaryContactName,
+                            jobTitle: details.jobTitle,
+                            contactPhone: details.contactPhone,
+                            contactCountryCode: details.contactCountryCode,
+                            billingEmail: details.billingEmail,
+                            shippingAddress: details.shippingAddress,
+                            apContactName: details.apContactName,
+                            apPhone: details.apPhone,
+                            apCountryCode: details.apCountryCode,
+                            authorizedRepresentativeEmail: details.authorizedRepresentativeEmail,
+                            authorizedRepresentativeName: details.authorizedRepresentativeName,
+                            registeredLegalEntity: details.registeredLegalEntity
+                        }
+                    });
+                } else {
+                    company = await (tx as any).company.create({
+                        data: { name: companyName }
+                    });
+                }
+            }
+
             // Update User
             await tx.user.update({
                 where: { id },
-                data: { accountStatus: 'APPROVED', isActive: true, roleId }
+                data: { accountStatus: 'APPROVED', isActive: true, roleId, companyId: company.id }
             });
 
             // Upsert B2B Profile using Raw SQL to bypass Prisma Client validation errors
@@ -474,7 +513,8 @@ export default async function crmRoutes(fastify: FastifyInstance) {
                     where: { id: user.b2bProfileId },
                     data: {
                         creditLimit: creditLimit,
-                        paymentTerms: paymentTerms
+                        paymentTerms: paymentTerms,
+                        companyId: company.id
                     }
                 });
                 
@@ -488,9 +528,9 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             } else {
                 const profileId = require('crypto').randomUUID();
                 await tx.$executeRawUnsafe(`
-                    INSERT INTO b2b_profiles (id, company_name, tax_id, status, credit_limit, payment_terms, admin_notes, created_at, updated_at)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-                `, profileId, user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client', user.b2bCompanyDetails?.taxId, 'APPROVED', creditLimit, paymentTerms, notes);
+                    INSERT INTO b2b_profiles (id, company_name, tax_id, status, credit_limit, payment_terms, admin_notes, created_at, updated_at, company_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), $8)
+                `, profileId, user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client', user.b2bCompanyDetails?.taxId, 'APPROVED', creditLimit, paymentTerms, notes, company.id);
 
                 await tx.user.update({
                     where: { id },
