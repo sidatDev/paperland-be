@@ -692,7 +692,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 type: true,
                 instructions: true,
                 feePercentage: true,
-                feeFixed: true
+                feeFixed: true,
+                config: true
             }
         });
         
@@ -707,7 +708,25 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                            .replace('{bankIban}', settings.bankIban || '')
                            .replace('{bankSwiftCode}', settings.bankSwiftCode || '');
             }
-            return { ...g, instructions: inst };
+
+            // For Stripe: expose only SAFE public fields from config (never the secretKey)
+            let stripePublicConfig: Record<string, any> | undefined;
+            if (g.identifier === 'stripe' && g.config) {
+                const cfg = typeof g.config === 'string' ? JSON.parse(g.config) : g.config;
+                stripePublicConfig = {
+                    publishableKey: cfg.publishableKey || '',
+                    mode: cfg.mode || 'test',
+                    currency: cfg.currency || 'usd',
+                    exchangeRatePKR: cfg.exchangeRatePKR || 278
+                };
+            }
+
+            const { config: _omit, ...gatewayPublic } = g;
+            return {
+                ...gatewayPublic,
+                instructions: inst,
+                ...(stripePublicConfig ? { stripeConfig: stripePublicConfig } : {})
+            };
         });
 
         return mappedGateways;
@@ -735,15 +754,57 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             return reply.code(400).send({ message: 'Draft order not found or already processed' });
         }
 
+        // 1.5 Stripe: Verify PaymentIntent server-side before accepting
+        let stripeVerifiedIntentId: string | null = null;
+        if (paymentMethod === 'STRIPE') {
+            const stripePaymentIntentId = paymentMetadata?.stripePaymentIntentId;
+            if (!stripePaymentIntentId) {
+                return reply.code(400).send({ message: 'Stripe PaymentIntent ID is required' });
+            }
+            const stripeGw = await (fastify.prisma as any).paymentGateway.findFirst({
+                where: { identifier: 'stripe', isActive: true }
+            });
+            if (!stripeGw) {
+                return reply.code(400).send({ message: 'Stripe gateway is not active' });
+            }
+            const stripeCfg = (stripeGw.config as any) || {};
+            const secretKey: string = stripeCfg.secretKey || '';
+            if (!secretKey || secretKey.includes('*')) {
+                return reply.code(500).send({ message: 'Stripe is not properly configured' });
+            }
+            try {
+                const { retrievePaymentIntent } = await import('../services/stripe.service');
+                const intent = await retrievePaymentIntent(secretKey, stripePaymentIntentId);
+                if (intent.status !== 'succeeded') {
+                    return reply.code(400).send({ message: `Payment not completed. Stripe status: ${intent.status}` });
+                }
+                // Verify this intent belongs to this order
+                if (intent.metadata?.orderId && intent.metadata.orderId !== orderId) {
+                    return reply.code(400).send({ message: 'Payment does not match this order' });
+                }
+                stripeVerifiedIntentId = intent.id;
+                fastify.log.info(`[Stripe] Verified PaymentIntent ${intent.id} for order ${orderId}`);
+            } catch (stripeErr: any) {
+                fastify.log.error(stripeErr, '[Stripe] PaymentIntent verification failed');
+                return reply.code(400).send({ message: 'Failed to verify Stripe payment: ' + stripeErr.message });
+            }
+        }
+
         // 2. Finalize Order (Move from DRAFT to PENDING)
         const finalOrder = await fastify.prisma.order.update({
             where: { id: orderId },
             data: {
                 status: 'PENDING',
-                orderNumber: `ORD-${Date.now().toString().slice(-6)}`, // Assign real order number
+                orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
                 paymentMethod: paymentMethod || 'COD',
-                paymentDetails: paymentMetadata || {},
-                paymentStatus: 'UNPAID', // Default for these methods until verified
+                paymentDetails: {
+                    ...(paymentMetadata || {}),
+                    ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
+                },
+                // STRIPE: Mark as PAID immediately after server-side verification
+                // Other methods: UNPAID until manually approved
+                paymentStatus: stripeVerifiedIntentId ? 'PAID' : 'UNPAID',
+                ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
                 updatedAt: new Date()
             }
         });

@@ -668,6 +668,41 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 return reply.code(400).send({ message: 'Draft order not found or already processed' });
             }
 
+            // Stripe: Verify PaymentIntent server-side before accepting
+            let stripeVerifiedIntentId: string | null = null;
+            if (paymentMethod === 'STRIPE') {
+                const stripePaymentIntentId = paymentMetadata?.stripePaymentIntentId;
+                if (!stripePaymentIntentId) {
+                    return reply.code(400).send({ message: 'Stripe PaymentIntent ID is required' });
+                }
+                const stripeGw = await (fastify.prisma as any).paymentGateway.findFirst({
+                    where: { identifier: 'stripe', isActive: true }
+                });
+                if (!stripeGw) {
+                    return reply.code(400).send({ message: 'Stripe gateway is not active' });
+                }
+                const stripeCfg = (stripeGw.config as any) || {};
+                const secretKey: string = stripeCfg.secretKey || '';
+                if (!secretKey || secretKey.includes('*')) {
+                    return reply.code(500).send({ message: 'Stripe is not properly configured' });
+                }
+                try {
+                    const { retrievePaymentIntent } = await import('../services/stripe.service');
+                    const intent = await retrievePaymentIntent(secretKey, stripePaymentIntentId);
+                    if (intent.status !== 'succeeded') {
+                        return reply.code(400).send({ message: `Payment not completed. Stripe status: ${intent.status}` });
+                    }
+                    if (intent.metadata?.orderId && intent.metadata.orderId !== orderId) {
+                        return reply.code(400).send({ message: 'Payment does not match this order' });
+                    }
+                    stripeVerifiedIntentId = intent.id;
+                    fastify.log.info(`[Stripe/Guest] Verified PaymentIntent ${intent.id} for order ${orderId}`);
+                } catch (stripeErr: any) {
+                    fastify.log.error(stripeErr, '[Stripe/Guest] PaymentIntent verification failed');
+                    return reply.code(400).send({ message: 'Failed to verify Stripe payment: ' + stripeErr.message });
+                }
+            }
+
             // Finalize order
             const finalOrder = await fastify.prisma.order.update({
                 where: { id: orderId },
@@ -675,8 +710,12 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     status: 'PENDING',
                     orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
                     paymentMethod: paymentMethod || 'COD',
-                    paymentDetails: paymentMetadata || {},
-                    paymentStatus: 'UNPAID',
+                    paymentDetails: {
+                        ...(paymentMetadata || {}),
+                        ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
+                    },
+                    paymentStatus: stripeVerifiedIntentId ? 'PAID' : 'UNPAID',
+                    ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
                     updatedAt: new Date()
                 }
             });

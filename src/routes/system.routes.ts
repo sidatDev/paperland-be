@@ -508,7 +508,23 @@ export default async function systemRoutes(fastify: FastifyInstance) {
       const gateways = await (fastify.prisma as any).paymentGateway.findMany({
         orderBy: { sortOrder: 'asc' }
       });
-      return createResponse(gateways, 'Payment gateways retrieved');
+
+      // Mask sensitive Stripe credentials before returning to admin frontend
+      const safeGateways = gateways.map((g: any) => {
+        if (g.identifier === 'stripe' && g.config) {
+          const cfg = typeof g.config === 'string' ? JSON.parse(g.config) : { ...g.config };
+          if (cfg.secretKey && !cfg.secretKey.includes('*')) {
+            cfg.secretKey = `${cfg.secretKey.slice(0, 10)}${'*'.repeat(Math.max(0, cfg.secretKey.length - 14))}${cfg.secretKey.slice(-4)}`;
+          }
+          if (cfg.webhookSecret && !cfg.webhookSecret.includes('*')) {
+            cfg.webhookSecret = `${cfg.webhookSecret.slice(0, 6)}${'*'.repeat(Math.max(0, cfg.webhookSecret.length - 10))}${cfg.webhookSecret.slice(-4)}`;
+          }
+          return { ...g, config: cfg };
+        }
+        return g;
+      });
+
+      return createResponse(safeGateways, 'Payment gateways retrieved');
     } catch (err: any) {
       return reply.status(500).send(createErrorResponse('Failed to fetch gateways'));
     }
@@ -520,7 +536,24 @@ export default async function systemRoutes(fastify: FastifyInstance) {
     try {
       const { id } = request.params as any;
       const data = request.body as any;
-      
+
+      // Prevent overwriting Stripe sensitive keys with masked placeholder values
+      if (data.config && typeof data.config === 'object') {
+        const existingGw = await (fastify.prisma as any).paymentGateway.findUnique({ where: { id } });
+        if (existingGw?.identifier === 'stripe' && existingGw.config) {
+          const existingCfg = typeof existingGw.config === 'string'
+            ? JSON.parse(existingGw.config)
+            : existingGw.config;
+          // If submitted secretKey is masked (contains '*'), keep the real stored one
+          if (data.config.secretKey && String(data.config.secretKey).includes('*')) {
+            data.config.secretKey = existingCfg.secretKey || '';
+          }
+          if (data.config.webhookSecret && String(data.config.webhookSecret).includes('*')) {
+            data.config.webhookSecret = existingCfg.webhookSecret || '';
+          }
+        }
+      }
+
       const updated = await (fastify.prisma as any).paymentGateway.update({
         where: { id },
         data

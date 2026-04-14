@@ -271,4 +271,274 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
       }
   });
 
+  // ─────────────────────────────────────────────────────────
+  // STRIPE PAYMENT ROUTES
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/v1/payments/stripe/create-intent
+   * Creates a Stripe PaymentIntent for an existing DRAFT order.
+   * Supports both authenticated and guest checkout flows.
+   * Returns { clientSecret, publishableKey, usdAmount, exchangeRate }
+   * The secretKey is NEVER returned to the client.
+   */
+  fastify.post('/payments/stripe/create-intent', {
+      schema: {
+          description: 'Create a Stripe PaymentIntent for a DRAFT order',
+          tags: ['Payments', 'Stripe'],
+          body: {
+              type: 'object',
+              required: ['orderId'],
+              properties: {
+                  orderId:    { type: 'string' },
+                  guestToken: { type: 'string' }
+              }
+          }
+      }
+  }, async (request: any, reply) => {
+      const { orderId, guestToken } = request.body;
+      const prisma = (fastify.prisma as any);
+
+      try {
+          // ── 1. Resolve authenticated or guest order ──
+          // Safely try to extract userId from JWT (no side-effects on failure)
+          let userId: string | null = null;
+          const authHeader = request.headers?.authorization as string | undefined;
+          if (authHeader?.startsWith('Bearer ')) {
+              try {
+                  const decoded = (fastify as any).jwt.verify(authHeader.slice(7)) as any;
+                  userId = decoded?.id || decoded?.sub || null;
+              } catch {
+                  // Token invalid or absent — guest flow
+              }
+          }
+
+          let order: any;
+          if (userId) {
+              order = await fastify.prisma.order.findFirst({
+                  where: { id: orderId, userId, status: 'DRAFT' }
+              });
+          } else if (guestToken) {
+              order = await prisma.order.findFirst({
+                  where: { id: orderId, guestToken, status: 'DRAFT', isGuestOrder: true }
+              });
+          }
+
+          if (!order) {
+              return reply.code(404).send(createErrorResponse('Draft order not found'));
+          }
+
+          // ── 2. Load active Stripe gateway config ──
+          const gateway = await prisma.paymentGateway.findFirst({
+              where: { identifier: 'stripe', isActive: true }
+          });
+
+          if (!gateway) {
+              return reply.code(400).send(createErrorResponse('Stripe payment gateway is not active'));
+          }
+
+          const config = (gateway.config as any) || {};
+          const secretKey: string = config.secretKey || '';
+          const publishableKey: string = config.publishableKey || '';
+          const exchangeRate: number = Number(config.exchangeRatePKR || 278);
+          const currency: string = (config.currency || 'usd').toLowerCase();
+
+          if (!secretKey || secretKey.includes('*')) {
+              return reply.code(400).send(createErrorResponse('Stripe secret key is not configured'));
+          }
+          if (!publishableKey) {
+              return reply.code(400).send(createErrorResponse('Stripe publishable key is not configured'));
+          }
+
+          // ── 3. Idempotency: reuse existing intent if created ──
+          const existingDetails = (order.paymentDetails as any) || {};
+          if (existingDetails.stripePaymentIntentId) {
+              const { retrievePaymentIntent } = await import('../services/stripe.service');
+              try {
+                  const existingIntent = await retrievePaymentIntent(secretKey, existingDetails.stripePaymentIntentId);
+                  if (existingIntent.status === 'requires_payment_method' || existingIntent.status === 'requires_confirmation') {
+                      const usdAmount = Math.round(Number(order.totalAmount) / exchangeRate * 100) / 100;
+                      return {
+                          clientSecret: existingIntent.client_secret,
+                          publishableKey,
+                          usdAmount,
+                          exchangeRate,
+                          currency
+                      };
+                  }
+              } catch {
+                  // Intent may have expired; create a fresh one below
+              }
+          }
+
+          // ── 4. Calculate USD amount (PKR ÷ exchangeRate, in cents) ──
+          const pkrAmount = Number(order.totalAmount);
+          const usdAmount = Math.round(pkrAmount / exchangeRate * 100) / 100;
+          const amountInCents = Math.round(usdAmount * 100); // Convert to cents
+
+          if (amountInCents < 50) {
+              return reply.code(400).send(createErrorResponse('Order amount is too small for Stripe (minimum ~$0.50 USD)'));
+          }
+
+          // ── 5. Create PaymentIntent ──
+          const { createPaymentIntent } = await import('../services/stripe.service');
+          const intent = await createPaymentIntent(secretKey, amountInCents, currency, orderId, {
+              orderNumber: order.orderNumber || '',
+              pkrAmount: String(pkrAmount),
+              exchangeRate: String(exchangeRate)
+          });
+
+          // ── 6. Store intent ID in order.paymentDetails (not the secret) ──
+          await fastify.prisma.order.update({
+              where: { id: orderId },
+              data: {
+                  paymentDetails: {
+                      ...existingDetails,
+                      stripePaymentIntentId: intent.id,
+                      stripeMode: config.mode || 'test',
+                      usdAmount,
+                      exchangeRate
+                  }
+              }
+          });
+
+          fastify.log.info(`[Stripe] Created PaymentIntent ${intent.id} for order ${orderId} — ${amountInCents} cents ${currency.toUpperCase()}`);
+
+          return {
+              clientSecret: intent.client_secret,
+              publishableKey,
+              usdAmount,
+              exchangeRate,
+              currency
+          };
+
+      } catch (err: any) {
+          fastify.log.error(err, '[Stripe] create-intent failed');
+          return reply.code(500).send(createErrorResponse(err.message || 'Failed to create Stripe PaymentIntent'));
+      }
+  });
+
+  /**
+   * POST /api/v1/webhooks/stripe
+   * Stripe webhook handler. Requires raw body for signature verification.
+   * Registered in an encapsulated scope that overrides the JSON parser.
+   */
+  fastify.register(async (webhookScope) => {
+      // Override JSON content-type parser to preserve raw body for Stripe signature
+      webhookScope.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req: any, body: any, done: any) => {
+          (req as any).rawBody = body as Buffer;
+          try {
+              const parsed = body && (body as Buffer).length > 0 ? JSON.parse((body as Buffer).toString()) : {};
+              done(null, parsed);
+          } catch (e: any) {
+              done(e);
+          }
+      });
+
+      webhookScope.post('/webhooks/stripe', {
+          schema: {
+              description: 'Stripe webhook handler (signature-verified)',
+              tags: ['Payments', 'Stripe']
+          }
+      }, async (request: any, reply) => {
+          const prisma = (fastify.prisma as any);
+          const signature = request.headers['stripe-signature'] as string;
+          const rawBody = request.rawBody as Buffer;
+
+          if (!signature || !rawBody) {
+              return reply.code(400).send({ error: 'Missing Stripe signature or body' });
+          }
+
+          try {
+              // Load gateway config
+              const gateway = await prisma.paymentGateway.findFirst({
+                  where: { identifier: 'stripe' }
+              });
+
+              const config = (gateway?.config as any) || {};
+              const secretKey: string = config.secretKey || '';
+              const webhookSecret: string = config.webhookSecret || '';
+
+              if (!secretKey || secretKey.includes('*') || !webhookSecret || webhookSecret.includes('*')) {
+                  fastify.log.warn('[Stripe Webhook] Secret keys not configured, skipping verification');
+                  return reply.code(400).send({ error: 'Stripe not configured' });
+              }
+
+              // Verify webhook signature
+              const { constructWebhookEvent } = await import('../services/stripe.service');
+              const event = constructWebhookEvent(secretKey, webhookSecret, rawBody, signature);
+
+              const intent = event.data.object as any;
+              const orderId = intent?.metadata?.orderId;
+
+              if (!orderId) {
+                  fastify.log.warn(`[Stripe Webhook] Event ${event.type} — no orderId in metadata`);
+                  return reply.send({ received: true });
+              }
+
+              // Handle events
+              if (event.type === 'payment_intent.succeeded') {
+                  fastify.log.info(`[Stripe Webhook] payment_intent.succeeded — OrderId: ${orderId}, IntentId: ${intent.id}`);
+
+                  const order = await fastify.prisma.order.findUnique({ where: { id: orderId } });
+                  if (!order) {
+                      fastify.log.warn(`[Stripe Webhook] Order ${orderId} not found`);
+                      return reply.send({ received: true });
+                  }
+
+                  // Idempotency: skip if already paid
+                  if (order.paymentStatus === 'PAID') {
+                      fastify.log.info(`[Stripe Webhook] Order ${orderId} already PAID, skipping`);
+                      return reply.send({ received: true });
+                  }
+
+                  await fastify.prisma.order.update({
+                      where: { id: orderId },
+                      data: {
+                          paymentStatus: 'PAID',
+                          transactionRef: intent.id,
+                          paymentDetails: {
+                              ...(typeof order.paymentDetails === 'object' ? order.paymentDetails as any : {}),
+                              stripePaymentIntentId: intent.id,
+                              paidAt: new Date().toISOString()
+                          },
+                          updatedAt: new Date()
+                      }
+                  });
+
+                  // Update Transaction record if exists
+                  await prisma.transaction.updateMany({
+                      where: { orderId, status: 'PENDING', method: { in: ['STRIPE', 'stripe'] } },
+                      data: { status: 'COMPLETED', providerTransactionId: intent.id }
+                  });
+
+                  fastify.log.info(`[Stripe Webhook] Order ${orderId} marked PAID via webhook`);
+
+              } else if (event.type === 'payment_intent.payment_failed') {
+                  fastify.log.info(`[Stripe Webhook] payment_intent.payment_failed — OrderId: ${orderId}`);
+
+                  await fastify.prisma.order.update({
+                      where: { id: orderId },
+                      data: {
+                          paymentStatus: 'FAILED',
+                          updatedAt: new Date()
+                      }
+                  });
+
+                  await prisma.transaction.updateMany({
+                      where: { orderId, status: 'PENDING', method: { in: ['STRIPE', 'stripe'] } },
+                      data: { status: 'FAILED' }
+                  });
+              }
+
+              return reply.send({ received: true });
+
+          } catch (err: any) {
+              fastify.log.error(err, '[Stripe Webhook] Error processing event');
+              return reply.code(400).send({ error: 'Webhook processing failed: ' + err.message });
+          }
+      });
+  });
+
 }
+

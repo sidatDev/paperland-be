@@ -35,6 +35,22 @@ async function main() {
         isActive: true,
         instructions: 'Pay in cash upon delivery.',
         sortOrder: 4,
+    },
+    {
+        name: 'Stripe',
+        identifier: 'stripe',
+        type: 'CARD',
+        isActive: false,
+        instructions: 'Pay securely with your credit or debit card via Stripe.',
+        sortOrder: 5,
+        config: {
+            publishableKey: '',
+            secretKey: '',
+            webhookSecret: '',
+            mode: 'test',
+            currency: 'usd',
+            exchangeRatePKR: 278
+        }
     }
   ];
 
