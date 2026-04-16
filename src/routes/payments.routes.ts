@@ -540,5 +540,206 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
       });
   });
 
-}
+  // ─────────────────────────────────────────────────────────
+  // GOPAYFAST PAYMENT ROUTES
+  // ─────────────────────────────────────────────────────────
 
+  fastify.post('/payments/gopayfast/create', {
+      schema: {
+          description: 'Create a GoPayFast payment session for a DRAFT order',
+          tags: ['Payments', 'GoPayFast'],
+          body: {
+              type: 'object',
+              required: ['orderId'],
+              properties: {
+                  orderId:    { type: 'string' },
+                  guestToken: { type: 'string' }
+              }
+          }
+      }
+  }, async (request: any, reply) => {
+      const { orderId, guestToken } = request.body;
+      const prisma = (fastify.prisma as any);
+
+      try {
+          // Resolve authenticated or guest order
+          let userId: string | null = null;
+          const authHeader = request.headers?.authorization as string | undefined;
+          if (authHeader?.startsWith('Bearer ')) {
+              try {
+                  const decoded = (fastify as any).jwt.verify(authHeader.slice(7)) as any;
+                  userId = decoded?.id || decoded?.sub || null;
+              } catch {}
+          }
+
+          let order: any;
+          if (userId) {
+              order = await prisma.order.findFirst({
+                  where: { id: orderId, userId, status: 'DRAFT' },
+                  include: { user: true }
+              });
+          } else if (guestToken) {
+              order = await prisma.order.findFirst({
+                  where: { id: orderId, guestToken, status: 'DRAFT', isGuestOrder: true }
+              });
+          }
+
+          if (!order) return reply.code(404).send(createErrorResponse('Draft order not found or unauthorized'));
+
+          // Load active gateway config
+          const gateway = await prisma.paymentGateway.findFirst({
+              where: { identifier: 'gopayfast', isActive: true }
+          });
+
+          if (!gateway) return reply.code(400).send(createErrorResponse('GoPayFast payment gateway is not active'));
+
+          const config = (gateway.config as any) || {};
+          const secureKey: string = config.secureKey || '';
+          const merchantId: string = config.merchantId || '';
+
+          if (!secureKey || secureKey.includes('*')) return reply.code(400).send(createErrorResponse('GoPayFast secure key is not configured'));
+          if (!merchantId) return reply.code(400).send(createErrorResponse('GoPayFast merchant ID is not configured'));
+
+          const backendUrl = process.env.BACKEND_URL || `${request.protocol}://${request.hostname}`;
+          const gopayfastConfig = {
+              merchantId,
+              secureKey,
+              mode: config.mode || 'sandbox',
+              returnUrl: config.returnUrl || '',
+              ipnUrl: `${backendUrl}/api/v1/payments/gopayfast/ipn`
+          };
+
+          const orderData = {
+              id: order.id,
+              orderNumber: order.orderNumber,
+              totalAmount: Number(order.totalAmount),
+              customerName: order.user ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() : 'Customer',
+              customerEmail: order.user?.email || '',
+              customerPhone: order.user?.phoneNumber || ''
+          };
+
+          const { buildGoPayFastSession } = await import('../services/gopayfast.service');
+          const session = buildGoPayFastSession(gopayfastConfig, orderData);
+
+          fastify.log.info(`[GoPayFast] Created session for order ${orderId}`);
+
+          return { payment_url: session.paymentUrl, formFields: session.formFields, orderId: orderId };
+      } catch (err: any) {
+          fastify.log.error(err, '[GoPayFast] create session failed');
+          return reply.code(500).send(createErrorResponse(err.message || 'Failed to create GoPayFast session'));
+      }
+  });
+
+  fastify.post('/payments/gopayfast/ipn', async (request: any, reply) => {
+      // Public webhook endpoint
+      const prisma = (fastify.prisma as any);
+      const payload = request.body || {};
+      
+      const orderId = payload.order_id;
+      const transactionId = payload.transaction_id;
+      const amount = payload.amount;
+      const status = payload.status;
+      const receivedHash = payload.hash;
+
+      if (!orderId || !transactionId || !amount || !status || !receivedHash) {
+          return reply.code(400).send({ error: 'Missing required IPN fields' });
+      }
+
+      try {
+          const gateway = await prisma.paymentGateway.findFirst({
+              where: { identifier: 'gopayfast' }
+          });
+
+          const config = (gateway?.config as any) || {};
+          const secureKey: string = config.secureKey || '';
+          const merchantId: string = config.merchantId || '';
+
+          if (!secureKey || secureKey.includes('*')) {
+              fastify.log.warn('[GoPayFast IPN] Keys not configured, skipping verification');
+              return reply.code(400).send({ error: 'GoPayFast not configured' });
+          }
+
+          const { verifyGoPayFastIpn } = await import('../services/gopayfast.service');
+          
+          const isValid = verifyGoPayFastIpn({
+              merchantId,
+              orderId,
+              amount,
+              secureKey,
+              receivedHash
+          });
+
+          if (!isValid) {
+              fastify.log.error(`[GoPayFast IPN] Hash mismatch for order ${orderId}`);
+              return reply.code(400).send({ error: 'Invalid hash' });
+          }
+
+          const order = await prisma.order.findUnique({ where: { id: orderId } });
+          if (!order) {
+              fastify.log.warn(`[GoPayFast IPN] Order ${orderId} not found`);
+              return reply.send({ received: true });
+          }
+
+          // Convert DB string amount and payload amount to floats safely
+          const expectedAmount = parseFloat(String(order.totalAmount));
+          const receivedAmount = parseFloat(String(amount));
+          
+          if (Math.abs(expectedAmount - receivedAmount) > 1.0) {
+              fastify.log.warn(`[GoPayFast IPN] Amount mismatch for order ${orderId}. Expected ${expectedAmount}, received ${receivedAmount}`);
+              return reply.code(400).send({ error: 'Amount mismatch' });
+          }
+
+          if (order.paymentStatus === 'PAID') {
+              fastify.log.info(`[GoPayFast IPN] Order ${orderId} already PAID, skipping`);
+              return reply.send({ received: true });
+          }
+
+          if (status.toUpperCase() === 'SUCCESS') {
+              await prisma.order.update({
+                  where: { id: orderId },
+                  data: {
+                      paymentStatus: 'PAID',
+                      transactionRef: transactionId,
+                      paymentMethod: 'GOPAYFAST',
+                      paymentDetails: {
+                          ...(typeof order.paymentDetails === 'object' ? order.paymentDetails as any : {}),
+                          goPayFastTransactionId: transactionId,
+                          paidAt: new Date().toISOString()
+                      },
+                      updatedAt: new Date()
+                  }
+              });
+
+              // Update any associated PENDING transaction record
+              await prisma.transaction.updateMany({
+                  where: { orderId, status: 'PENDING', method: { in: ['GOPAYFAST', 'gopayfast'] } },
+                  data: { status: 'COMPLETED', providerTransactionId: transactionId }
+              });
+
+              fastify.log.info(`[GoPayFast IPN] Order ${orderId} marked PAID via webhook`);
+          } else {
+              fastify.log.info(`[GoPayFast IPN] Payment failed/status: ${status} for Order ${orderId}`);
+              await prisma.order.update({
+                  where: { id: orderId },
+                  data: {
+                      paymentStatus: 'FAILED',
+                      updatedAt: new Date()
+                  }
+              });
+
+              await prisma.transaction.updateMany({
+                  where: { orderId, status: 'PENDING', method: { in: ['GOPAYFAST', 'gopayfast'] } },
+                  data: { status: 'FAILED' }
+              });
+          }
+
+          // GoPayFast expects 200 OK so it doesn't retry
+          return reply.send({ received: true });
+
+      } catch (err: any) {
+          fastify.log.error(err, '[GoPayFast IPN] Error processing event');
+          return reply.code(500).send({ error: 'IPN processing failed' });
+      }
+  });
+
+}

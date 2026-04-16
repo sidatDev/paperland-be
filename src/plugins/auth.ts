@@ -125,7 +125,9 @@ export default fp(async (fastify: FastifyInstance) => {
                        normalizedPath.startsWith('/checkout') || 
                        path.startsWith('/api/v1/checkout') ||
                        normalizedPath.startsWith('/payments/stripe') || 
-                       path.startsWith('/api/v1/payments/stripe');
+                       path.startsWith('/api/v1/payments/stripe') ||
+                       normalizedPath.startsWith('/payments/gopayfast') ||
+                       path.startsWith('/api/v1/payments/gopayfast');
                        
     if (isGuestFlow) {
       try {

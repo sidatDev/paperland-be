@@ -51,6 +51,20 @@ async function main() {
             currency: 'usd',
             exchangeRatePKR: 278
         }
+    },
+    {
+        name: 'GoPayFast',
+        identifier: 'gopayfast',
+        type: 'CARD',
+        isActive: false,
+        instructions: 'You will be securely redirected to GoPayFast to complete your payment.',
+        sortOrder: 6,
+        config: {
+            merchantId: '',
+            secureKey: '',          // Never returned to frontend — masked in admin
+            mode: 'sandbox',        // sandbox | live
+            returnUrl: '',          // e.g. https://paperland.com.pk/en/payment/response
+        }
     }
   ];
 

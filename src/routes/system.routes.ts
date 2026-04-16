@@ -521,6 +521,13 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           }
           return { ...g, config: cfg };
         }
+        if (g.identifier === 'gopayfast' && g.config) {
+          const cfg = typeof g.config === 'string' ? JSON.parse(g.config) : { ...g.config };
+          if (cfg.secureKey && !cfg.secureKey.includes('*')) {
+            cfg.secureKey = `${cfg.secureKey.slice(0, 4)}${'*'.repeat(Math.max(0, cfg.secureKey.length - 8))}${cfg.secureKey.slice(-4)}`;
+          }
+          return { ...g, config: cfg };
+        }
         return g;
       });
 
@@ -550,6 +557,15 @@ export default async function systemRoutes(fastify: FastifyInstance) {
           }
           if (data.config.webhookSecret && String(data.config.webhookSecret).includes('*')) {
             data.config.webhookSecret = existingCfg.webhookSecret || '';
+          }
+        }
+        if (existingGw?.identifier === 'gopayfast' && existingGw.config) {
+          const existingCfg = typeof existingGw.config === 'string'
+            ? JSON.parse(existingGw.config)
+            : existingGw.config;
+          // If submitted secureKey is masked (contains '*'), keep the real stored one
+          if (data.config.secureKey && String(data.config.secureKey).includes('*')) {
+            data.config.secureKey = existingCfg.secureKey || '';
           }
         }
       }
