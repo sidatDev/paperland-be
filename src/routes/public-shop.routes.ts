@@ -609,6 +609,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         stocks: true, 
                         prices: { include: { currency: true } },
                         industries: { include: { industry: true } },
+                        variants: {
+                            where: { deletedAt: null },
+                            include: { stocks: true }
+                        },
                         reviews: {
                             where: { status: 'APPROVED' },
                             select: { rating: true }
@@ -645,6 +649,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         totalStock: (() => {
                             if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return 0;
                             return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+                        })(),
+                        isInStock: (() => {
+                            if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return false;
+                            const hasVariants = p.variants && p.variants.length > 0;
+                            if (hasVariants) {
+                                return p.variants.some((v: any) => 
+                                    Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0
+                                );
+                            }
+                            return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0;
                         })(),
                         rating: p.reviews?.length > 0 
                             ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
@@ -711,11 +725,13 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     price: p.price,
                     originalPrice: p.originalPrice,
                     currency: 'PKR',
-                    image_url: p.imageUrl,
+                    image_url: p.imageUrl || (p.images && p.images.length > 0 ? p.images[0] : null),
+                    images: p.images || [],
                     category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
                     brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : null,
                     industries: p.industries?.map((i: any) => ({ id: i.industry.id, name: i.industry.name })) || [],
-                    totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+                    totalStock: p.totalStock,
+                    isInStock: p.isInStock,
                     rating: p.rating || 0,
                     reviewsCount: p.reviewsCount || 0,
                     tags: [p.category?.name, p.brand?.name, ...(p.industries?.map((i: any) => i.industry.name) || [])].filter(Boolean)

@@ -262,8 +262,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
         industryIds,
         minPrice, maxPrice,
         isActive, status,
-        country, locationId,
-        includeVariants,
+        country, locationId, warehouseId,
+        includeVariants, stockStatus,
         ...dynamicFilters 
     } = request.query;
 
@@ -317,6 +317,38 @@ export default async function productRoutes(fastify: FastifyInstance) {
           String(includeVariants) === 'true' ? {} : { parentId: null },
 
           isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
+
+          // Warehouse/Location Filter
+          (warehouseId || locationId) && (warehouseId !== 'all' && locationId !== 'all') 
+            ? { stocks: { some: { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } } } 
+            : {},
+
+          // Stock Status Filter
+          stockStatus === 'outOfStock' ? {
+              OR: [
+                  { stocks: { none: { qty: { gt: 0 } } } },
+                  (warehouseId || locationId) ? { stocks: { some: { 
+                      OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ],
+                      qty: { lte: 0 } 
+                  } } } : {}
+              ]
+          } : {},
+
+          stockStatus === 'inStock' ? {
+              stocks: { some: { 
+                  qty: { gt: 0 },
+                  ...( (warehouseId || locationId) ? { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } : {} )
+              } }
+          } : {},
+
+          stockStatus === 'lowStock' ? {
+              stocks: { some: { 
+                  // Assuming low stock means qty > 0 but qty <= 10 (or reorderLevel)
+                  // For simplicity at Prisma level, we'll check qty <= 10 if we can't compare reorderLevel easily
+                  qty: { lte: 10, gt: 0 },
+                  ...( (warehouseId || locationId) ? { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } : {} )
+              } }
+          } : {},
         ]
       };
 
@@ -341,7 +373,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 include: { currency: true }
             },
             stocks: {
-                where: locationId && locationId !== 'all' ? { locationId } : undefined
+                where: (warehouseId || locationId) && (warehouseId !== 'all' && locationId !== 'all') 
+                  ? { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } 
+                  : undefined
             },
             industries: {
                 include: { industry: true }
@@ -598,10 +632,14 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         let currencyRec = await (fastify.prisma as any).currency.findUnique({ where: { code: currency } });
         if (!currencyRec) {
-             currencyRec = await (fastify.prisma as any).currency.create({
-                 data: { code: currency, name: currency, symbol: currency }
-             });
+             currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
         }
+
+        const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
+            where: { isDefault: true, isActive: true },
+            select: { id: true }
+        });
+        const defaultWarehouseId = defaultWarehouse?.id ?? null;
 
         const partNum = bodyPartNo || "";
         const skuVal = bodySku || "";
@@ -645,7 +683,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                    }
                 },
                 stocks: {
-                    create: { locationId: 'MAIN', qty: stock }
+                    create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: stock }
                 },
                 // Create industry relations
                 industries: industries.length > 0 ? {
@@ -675,7 +713,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                             }
                         },
                         stocks: {
-                            create: { locationId: 'MAIN', qty: v.stock || 0 }
+                            create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
                         }
                     }))
                 } : undefined
@@ -773,6 +811,12 @@ export default async function productRoutes(fastify: FastifyInstance) {
             isFeatured, isVisibleOnEcommerce, isEcommerceVisible, fullDescription, industries,
             parentId, variantOptions, variantAttributes
         } = data;
+
+        const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
+            where: { isDefault: true, isActive: true },
+            select: { id: true }
+        });
+        const defaultWarehouseId = defaultWarehouse?.id ?? null;
 
         const resolvedIsVisible = isVisibleOnEcommerce !== undefined ? isVisibleOnEcommerce : isEcommerceVisible;
 
@@ -921,8 +965,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         variantAttributes: v.variantAttributes,
                         stocks: {
                             upsert: {
-                                where: { productId_warehouseId: { productId: v.id, warehouseId: 'MAIN' } }, // Assuming MAIN as default warehouse if null
-                                create: { qty: v.stock || 0, locationId: 'MAIN' },
+                                where: { productId_warehouseId: { productId: v.id, warehouseId: defaultWarehouseId || '' } },
+                                create: { qty: v.stock || 0, locationId: 'DEFAULT', warehouseId: defaultWarehouseId },
                                 update: { qty: v.stock || 0 }
                             }
                         }
@@ -972,7 +1016,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                             }
                         },
                         stocks: {
-                            create: { locationId: 'MAIN', qty: v.stock || 0 }
+                            create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
                         }
                     }))
                 };
@@ -1512,7 +1556,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
               pkrWholesale: getPriceByCurrency(p, 'PKR', 'wholesale'),
               aedRetail: getPriceByCurrency(p, 'AED', 'retail'),
               aedWholesale: getPriceByCurrency(p, 'AED', 'wholesale'),
-              totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - s.reservedQty), 0) || 0),
+              totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
               seoTitle: seo.title || "",
               seoDescription: seo.description || "",
               seoKeywords: seo.keywords || "",
