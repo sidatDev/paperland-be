@@ -51,6 +51,28 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
     });
 
+    const calculateAvailability = (p: any) => {
+        // 1. Manual overide check (Admin status takes precedence)
+        const isManualOutOfStock = p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock';
+        
+        // 2. Physical stock calculation (qty - reserved)
+        const totalStock = Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+        
+        // 3. Check if any variant has stock (respecting variant manual status too)
+        const hasVariantStock = p.variants?.some((v: any) => {
+            const vManualOut = v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock';
+            if (vManualOut) return false;
+            return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0;
+        });
+
+        const isInStock = !isManualOutOfStock && (totalStock > 0 || hasVariantStock);
+
+        return {
+            totalStock: isManualOutOfStock ? 0 : totalStock,
+            isInStock
+        };
+    };
+
     // 1. GET /api/shop/home
     fastify.get('/shop/home', {
         schema: {
@@ -92,6 +114,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                         include: { 
                                             prices: { include: { currency: true } },
                                             stocks: true,
+                                            variants: {
+                                                where: { deletedAt: null },
+                                                include: { stocks: true }
+                                            },
                                             reviews: {
                                                 where: { status: 'APPROVED' },
                                                 select: { rating: true }
@@ -116,19 +142,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
-                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         }),
                         (fastify.prisma as any).product.findMany({
                             where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                             take: 10,
                             orderBy: { updatedAt: 'desc' },
-                            include: { prices: { include: { currency: true } }, stocks: true, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                         })
                     ]);
 
@@ -178,10 +204,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
                             })(),
                             currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
-                            totalStock: i.product ? (() => {
-                                if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
-                                return Math.max(0, i.product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                            })() : undefined,
+                            ... (i.product ? calculateAvailability(i.product) : {}),
                             rating: i.product?.reviews?.length > 0 
                                 ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
                                 : 0,
@@ -214,10 +237,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 price: p.finalPrice,
                                 originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
                                 currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
-                                totalStock: (() => {
-                                    if (i.product.status === 'Out of Stock' || (i.product.specifications as any)?.status === 'Out of Stock') return 0;
-                                    return Math.max(0, (i.product.stocks || []).reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                                })(),
+                                ...calculateAvailability(i.product),
                                 rating: i.product.reviews?.length > 0 
                                     ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
                                     : 0,
@@ -626,7 +646,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (!userId) return prods.map((p: any) => {
                         const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
                         const basePrice = pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0);
-                        return { ...p, price: basePrice };
+                        return { 
+                            ...p, 
+                            price: basePrice,
+                            ...calculateAvailability(p)
+                        };
                     });
 
                     const priced = await PricingEngine.calculateBulkPrices(
@@ -646,20 +670,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         ...p,
                         originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
                         price: priced[idx].finalPrice,
-                        totalStock: (() => {
-                            if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return 0;
-                            return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                        })(),
-                        isInStock: (() => {
-                            if (p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock') return false;
-                            const hasVariants = p.variants && p.variants.length > 0;
-                            if (hasVariants) {
-                                return p.variants.some((v: any) => 
-                                    Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0
-                                );
-                            }
-                            return Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0;
-                        })(),
+                        ...calculateAvailability(p),
                         rating: p.reviews?.length > 0 
                             ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
                             : 0,
@@ -1057,10 +1068,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 images: product.images,
                 category: product.category?.name,
                 brand: product.brand?.name,
-                totalStock: (() => {
-                    if (product.status === 'Out of Stock' || (product.specifications as any)?.status === 'Out of Stock') return 0;
-                    return Math.max(0, product.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                })(),
+                totalStock: calculateAvailability(product).totalStock,
+                isInStock: calculateAvailability(product).isInStock,
                 rating: product.reviews?.length > 0 
                     ? (product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / product.reviews.length) 
                     : 0,
@@ -1105,10 +1114,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             originalPrice: vBase !== vFinal ? vBase : undefined,
                             currency: 'PKR',
                             image_url: v.imageUrl,
-                            totalStock: (() => {
-                                if (v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock') return 0;
-                                return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
-                            })(),
+                            totalStock: calculateAvailability(v).totalStock,
+                            isInStock: calculateAvailability(v).isInStock,
                             variantAttributes: v.variantAttributes,
                             minimumQuantity: moq
                         };
