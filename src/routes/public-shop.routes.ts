@@ -51,6 +51,42 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
     });
 
+    // GET /api/logistics/estimate
+    fastify.get('/logistics/estimate', {
+        schema: {
+            description: 'Get shipping estimate for a product/city',
+            tags: ['Public Shop'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    city: { type: 'string' },
+                    amount: { type: 'number' }
+                }
+            }
+        }
+    }, async (request: any, reply: any) => {
+        try {
+            const { city, amount } = request.query;
+            const { LogisticsEngine } = await import('../services/logistics-engine.service');
+            const estimate = await LogisticsEngine.getShippingEstimate(city || null, amount || 0, fastify.prisma);
+            
+            if (!estimate) {
+                // Return default fallback
+                return createResponse({
+                    estimatedDays: '3-5 business days',
+                    baseCost: 250,
+                    shipsFrom: 'Islamabad',
+                    logisticsType: 'THIRD_PARTY',
+                    courier: 'Standard'
+                });
+            }
+            return createResponse(estimate);
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse('Internal Server Error'));
+        }
+    });
+
     const calculateAvailability = (p: any) => {
         // 1. Manual overide check (Admin status takes precedence)
         const isManualOutOfStock = p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock';

@@ -1,7 +1,3 @@
-import { FastifyInstance } from 'fastify';
-
-// ===== TYPES =====
-
 export interface TrackingTimeline {
   event: string;
   date: string;
@@ -16,88 +12,12 @@ export interface TrackingResponse {
   estimatedDelivery?: string;
 }
 
-// ===== SHIPPER ADAPTER INTERFACE =====
-
 export interface IShipperAdapter {
   getTracking(trackingNumber: string): Promise<TrackingResponse>;
   getCarrierName(): string;
 }
 
-// ===== MOCK SHIPPER ADAPTERS =====
-
-class AramexSAAdapter implements IShipperAdapter {
-  getCarrierName(): string {
-    return 'Aramex Saudi Arabia';
-  }
-
-  async getTracking(trackingNumber: string): Promise<TrackingResponse> {
-    //  Mock response simulating Aramex API
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate API delay
-
-    return {
-      status: 'IN_TRANSIT',
-      carrier: this.getCarrierName(),
-      estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-      timeline: [
-        {
-          event: 'Order Received',
-          date: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Riyadh, Saudi Arabia',
-          description: 'Package received at origin facility'
-        },
-        {
-          event: 'In Transit',
-          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Jeddah Hub',
-          description: 'Package in transit to destination city'
-        },
-        {
-          event: 'Out for Delivery',
-          date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Dammam, Saudi Arabia',
-          description: 'Package out for delivery'
-        }
-      ]
-    };
-  }
-}
-
-class EmiratesPostUAEAdapter implements IShipperAdapter {
-  getCarrierName(): string {
-    return 'Emirates Post';
-  }
-
-  async getTracking(trackingNumber: string): Promise<TrackingResponse> {
-    // Mock response simulating Emirates Post API
-    await new Promise(resolve => setTimeout(resolve, 300));
-
-    return {
-      status: 'SHIPPED',
-      carrier: this.getCarrierName(),
-      estimatedDelivery: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
-      timeline: [
-        {
-          event: 'Order Placed',
-          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Dubai, UAE',
-          description: 'Shipment created'
-        },
-        {
-          event: 'Picked Up',
-          date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Dubai Sorting Center',
-          description: 'Package picked up from sender'
-        },
-        {
-          event: 'In Transit',
-          date: new Date().toISOString(),
-          location: 'Abu Dhabi Hub',
-          description: 'Package in transit'
-        }
-      ]
-    };
-  }
-}
+// ===== MOCK PAKISTAN SHIPPER ADAPTERS (TCS, LEOPARDS, TRAX) =====
 
 class TCSPakistanAdapter implements IShipperAdapter {
   getCarrierName(): string {
@@ -105,9 +25,7 @@ class TCSPakistanAdapter implements IShipperAdapter {
   }
 
   async getTracking(trackingNumber: string): Promise<TrackingResponse> {
-    // Mock response simulating TCS API
     await new Promise(resolve => setTimeout(resolve, 300));
-
     return {
       status: 'OUT_FOR_DELIVERY',
       carrier: this.getCarrierName(),
@@ -128,7 +46,7 @@ class TCSPakistanAdapter implements IShipperAdapter {
         {
           event: 'Out for Delivery',
           date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          location: 'Islamabad',
+          location: 'Destination City',
           description: 'Package out for delivery to customer'
         }
       ]
@@ -136,56 +54,77 @@ class TCSPakistanAdapter implements IShipperAdapter {
   }
 }
 
-// ===== TRACKING SERVICE =====
+class LeopardsAdapter implements IShipperAdapter {
+  getCarrierName(): string {
+    return 'Leopards Courier Service';
+  }
+
+  async getTracking(trackingNumber: string): Promise<TrackingResponse> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return {
+      status: 'SHIPPED',
+      carrier: this.getCarrierName(),
+      estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          event: 'Order Picked Up',
+          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+          location: 'Karachi, Pakistan',
+          description: 'Package picked up from sender'
+        },
+        {
+          event: 'In Transit',
+          date: new Date().toISOString(),
+          location: 'Islamabad Hub',
+          description: 'Package in transit'
+        }
+      ]
+    };
+  }
+}
+
+class TraxAdapter implements IShipperAdapter {
+  getCarrierName(): string {
+    return 'Trax Courier';
+  }
+
+  async getTracking(trackingNumber: string): Promise<TrackingResponse> {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    return {
+      status: 'IN_TRANSIT',
+      carrier: this.getCarrierName(),
+      estimatedDelivery: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      timeline: [
+        {
+          event: 'Booking Registered',
+          date: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+          location: 'Karachi, Pakistan',
+          description: 'Shipment created'
+        }
+      ]
+    };
+  }
+}
 
 export class TrackingService {
   private shipperAdapters: Map<string, IShipperAdapter> = new Map();
 
   constructor() {
-    // Register regional shippers
-    this.shipperAdapters.set('ARAMEX_SA', new AramexSAAdapter());
-    this.shipperAdapters.set('EMIRATES_POST_UAE', new EmiratesPostUAEAdapter());
     this.shipperAdapters.set('TCS_PK', new TCSPakistanAdapter());
+    this.shipperAdapters.set('LEOPARDS_PK', new LeopardsAdapter());
+    this.shipperAdapters.set('TRAX_PK', new TraxAdapter());
   }
 
-  /**
-   * Get shipper adapter based on region
-   */
-  getShipperByRegion(region: string): IShipperAdapter | null {
-    const regionMap: Record<string, string> = {
-      'SA': 'ARAMEX_SA',
-      'AE': 'EMIRATES_POST_UAE',
-      'PK': 'TCS_PK'
-    };
-
-    const shipperCode = regionMap[region];
-    return shipperCode ? this.shipperAdapters.get(shipperCode) || null : null;
-  }
-
-  /**
-   * Get shipper adapter by code
-   */
   getShipperByCode(shipperCode: string): IShipperAdapter | null {
     return this.shipperAdapters.get(shipperCode) || null;
   }
 
-  /**
-   * Track shipment using region or shipper code
-   */
-  async track(trackingNumber: string, regionOrShipperCode: string): Promise<TrackingResponse | null> {
+  async track(trackingNumber: string, shipperCode: string): Promise<TrackingResponse | null> {
     try {
-      // Try as region first
-      let adapter = this.getShipperByRegion(regionOrShipperCode);
-      
-      // If not found, try as shipper code
-      if (!adapter) {
-        adapter = this.getShipperByCode(regionOrShipperCode);
-      }
-
+      const adapter = this.getShipperByCode(shipperCode);
       if (!adapter) {
         return null;
       }
-
       return await adapter.getTracking(trackingNumber);
     } catch (error) {
       console.error('Tracking service error:', error);
@@ -194,5 +133,4 @@ export class TrackingService {
   }
 }
 
-// Export singleton instance
 export const trackingService = new TrackingService();

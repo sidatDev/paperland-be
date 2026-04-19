@@ -465,6 +465,7 @@ model Warehouse {
   deletedAt DateTime? @map("deleted_at")
   type      String    @default("WAREHOUSE")
   stocks    Stock[]
+  orders    Order[]
 
   @@map("warehouses")
 }
@@ -572,6 +573,21 @@ model Order {
   guestToken            String?              @map("guest_token")
   shipperBookingId      String?              @map("shipper_booking_id")
   couponId              String?              @map("coupon_id")
+  
+  isManualLogistics       Boolean              @default(false) @map("is_manual_logistics")
+  logisticsType          String?              @map("logistics_type")
+  courierProviderId      String?              @map("courier_provider_id")
+  riderId                String?              @map("rider_id")
+  trackingStatus         String?              @map("tracking_status")
+  deliveryStatus         String?              @map("delivery_status")
+  fulfillmentWarehouseId String?              @map("fulfillment_warehouse_id")
+  trackingResponseJson   Json?                @map("tracking_response_json")
+
+  courierProvider      CourierProvider? @relation(fields: [courierProviderId], references: [id])
+  rider                Rider?           @relation(fields: [riderId], references: [id])
+  fulfillmentWarehouse Warehouse?       @relation(fields: [fulfillmentWarehouseId], references: [id])
+  trackingLogs         TrackingLog[]
+
   items                 OrderItem[]
   history               OrderStatusHistory[]
   address               Address?             @relation(fields: [addressId], references: [id])
@@ -1531,4 +1547,72 @@ model CompanyCatalog {
 
   @@unique([companyId, catalogId])
   @@map("company_catalogs")
+}
+
+model CourierProvider {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  code             String   @unique
+  region           String   @default("PK")
+  trackingUrl      String?  @unique @map("tracking_url")
+  apiConfig        Json?    @map("api_config")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  orders           Order[]
+  shippingRules    ShippingRule[]
+  
+  @@map("courier_providers")
+}
+
+model Rider {
+  id               String   @id @default(uuid())
+  name             String   @unique
+  phone            String   @unique
+  cnic             String?  @unique
+  vehicleInfo      String?  @map("vehicle_info")
+  region           String   @default("PK")
+  city             String?
+  isActive         Boolean  @default(true) @map("is_active")
+  status           String   @default("AVAILABLE") // AVAILABLE, ON_DELIVERY, OFFLINE
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  orders           Order[]
+
+  @@map("riders")
+}
+
+model ShippingRule {
+  id                String   @id @default(uuid())
+  name              String   @unique
+  region            String   @default("PK") // Fixed to PK
+  city              String?   // Specific city or null for catch-all
+  logisticsType     String   @map("logistics_type") // THIRD_PARTY or SELF_DELIVERY
+  minOrderValue     Decimal? @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue     Decimal? @map("max_order_value") @db.Decimal(12, 2)
+  courierProviderId String?  @map("courier_provider_id")
+  courierProvider   CourierProvider? @relation(fields: [courierProviderId], references: [id])
+  warehouseId       String?  @map("warehouse_id")
+  estimatedDays     String?  @map("estimated_days")
+  baseShippingCost  Decimal? @map("base_shipping_cost") @db.Decimal(12, 2)
+  priority          Int      @default(0)
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@map("shipping_rules")
+}
+
+model TrackingLog {
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  status          String
+  location        String?
+  description     String?
+  rawResponse     Json?    @map("raw_response")
+  loggedAt        DateTime @default(now()) @map("logged_at")
+  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("tracking_logs")
 }

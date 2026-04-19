@@ -312,7 +312,11 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   items: { include: { product: true } }, 
                   user: true, 
                   currency: true,
-                  address: { include: { country: true } } // Include country details
+                  address: { include: { country: true } },
+                  courierProvider: true,
+                  rider: true,
+                  fulfillmentWarehouse: true,
+                  trackingLogs: { orderBy: { loggedAt: 'desc' } }
               }
           });
 
@@ -521,7 +525,17 @@ export default async function orderRoutes(fastify: FastifyInstance) {
           const updateData: any = { status };
           
           // Update timestamps based on status
-          if (status === 'PROCESSING' && !order.processingDate) updateData.processingDate = new Date();
+          if (status === 'PROCESSING' && !order.processingDate) {
+              updateData.processingDate = new Date();
+              // Auto-assign logistics if not already assigned
+              try {
+                  const { LogisticsEngine } = await import('../services/logistics-engine.service');
+                  // We'll call this after the update to ensure we have the latest status, 
+                  // but we want it to be part of the transaction or subsequent logic.
+              } catch (err) {
+                  fastify.log.error(err, 'Failed to load LogisticsEngine');
+              }
+          }
           if (status === 'SHIPPED' && !order.shippedDate) updateData.shippedDate = new Date();
           if (status === 'DELIVERED' && !order.deliveredDate) updateData.deliveredDate = new Date();
 
@@ -585,10 +599,22 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   }
               }
 
-              return await tx.order.update({
+              const updated = await tx.order.update({
                   where: { id: order.id },
                   data: updateData
               });
+
+              // Automate Logistics Assignment if status is moving to PROCESSING
+              if (status === 'PROCESSING') {
+                  try {
+                      const { LogisticsEngine } = await import('../services/logistics-engine.service');
+                      await LogisticsEngine.autoAssignLogistics(order.id, tx);
+                  } catch (logErr) {
+                      fastify.log.error(logErr, 'Logistics auto-assignment failed:');
+                  }
+              }
+
+              return updated;
           });
 
           // Log to OrderStatusHistory
@@ -652,9 +678,70 @@ export default async function orderRoutes(fastify: FastifyInstance) {
            } catch (cacheErr) {
                fastify.log.error(cacheErr, 'Failed to invalidate cache on status update');
            }
-          return createResponse(updatedOrder, "Order Status Updated");
+           return createResponse(updatedOrder, "Order Status Updated");
+       } catch (err: any) {
+           fastify.log.error(`Error updating order ${id} status:`, err);
+           return reply.status(500).send(createErrorResponse(err.message));
+       }
+   });
+   
+  // PATCH /admin/orders/:id/logistics
+  fastify.patch('/admin/orders/:id/logistics', {
+      preHandler: [fastify.authenticate, fastify.hasPermission('order_manage')],
+      schema: {
+          description: 'Update Order Logistics (Manual Override)',
+          tags: ['Orders'],
+          params: { type: 'object', properties: { id: { type: 'string' } } },
+          body: {
+              type: 'object',
+              required: ['logisticsType'],
+              properties: {
+                  logisticsType: { type: 'string', enum: ['THIRD_PARTY', 'SELF_DELIVERY'] },
+                  courierProviderId: { type: 'string', nullable: true },
+                  riderId: { type: 'string', nullable: true },
+                  deliveryStatus: { type: 'string', nullable: true },
+                  trackingNumber: { type: 'string', nullable: true },
+                  note: { type: 'string', nullable: true }
+              }
+          }
+      }
+  }, async (request: any, reply) => {
+      const { id } = request.params;
+      const data = request.body;
+      
+      try {
+          const order = await (fastify.prisma as any).order.findFirst({
+              where: { OR: [{ id }, { orderNumber: id }] }
+          });
+          
+          if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+
+          const updatedOrder = await (fastify.prisma as any).order.update({
+              where: { id: order.id },
+              data: {
+                  logisticsType: data.logisticsType,
+                  courierProviderId: data.courierProviderId || null,
+                  riderId: data.riderId || null,
+                  deliveryStatus: data.deliveryStatus || order.deliveryStatus,
+                  trackingNumber: data.trackingNumber || order.trackingNumber,
+                  isManualLogistics: true,
+              }
+          });
+
+          // Audit Log
+          await logActivity(fastify, {
+             entityType: 'ORDER',
+             entityId: order.id,
+             action: 'UPDATE_LOGISTICS',
+             performedBy: (request.user as any)?.id || 'unknown',
+             details: { ...data },
+             ip: request.ip,
+             userAgent: request.headers['user-agent']
+          });
+
+          return createResponse(updatedOrder, "Order Logistics Updated");
       } catch (err: any) {
-          fastify.log.error(`Error updating order ${id} status:`, err);
+          fastify.log.error(err);
           return reply.status(500).send(createErrorResponse(err.message));
       }
   });

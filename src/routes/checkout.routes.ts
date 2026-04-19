@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { logActivity } from '../utils/audit';
 import { emailService } from '../services/email.service';
 import { PricingEngine } from '../utils/pricing.engine';
+import { LogisticsEngine } from '../services/logistics-engine.service';
 
 export default async function checkoutRoutes(fastify: FastifyInstance) {
 
@@ -847,6 +848,9 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         if (cart) {
             await fastify.prisma.cartItem.deleteMany({ where: { cartId: cart.id } });
         }
+
+        // 4. Auto-Assign Logistics
+        await LogisticsEngine.autoAssignLogistics(finalOrder.id, fastify.prisma as any);
         
         // Reserve Stock for the ordered items
         for (const item of order.items) {
