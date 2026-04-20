@@ -5,6 +5,26 @@ import { PricingEngine } from '../utils/pricing.engine';
 import { LogisticsEngine } from '../services/logistics-engine.service';
 
 export default async function checkoutRoutes(fastify: FastifyInstance) {
+    const formatOrder = (order: any) => {
+        if (!order) return null;
+        const items = (order.items || []).map((item: any) => ({
+            id: item.id,
+            productId: item.productId,
+            title: item.product?.name || 'Unknown Product',
+            price: Number(item.price),
+            quantity: item.quantity,
+            image: item.product?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : null),
+            partNumber: item.product?.sku || item.sku,
+            sku: item.product?.sku || item.sku,
+            originalPrice: item.pricingSnapshot?.basePrice || undefined,
+            pricingSnapshot: item.pricingSnapshot
+        }));
+
+        return {
+            ...order,
+            items
+        };
+    };
 
     // GET /checkout/summary
     fastify.get('/checkout/summary', {
@@ -443,23 +463,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             return reply.code(404).send({ message: 'Draft order not found' });
         }
 
-        // Map items to include originalPrice from pricingSnapshot if available
-        const mappedItems = order.items.map((item: any) => ({
-            id: item.id,
-            productId: item.productId,
-            title: item.product.name,
-            price: item.price,
-            originalPrice: item.pricingSnapshot?.basePrice || undefined,
-            quantity: item.quantity,
-            image: item.product.imageUrl,
-            partNumber: item.product.sku,
-            pricingSnapshot: item.pricingSnapshot
-        }));
-
-        return {
-            ...order,
-            items: mappedItems
-        };
+        return formatOrder(order);
     });
 
     // PATCH /checkout/draft/:id/apply-coupon
@@ -578,22 +582,10 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             }
         });
 
-        const mappedItems = updatedOrder.items.map((item: any) => ({
-            id: item.id,
-            productId: item.productId,
-            title: item.product.name,
-            sku: item.sku,
-            price: Number(item.price),
-            quantity: item.quantity,
-            total: Number(item.price) * item.quantity,
-            image: item.product.images?.[0] || item.product.imageUrl
-        }));
-
-        return {
-            ...updatedOrder,
-            items: mappedItems,
-            pricingSummary: updatedPricingSummary
-        };
+            return {
+                ...formatOrder(updatedOrder),
+                pricingSummary: updatedPricingSummary
+            };
     });
 
     // PATCH /checkout/draft/:id/remove-coupon
@@ -637,19 +629,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             }
         });
 
-        const mappedItems = updatedOrder.items.map((item: any) => ({
-            id: item.id,
-            productId: item.productId,
-            title: item.product.name,
-            price: item.price,
-            originalPrice: item.pricingSnapshot?.basePrice || undefined,
-            quantity: item.quantity,
-            image: item.product.imageUrl,
-            partNumber: item.product.sku,
-            pricingSnapshot: item.pricingSnapshot
-        }));
-
-        return { ...updatedOrder, items: mappedItems };
+            return formatOrder(updatedOrder);
     });
 
     // POST /checkout/validate-shipping

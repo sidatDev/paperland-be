@@ -68,12 +68,34 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 items: { 
                     include: { 
                         product: {
-                            include: { prices: { where: { isActive: true }, take: 1 } }
+                            include: { prices: { where: { isActive: true }, include: { currency: true } } }
                         } 
                     } 
                 } 
             }
         });
+    };
+
+    const formatGuestOrder = (order: any) => {
+        if (!order) return null;
+        const items = (order.items || []).map((item: any) => {
+            const pkr = item.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+            return {
+                id: item.id,
+                productId: item.productId,
+                title: item.product?.name || 'Unknown Product',
+                price: Number(item.price || pkr?.priceRetail || item.product?.price || 0),
+                quantity: item.quantity,
+                image: item.product?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : null),
+                sku: item.product?.sku || item.sku,
+                partNumber: item.product?.sku || item.sku
+            };
+        });
+
+        return {
+            ...order,
+            items
+        };
     };
 
     /**
@@ -124,7 +146,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
             if (isEligible) {
                 const pkr = item.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                const price = pkr ? Number(pkr.priceRetail) : Number(item.product.price || 0);
+                const price = pkr ? Number(pkr.priceRetail) : Number(item.price || item.product.price || 0);
                 eligibleSubtotal += (price * item.quantity);
             }
         });
@@ -448,7 +470,13 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     isGuestOrder: true
                 },
                 include: { 
-                    items: { include: { product: true } },
+                    items: { 
+                        include: { 
+                            product: {
+                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                            } 
+                        } 
+                    },
                     coupon: true
                 }
             });
@@ -457,22 +485,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 return reply.code(404).send({ message: 'Draft order not found' });
             }
 
-            return {
-                ...(order as any),
-                items: (order as any).items.map((item: any) => ({
-                    id: item.id,
-                    productId: item.productId,
-                    title: item.product.name,
-                    price: item.price,
-                    originalPrice: item.pricingSnapshot?.basePrice || undefined,
-                    quantity: item.quantity,
-                    image: item.product.imageUrl,
-                    partNumber: item.product.sku
-                })),
-                isGuestOrder: true,
-                guestEmail: (order as any).guestEmail,
-                guestPhone: (order as any).guestPhone
-            };
+            return formatGuestOrder(order);
         } catch (err: any) {
             fastify.log.error(err);
             return reply.code(500).send({ message: 'Failed to load draft order' });
@@ -505,17 +518,27 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             const { guestToken } = request.query as any;
             const { couponCode } = request.body as any;
 
-            // Get draft order
             const order = await (fastify.prisma as any).order.findFirst({
                 where: { id, guestToken, status: 'DRAFT', isGuestOrder: true },
-                include: { items: { include: { product: true } } }
+                include: { 
+                    items: { 
+                        include: { 
+                            product: {
+                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                            } 
+                        } 
+                    } 
+                }
             });
 
             if (!order) return reply.code(404).send({ message: 'Draft order not found' });
 
-            // Calculate subtotal
-            const subtotal = (order as any).items.reduce((acc: number, item: any) => 
-                acc + (Number(item.price) * item.quantity), 0);
+            // Calculate subtotal - Robust fallback to product price if item.price is 0
+            const subtotal = (order as any).items.reduce((acc: number, item: any) => {
+                const pkr = item.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                const priceValue = Number(item.price || pkr?.priceRetail || item.product.price || 0);
+                return acc + (priceValue * item.quantity);
+            }, 0);
 
             // Validate coupon for guest
             const couponResult = await validateGuestCoupon(couponCode, subtotal, (order as any).items);
@@ -533,8 +556,8 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
             const shippingCost = pricingSummary?.shippingCost || Number(order.shippingAmount) || 0;
             const couponDiscount = couponResult.couponDiscount;
-            const tax = (subtotal - couponDiscount) * 0.15;
-            const total = (subtotal - couponDiscount) + shippingCost + tax;
+            const tax = Math.max(0, (subtotal - couponDiscount) * 0.15);
+            const total = Math.max(0, (subtotal - couponDiscount) + shippingCost + tax);
 
             const updatedPricingSummary = {
                 ...pricingSummary,
@@ -553,13 +576,19 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     updatedAt: new Date()
                 },
                 include: { 
-                    items: { include: { product: true } },
+                    items: { 
+                        include: { 
+                            product: {
+                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                            } 
+                        } 
+                    },
                     coupon: true
                 }
             });
 
             return {
-                ...updatedOrder,
+                ...formatGuestOrder(updatedOrder),
                 pricingSummary: updatedPricingSummary,
                 couponDiscount
             };
@@ -589,7 +618,16 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             const { guestToken } = request.query as any;
 
             const order = await (fastify.prisma as any).order.findFirst({
-                where: { id, guestToken, status: 'DRAFT', isGuestOrder: true }
+                where: { id, guestToken, status: 'DRAFT', isGuestOrder: true },
+                include: { 
+                    items: { 
+                        include: { 
+                            product: {
+                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                            } 
+                        } 
+                    } 
+                }
             });
 
             if (!order) return reply.code(404).send({ message: 'Draft order not found' });
@@ -623,13 +661,19 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     updatedAt: new Date()
                 },
                 include: { 
-                    items: { include: { product: true } },
+                    items: { 
+                        include: { 
+                            product: {
+                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                            } 
+                        } 
+                    },
                     coupon: true
                 }
             });
 
             return { 
-                ...updatedOrder, 
+                ...formatGuestOrder(updatedOrder), 
                 pricingSummary,
                 message: 'Coupon removed successfully' 
             };

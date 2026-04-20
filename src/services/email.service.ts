@@ -557,7 +557,10 @@ export class EmailService {
       'PENDING': 'ORDER_PLACED',
       'PROCESSING': 'ORDER_PROCESSING',
       'SHIPPED': 'ORDER_SHIPPED',
-      'DELIVERED': 'ORDER_DELIVERED'
+      'DELIVERED': 'ORDER_DELIVERED',
+      'CANCELLED': 'ORDER_CANCELLED',
+      'PICKED': 'RETURN_PICKED',
+      'REFUNDED': 'ORDER_REFUNDED',
     };
 
     const templateKey = statusMap[newStatus.toUpperCase()] || 'ORDER_PLACED';

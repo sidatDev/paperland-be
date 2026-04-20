@@ -2,6 +2,7 @@
 import { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import { logActivity } from '../utils/audit';
+import { emailService } from '../services/email.service';
 
 const returnRequestSchema = z.object({
   orderId: z.string().uuid(),
@@ -19,7 +20,7 @@ const returnStatusSchema = z.object({
   status: z.enum(['PENDING', 'APPROVED', 'PICKED', 'REFUNDED', 'REJECTED', 'CANCELLED']),
   notes: z.string().optional(),
   trackingNumber: z.string().optional(),
-  refundAmount: z.coerce.number().optional(),
+  refundAmount: z.coerce.number().min(0).optional(),
 });
 
 const returnRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
@@ -221,6 +222,26 @@ const returnRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => {
         performedBy: (request as any).user?.id,
         details: { oldStatus: current.status, newStatus: status, notes }
       });
+
+      // SEND EMAIL NOTIFICATION
+      if (['PICKED', 'REFUNDED', 'CANCELLED', 'REJECTED'].includes(status)) {
+        try {
+          const fullOrder = await (fastify.prisma as any).order.findUnique({
+            where: { id: current.orderId },
+            include: { 
+              user: true, 
+              items: { include: { product: true } }, 
+              currency: true 
+            }
+          });
+          if (fullOrder && (fullOrder.user?.email || (fullOrder as any).guestEmail)) {
+            const recipientEmail = fullOrder.user?.email || (fullOrder as any).guestEmail;
+            await emailService.sendOrderStatusUpdateEmail(recipientEmail, fullOrder, status);
+          }
+        } catch (emailErr) {
+          fastify.log.error(emailErr, 'Failed to send return status update email');
+        }
+      }
 
       return updated;
     } catch (error) {
