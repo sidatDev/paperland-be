@@ -147,6 +147,7 @@ model User {
   lastLoginAt           DateTime?            @map("last_login_at")
   lastPasswordChangedAt DateTime?            @map("last_password_changed_at")
   lockedAt              DateTime?            @map("locked_at")
+  companyId             String?              @map("company_id")
   addresses             Address[]
   auditLogs             AuditLog[]
   b2bCompanyDetails     B2BCompanyDetails?
@@ -169,10 +170,9 @@ model User {
   transactions          Transaction[]
   permissions           UserPermission[]
   b2bProfile            B2BProfile?          @relation(fields: [b2bProfileId], references: [id])
+  company               Company?             @relation(fields: [companyId], references: [id])
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
-  companyId             String?              @map("company_id")
-  company               Company?             @relation(fields: [companyId], references: [id])
 
   @@map("users")
 }
@@ -248,6 +248,8 @@ model B2BProfile {
   rejectionReason   String?                   @map("rejection_reason")
   adminNotes        String?                   @map("admin_notes")
   discountTierId    String?                   @map("discount_tier_id")
+  companyId         String?                   @map("company_id")
+  company           Company?                  @relation(fields: [companyId], references: [id])
   currency          Currency?                 @relation(fields: [currencyId], references: [id])
   discountTier      DiscountTier?             @relation(fields: [discountTierId], references: [id])
   b2b_team_members  b2b_team_members[]
@@ -256,8 +258,6 @@ model B2BProfile {
   purchase_orders   purchase_orders[]
   securityDeposits  SecurityDeposit[]
   users             User[]
-  companyId         String?                   @map("company_id")
-  company           Company?                  @relation(fields: [companyId], references: [id])
 
   @@index([currencyId])
   @@index([discountTierId])
@@ -280,6 +280,7 @@ model Category {
   subCategories    Category[]       @relation("CategoryHierarchy")
   couponCategories CouponCategory[]
   products         Product[]
+  normalizedName   String?          @unique @map("normalized_name")
 
   @@map("categories")
 }
@@ -295,6 +296,7 @@ model Brand {
   deletedAt   DateTime? @map("deleted_at")
   slug        String?   @unique
   products    Product[]
+  normalizedName String?   @unique @map("normalized_name")
 
   @@map("brands")
 }
@@ -372,6 +374,9 @@ model Product {
   variantOptions       Json?                     @map("variant_options")
   batches              Batch[]
   cartItems            CartItem[]
+  catalogPricing       CatalogPricing[]
+  catalogProducts      CatalogProduct[]
+  catalogVariants      CatalogVariant[]
   couponProducts       CouponProduct[]
   crossReferences      CrossReference[]          @relation("SourceProduct")
   crossReferencedBy    CrossReference[]          @relation("TargetProduct")
@@ -393,9 +398,6 @@ model Product {
   rfqItems             RFQItem[]
   stocks               Stock[]
   wishlistItems        WishlistItem[]
-  catalogProducts      CatalogProduct[]
-  catalogVariants      CatalogVariant[]
-  catalogPricing       CatalogPricing[]
 
   @@map("products")
 }
@@ -465,7 +467,6 @@ model Warehouse {
   deletedAt DateTime? @map("deleted_at")
   type      String    @default("WAREHOUSE")
   stocks    Stock[]
-  orders    Order[]
 
   @@map("warehouses")
 }
@@ -524,79 +525,89 @@ model ReviewHelpfulVote {
 }
 
 model ProductImportLog {
-  id          String   @id @default(uuid())
-  triggeredBy String?  @map("triggered_by")
-  status      String
-  details     Json?
-  createdAt   DateTime @default(now()) @map("created_at")
+  id          String    @id @default(uuid())
+  fileName    String?   @map("file_name")
+  filePath    String?   @map("file_path")
+  totalRows   Int       @default(0) @map("total_rows")
+  added       Int       @default(0)
+  updated     Int       @default(0)
+  failed      Int       @default(0)
+  skipped     Int       @default(0)
+  progress    Int       @default(0)
+  errorsJson  Json?     @map("errors_json")
+  status      String    @default("QUEUED")
+  duration    Int?
+  mode        String    @default("UPSERT")
+  stockMode   String    @default("OVERWRITE")
+  triggeredBy String?   @map("triggered_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  completedAt DateTime? @map("completed_at")
 
+  @@index([createdAt])
+  @@index([status])
   @@map("product_import_logs")
 }
 
 model Order {
-  id                    String               @id @default(uuid())
-  orderNumber           String               @unique @map("order_number")
-  userId                String?              @map("user_id")
-  status                String               @default("PENDING")
-  totalAmount           Decimal              @map("total_amount") @db.Decimal(12, 2)
-  taxAmount             Decimal              @map("tax_amount") @db.Decimal(12, 2)
-  shippingAmount        Decimal              @map("shipping_amount") @db.Decimal(12, 2)
-  addressId             String               @map("address_id")
-  paymentStatus         String               @default("UNPAID") @map("payment_status")
-  paymentMethod         String?              @map("payment_method")
-  trackingNumber        String?              @map("tracking_number")
-  createdAt             DateTime             @default(now()) @map("created_at")
-  updatedAt             DateTime             @updatedAt @map("updated_at")
-  deletedAt             DateTime?            @map("deleted_at")
-  billingSnapshot       Json?                @map("billing_snapshot")
-  currencyId            String               @map("currency_id")
-  notes                 Json?
-  orderContext          Json?                @map("order_context")
-  paymentDetails        Json?                @map("payment_details")
-  pricingSummary        Json?                @map("pricing_summary")
-  shippingDetails       Json?                @map("shipping_details")
-  shippingSnapshot      Json?                @map("shipping_snapshot")
-  courierPartner        String?              @map("courier_partner")
-  creditAPR             Decimal?             @map("credit_apr") @db.Decimal(5, 2)
-  creditTerm            Int?                 @map("credit_term")
-  deliveryMethod        String?              @map("delivery_method")
-  downPayment           Decimal?             @map("down_payment") @db.Decimal(10, 2)
-  estimatedDeliveryDate DateTime?            @map("estimated_delivery_date")
-  transactionRef        String?              @map("transaction_ref")
-  deliveredDate         DateTime?            @map("delivered_date")
-  processingDate        DateTime?            @map("processing_date")
-  shippedDate           DateTime?            @map("shipped_date")
-  trackingTimeline      Json?                @map("tracking_timeline")
-  guestEmail            String?              @map("guest_email")
-  guestPhone            String?              @map("guest_phone")
-  isGuestOrder          Boolean              @default(false) @map("is_guest_order")
-  guestToken            String?              @map("guest_token")
-  shipperBookingId      String?              @map("shipper_booking_id")
-  couponId              String?              @map("coupon_id")
-  
-  isManualLogistics       Boolean              @default(false) @map("is_manual_logistics")
-  logisticsType          String?              @map("logistics_type")
+  id                     String               @id @default(uuid())
+  orderNumber            String               @unique @map("order_number")
+  userId                 String?              @map("user_id")
+  status                 String               @default("PENDING")
+  totalAmount            Decimal              @map("total_amount") @db.Decimal(12, 2)
+  taxAmount              Decimal              @map("tax_amount") @db.Decimal(12, 2)
+  shippingAmount         Decimal              @map("shipping_amount") @db.Decimal(12, 2)
+  addressId              String               @map("address_id")
+  paymentStatus          String               @default("UNPAID") @map("payment_status")
+  paymentMethod          String?              @map("payment_method")
+  trackingNumber         String?              @map("tracking_number")
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+  deletedAt              DateTime?            @map("deleted_at")
+  billingSnapshot        Json?                @map("billing_snapshot")
+  currencyId             String               @map("currency_id")
+  notes                  Json?
+  orderContext           Json?                @map("order_context")
+  paymentDetails         Json?                @map("payment_details")
+  pricingSummary         Json?                @map("pricing_summary")
+  shippingDetails        Json?                @map("shipping_details")
+  shippingSnapshot       Json?                @map("shipping_snapshot")
+  courierPartner         String?              @map("courier_partner")
+  creditAPR              Decimal?             @map("credit_apr") @db.Decimal(5, 2)
+  creditTerm             Int?                 @map("credit_term")
+  deliveryMethod         String?              @map("delivery_method")
+  downPayment            Decimal?             @map("down_payment") @db.Decimal(10, 2)
+  estimatedDeliveryDate  DateTime?            @map("estimated_delivery_date")
+  transactionRef         String?              @map("transaction_ref")
+  deliveredDate          DateTime?            @map("delivered_date")
+  processingDate         DateTime?            @map("processing_date")
+  shippedDate            DateTime?            @map("shipped_date")
+  trackingTimeline       Json?                @map("tracking_timeline")
+  couponId               String?              @map("coupon_id")
+  shipperBookingId       String?              @map("shipper_booking_id")
+  guestEmail             String?              @map("guest_email")
+  guestPhone             String?              @map("guest_phone")
+  isGuestOrder           Boolean              @default(false) @map("is_guest_order")
+  guestToken             String?              @map("guest_token")
   courierProviderId      String?              @map("courier_provider_id")
-  riderId                String?              @map("rider_id")
-  trackingStatus         String?              @map("tracking_status")
   deliveryStatus         String?              @map("delivery_status")
   fulfillmentWarehouseId String?              @map("fulfillment_warehouse_id")
+  logisticsType          String?              @map("logistics_type")
+  riderId                String?              @map("rider_id")
   trackingResponseJson   Json?                @map("tracking_response_json")
-
-  courierProvider      CourierProvider? @relation(fields: [courierProviderId], references: [id])
-  rider                Rider?           @relation(fields: [riderId], references: [id])
-  fulfillmentWarehouse Warehouse?       @relation(fields: [fulfillmentWarehouseId], references: [id])
-  trackingLogs         TrackingLog[]
-
-  items                 OrderItem[]
-  history               OrderStatusHistory[]
-  address               Address?             @relation(fields: [addressId], references: [id])
-  coupon                Coupon?              @relation(fields: [couponId], references: [id])
-  currency              Currency             @relation(fields: [currencyId], references: [id])
-  user                  User?                @relation(fields: [userId], references: [id])
-  purchase_orders       purchase_orders?
-  returnRequests        ReturnRequest[]
-  transactions          Transaction[]
+  trackingStatus         String?              @map("tracking_status")
+  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
+  items                  OrderItem[]
+  history                OrderStatusHistory[]
+  address                Address              @relation(fields: [addressId], references: [id])
+  coupon                 Coupon?              @relation(fields: [couponId], references: [id])
+  courierProvider        CourierProvider?     @relation(fields: [courierProviderId], references: [id])
+  currency               Currency             @relation(fields: [currencyId], references: [id])
+  rider                  Rider?               @relation(fields: [riderId], references: [id])
+  user                   User?                @relation(fields: [userId], references: [id])
+  purchase_orders        purchase_orders?
+  returnRequests         ReturnRequest[]
+  trackingLogs           TrackingLog[]
+  transactions           Transaction[]
 
   @@index([currencyId])
   @@map("orders")
@@ -923,11 +934,11 @@ model CartItem {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   priceSnapshot Decimal? @map("price_snapshot") @db.Decimal(10, 2)
-  cart          Cart     @relation(fields: [cartId], references: [id])
-  product       Product  @relation(fields: [productId], references: [id])
   catalogId     String?  @map("catalog_id")
-  catalog       Catalog? @relation(fields: [catalogId], references: [id])
   status        String   @default("VALID")
+  cart          Cart     @relation(fields: [cartId], references: [id])
+  catalog       Catalog? @relation(fields: [catalogId], references: [id])
+  product       Product  @relation(fields: [productId], references: [id])
 
   @@unique([cartId, productId])
   @@index([productId])
@@ -1440,55 +1451,51 @@ model NotificationTemplate {
 }
 
 model Company {
-  id        String    @id @default(uuid())
-  name      String
-  createdAt DateTime  @default(now()) @map("created_at")
-  updatedAt DateTime  @updatedAt @map("updated_at")
-  deletedAt DateTime? @map("deleted_at")
-
-  // Merged from B2BCompanyDetails
-  registrationCountry           String?   @map("registration_country")
-  taxId                         String?   @map("tax_id")
-  registrationDate              DateTime? @map("registration_date")
-  companyAddress                String?   @map("company_address")
-  registrationProofUrls         String[]  @default([]) @map("registration_proof_urls")
-  doingBusinessAs               String?   @map("doing_business_as")
-  primaryContactName            String?   @map("primary_contact_name")
-  jobTitle                      String?   @map("job_title")
-  contactPhone                  String?   @map("contact_phone")
-  contactCountryCode            String?   @map("contact_country_code")
-  billingEmail                  String?   @map("billing_email")
-  shippingAddress               String?   @map("shipping_address")
-  apContactName                 String?   @map("ap_contact_name")
-  apPhone                       String?   @map("ap_phone")
-  apCountryCode                 String?   @map("ap_country_code")
-  authorizedRepresentativeEmail String?   @map("authorized_rep_email")
-  authorizedRepresentativeName  String?   @map("authorized_rep_name")
-  registeredLegalEntity         String?   @map("registered_legal_entity")
-
-  users       User[]
-  b2bProfiles B2BProfile[]
-  catalogs    CompanyCatalog[]
+  id                            String           @id @default(uuid())
+  name                          String
+  createdAt                     DateTime         @default(now()) @map("created_at")
+  updatedAt                     DateTime         @updatedAt @map("updated_at")
+  deletedAt                     DateTime?        @map("deleted_at")
+  registrationCountry           String?          @map("registration_country")
+  taxId                         String?          @map("tax_id")
+  registrationDate              DateTime?        @map("registration_date")
+  companyAddress                String?          @map("company_address")
+  registrationProofUrls         String[]         @default([]) @map("registration_proof_urls")
+  doingBusinessAs               String?          @map("doing_business_as")
+  primaryContactName            String?          @map("primary_contact_name")
+  jobTitle                      String?          @map("job_title")
+  contactPhone                  String?          @map("contact_phone")
+  contactCountryCode            String?          @map("contact_country_code")
+  billingEmail                  String?          @map("billing_email")
+  shippingAddress               String?          @map("shipping_address")
+  apContactName                 String?          @map("ap_contact_name")
+  apPhone                       String?          @map("ap_phone")
+  apCountryCode                 String?          @map("ap_country_code")
+  authorizedRepresentativeEmail String?          @map("authorized_rep_email")
+  authorizedRepresentativeName  String?          @map("authorized_rep_name")
+  registeredLegalEntity         String?          @map("registered_legal_entity")
+  b2bProfiles                   B2BProfile[]
+  catalogs                      CompanyCatalog[]
+  users                         User[]
 
   @@map("companies")
 }
 
 model Catalog {
-  id          String    @id @default(uuid())
-  name        String
-  description String?
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
-  validFrom   DateTime? @map("valid_from")
-  validUntil  DateTime? @map("valid_until")
-
+  id               String           @id @default(uuid())
+  name             String
+  description      String?
+  isActive         Boolean          @default(true) @map("is_active")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  deletedAt        DateTime?        @map("deleted_at")
+  validFrom        DateTime?        @map("valid_from")
+  validUntil       DateTime?        @map("valid_until")
+  cartItems        CartItem[]
+  pricingOverrides CatalogPricing[]
   products         CatalogProduct[]
   variants         CatalogVariant[]
-  pricingOverrides CatalogPricing[]
   companies        CompanyCatalog[]
-  cartItems        CartItem[]
 
   @@map("catalogs")
 }
@@ -1498,9 +1505,8 @@ model CatalogProduct {
   catalogId String   @map("catalog_id")
   productId String   @map("product_id")
   createdAt DateTime @default(now()) @map("created_at")
-
-  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  catalog   Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([catalogId, productId])
   @@map("catalog_products")
@@ -1511,9 +1517,8 @@ model CatalogVariant {
   catalogId String   @map("catalog_id")
   variantId String   @map("variant_id")
   createdAt DateTime @default(now()) @map("created_at")
-
-  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  variant Product @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  catalog   Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  variant   Product  @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([catalogId, variantId])
   @@map("catalog_variants")
@@ -1527,9 +1532,8 @@ model CatalogPricing {
   minimumQuantity Int      @default(1) @map("minimum_quantity")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
-
-  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
-  variant Product @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  catalog         Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  variant         Product  @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@unique([catalogId, variantId])
   @@map("catalog_pricing")
@@ -1541,43 +1545,42 @@ model CompanyCatalog {
   catalogId String   @map("catalog_id")
   priority  Int      @default(0)
   createdAt DateTime @default(now()) @map("created_at")
-
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  catalog Catalog @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  catalog   Catalog  @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@unique([companyId, catalogId])
   @@map("company_catalogs")
 }
 
 model CourierProvider {
-  id               String   @id @default(uuid())
-  name             String   @unique
-  code             String   @unique
-  region           String   @default("PK")
-  trackingUrl      String?  @unique @map("tracking_url")
-  apiConfig        Json?    @map("api_config")
-  isActive         Boolean  @default(true) @map("is_active")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  orders           Order[]
-  shippingRules    ShippingRule[]
-  
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  region      String   @default("PK")
+  trackingUrl String?  @map("tracking_url")
+  apiConfig   Json?    @map("api_config")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  orders        Order[]
+  shippingRules ShippingRule[]
+
   @@map("courier_providers")
 }
 
 model Rider {
-  id               String   @id @default(uuid())
-  name             String   @unique
-  phone            String   @unique
-  cnic             String?  @unique
-  vehicleInfo      String?  @map("vehicle_info")
-  region           String   @default("PK")
-  city             String?
-  isActive         Boolean  @default(true) @map("is_active")
-  status           String   @default("AVAILABLE") // AVAILABLE, ON_DELIVERY, OFFLINE
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  orders           Order[]
+  id          String   @id @default(uuid())
+  name        String
+  phone       String
+  cnic        String?  @unique
+  vehicleInfo String?  @map("vehicle_info")
+  region      String   @default("PK")
+  city        String?
+  isActive    Boolean  @default(true) @map("is_active")
+  status      String   @default("AVAILABLE")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  orders      Order[]
 
   @@map("riders")
 }
@@ -1585,33 +1588,33 @@ model Rider {
 model ShippingRule {
   id                String   @id @default(uuid())
   name              String   @unique
-  region            String   @default("PK") // Fixed to PK
-  city              String?   // Specific city or null for catch-all
-  logisticsType     String   @map("logistics_type") // THIRD_PARTY or SELF_DELIVERY
+  region            String   @default("PK")
+  city              String?
+  logisticsType     String   @map("logistics_type")
   minOrderValue     Decimal? @map("min_order_value") @db.Decimal(12, 2)
   maxOrderValue     Decimal? @map("max_order_value") @db.Decimal(12, 2)
   courierProviderId String?  @map("courier_provider_id")
-  courierProvider   CourierProvider? @relation(fields: [courierProviderId], references: [id])
   warehouseId       String?  @map("warehouse_id")
-  estimatedDays     String?  @map("estimated_days")
-  baseShippingCost  Decimal? @map("base_shipping_cost") @db.Decimal(12, 2)
   priority          Int      @default(0)
   isActive          Boolean  @default(true) @map("is_active")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
+  estimatedDays     String?  @map("estimated_days")
+  baseShippingCost  Decimal?         @map("base_shipping_cost") @db.Decimal(12, 2)
+  courierProvider   CourierProvider? @relation(fields: [courierProviderId], references: [id])
 
   @@map("shipping_rules")
 }
 
 model TrackingLog {
-  id              String   @id @default(uuid())
-  orderId         String   @map("order_id")
-  status          String
-  location        String?
-  description     String?
-  rawResponse     Json?    @map("raw_response")
-  loggedAt        DateTime @default(now()) @map("logged_at")
-  order           Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  orderId     String   @map("order_id")
+  status      String
+  location    String?
+  description String?
+  rawResponse Json?    @map("raw_response")
+  loggedAt    DateTime @default(now()) @map("logged_at")
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
   @@map("tracking_logs")

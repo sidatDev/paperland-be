@@ -34,6 +34,7 @@
     "axios": "^1.15.0",
     "basic-ftp": "^5.1.0",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.75.2",
     "cheerio": "^1.2.0",
     "country-state-city": "^3.2.1",
     "csv-stringify": "^6.6.0",

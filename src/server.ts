@@ -60,6 +60,7 @@ const start = async () => {
     // Register Redis & Cache Service (NEW)
     await fastify.register(import('./plugins/redis'));
     await fastify.register(import('./services/cache.service'));
+    await fastify.register(import('./plugins/import-queue'));
 
     // Initialize Email Service with Prisma
     const { initializeEmailService } = await import('./services/email.service');
@@ -72,7 +73,7 @@ const start = async () => {
     // Register Multipart
     await fastify.register(import('@fastify/multipart'), {
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB
+        fileSize: 25 * 1024 * 1024, // 25MB (increased for bulk import)
       }
     });
 
@@ -130,6 +131,9 @@ const start = async () => {
     // CMS Routes
     await fastify.register(import('./routes/cms.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/blog.routes'), { prefix: '/api/v1' });
+
+    // Import Routes (NEW)
+    await fastify.register(import('./routes/import.routes'), { prefix: '/api/v1' });
     
     // Sync Routes (Disabled for Paperland Rebrand)
     // await fastify.register(import('./routes/sync.routes'), { prefix: '/api/v1' });
