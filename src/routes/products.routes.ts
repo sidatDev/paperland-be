@@ -168,9 +168,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
            name: stock.warehouse.name
          } : null
       })) ?? [],
-      totalPhysicalStock: p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0,
-      totalReservedStock: p.stocks?.reduce((acc: number, s: any) => acc + (s.reservedQty || 0), 0) || 0,
-      totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+      totalPhysicalStock: p.variants && p.variants.length > 0 
+        ? p.variants.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty || 0), 0) || 0), 0)
+        : p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0,
+      totalReservedStock: p.variants && p.variants.length > 0
+        ? p.variants.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.reservedQty || 0), 0) || 0), 0)
+        : p.stocks?.reduce((acc: number, s: any) => acc + (s.reservedQty || 0), 0) || 0,
+      totalStock: p.variants && p.variants.length > 0
+        ? p.variants.reduce((acc: number, v: any) => acc + Math.max(0, v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty - (s.reservedQty || 0)), 0) || 0), 0)
+        : Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
       
       wholesalePrice: Number(p.prices?.[0]?.priceWholesale || 0),
       promotionalPrice: Number(p.prices?.[0]?.priceSpecial || 0),

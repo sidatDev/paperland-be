@@ -37,6 +37,12 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                             name: true,
                             sku: true,
                             imageUrl: true,
+                            parentId: true,
+                            parent: {
+                                select: {
+                                    imageUrl: true
+                                }
+                            },
                             prices: {
                                 where: { isActive: true },
                                 take: 1,
@@ -414,6 +420,8 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                                 name: true,
                                 sku: true,
                                 imageUrl: true,
+                                parentId: true,
+                                parent: { select: { imageUrl: true } },
                                 prices: {
                                     where: { isActive: true },
                                     take: 1

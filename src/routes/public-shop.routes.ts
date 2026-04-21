@@ -88,19 +88,29 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
     });
 
     const calculateAvailability = (p: any) => {
-        // 1. Manual overide check (Admin status takes precedence)
+        // 1. Manual override check (Admin status takes precedence)
         const isManualOutOfStock = p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock';
         
-        // 2. Physical stock calculation (qty - reserved)
-        const totalStock = Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+        // 2. Base Physical stock calculation (qty - reserved)
+        const baseStock = Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
         
-        // 3. Check if any variant has stock (respecting variant manual status too)
+        // 3. Variant stock calculation
+        let variantStockTotal = 0;
+        const hasVariants = p.variants && p.variants.length > 0;
+        
         const hasVariantStock = p.variants?.some((v: any) => {
             const vManualOut = v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock';
-            if (vManualOut) return false;
-            return Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0) > 0;
+            const vStock = Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+            
+            if (!vManualOut) {
+                variantStockTotal += vStock;
+            }
+            
+            return !vManualOut && vStock > 0;
         });
 
+        // 4. Final Total Stock (If variants exist, use sum of variants, else use base stock)
+        const totalStock = hasVariants ? variantStockTotal : baseStock;
         const isInStock = !isManualOutOfStock && (totalStock > 0 || hasVariantStock);
 
         return {
@@ -1067,6 +1077,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     stocks: true,
                     prices: { include: { currency: true } },
                     variants: {
+                        where: { deletedAt: null, isActive: true },
                         include: {
                             prices: { include: { currency: true } },
                             stocks: true
