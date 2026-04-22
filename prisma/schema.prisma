@@ -467,6 +467,7 @@ model Warehouse {
   deletedAt DateTime? @map("deleted_at")
   type      String    @default("WAREHOUSE")
   stocks    Stock[]
+  orders    Order[]
 
   @@map("warehouses")
 }
@@ -604,6 +605,7 @@ model Order {
   currency               Currency             @relation(fields: [currencyId], references: [id])
   rider                  Rider?               @relation(fields: [riderId], references: [id])
   user                   User?                @relation(fields: [userId], references: [id])
+  fulfillmentWarehouse   Warehouse?           @relation(fields: [fulfillmentWarehouseId], references: [id])
   purchase_orders        purchase_orders?
   returnRequests         ReturnRequest[]
   trackingLogs           TrackingLog[]
