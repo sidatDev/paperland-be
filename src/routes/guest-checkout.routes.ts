@@ -761,7 +761,9 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                         ...(paymentMetadata || {}),
                         ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
                     },
-                    paymentStatus: stripeVerifiedIntentId ? 'PAID' : 'UNPAID',
+                    // STRIPE: Mark as PAID immediately
+                    // BANK_TRANSFER: Mark as AWAITING_CONFIRMATION
+                    paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
                     ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
                     updatedAt: new Date()
                 }

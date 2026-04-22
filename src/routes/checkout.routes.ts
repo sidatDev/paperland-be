@@ -1,8 +1,10 @@
 import { FastifyInstance } from 'fastify';
+import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 import { emailService } from '../services/email.service';
 import { PricingEngine } from '../utils/pricing.engine';
 import { LogisticsEngine } from '../services/logistics-engine.service';
+import { PaymentResolver } from '../services/payment-resolver.service';
 
 export default async function checkoutRoutes(fastify: FastifyInstance) {
     const formatOrder = (order: any) => {
@@ -660,6 +662,23 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         };
     });
 
+
+    // GET /checkout/payment-methods (NEW: Resolver Based)
+    fastify.get('/checkout/payment-methods', async (request: any, reply) => {
+        const { city, amount } = request.query as any;
+        try {
+            const methods = await PaymentResolver.getAvailableMethods(
+                city || null, 
+                Number(amount || 0), 
+                fastify.prisma as any
+            );
+            return createResponse(methods, 'Payment methods resolved');
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse('Failed to resolve payment methods'));
+        }
+    });
+
     // GET /checkout/payment-gateways
     fastify.get('/checkout/payment-gateways', async (request, reply) => {
         const gateways = await (fastify.prisma as any).paymentGateway.findMany({
@@ -782,8 +801,9 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
                 },
                 // STRIPE: Mark as PAID immediately after server-side verification
+                // BANK_TRANSFER: Mark as AWAITING_CONFIRMATION
                 // Other methods: UNPAID until manually approved
-                paymentStatus: stripeVerifiedIntentId ? 'PAID' : 'UNPAID',
+                paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
                 ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
                 updatedAt: new Date()
             }

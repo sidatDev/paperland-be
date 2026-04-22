@@ -221,4 +221,41 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
         }
     });
 
+    // Public Upload for Payment Proofs
+    fastify.post('/public/upload', {
+        schema: {
+            description: 'Publicly upload a file (e.g. payment proof)',
+            tags: ['Upload'],
+            consumes: ['multipart/form-data']
+        }
+    }, async (request: any, reply) => {
+        try {
+            const data = await request.file();
+            const folder = request.query.folder || 'public';
+            
+            if (!data) {
+                return reply.status(400).send(createErrorResponse("No file uploaded"));
+            }
+
+            const buffer = await data.toBuffer();
+            const ext = path.extname(data.filename);
+            const uuid = randomUUID();
+            const filename = `${uuid}${ext}`;
+
+            const uploadPath = path.join(process.cwd(), 'public', 'uploads', folder);
+            await fs.mkdir(uploadPath, { recursive: true });
+
+            const filePath = path.join(uploadPath, filename);
+            await fs.writeFile(filePath, buffer);
+
+            const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;
+            const url = `${apiUrl}/uploads/${folder}/${filename}`;
+
+            return createResponse({ url }, "File uploaded successfully");
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse("Upload failed"));
+        }
+    });
+
 }

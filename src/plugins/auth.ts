@@ -90,6 +90,7 @@ export default fp(async (fastify: FastifyInstance) => {
       '/orders/track',
       '/public/newsletter/subscribe',
       '/public/newsletter/unsubscribe',
+      '/public/upload',
       '/redis-health',
     ];
 
