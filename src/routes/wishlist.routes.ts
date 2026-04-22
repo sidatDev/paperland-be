@@ -41,6 +41,10 @@ export default async function wishlistRoutes(fastify: FastifyInstance) {
                   category: { select: { id: true, name: true, slug: true } },
                   prices: true,
                   stocks: true,
+                  variants: {
+                    where: { deletedAt: null, isActive: true },
+                    include: { stocks: true }
+                  }
                 },
               },
             },
@@ -49,7 +53,38 @@ export default async function wishlistRoutes(fastify: FastifyInstance) {
         },
       });
 
-      return reply.send(createResponse(wishlist?.items || []));
+      const calculateAvailability = (p: any) => {
+        const isManualOutOfStock = p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock';
+        const baseStock = Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+        let variantStockTotal = 0;
+        const hasVariants = p.variants && p.variants.length > 0;
+        const hasVariantStock = p.variants?.some((v: any) => {
+            const vManualOut = v.status === 'Out of Stock' || (v.specifications as any)?.status === 'Out of Stock';
+            const vStock = Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+            if (!vManualOut) variantStockTotal += vStock;
+            return !vManualOut && vStock > 0;
+        });
+        const totalStock = hasVariants ? variantStockTotal : baseStock;
+        return {
+            totalStock: isManualOutOfStock ? 0 : totalStock,
+            isInStock: !isManualOutOfStock && (totalStock > 0 || hasVariantStock)
+        };
+      };
+
+      const items = (wishlist?.items || []).map((item: any) => {
+        const availability = calculateAvailability(item.product);
+        return {
+          ...item,
+          product: {
+            ...item.product,
+            totalStock: availability.totalStock,
+            stock: availability.totalStock,
+            isInStock: availability.isInStock
+          }
+        };
+      });
+
+      return reply.send(createResponse(items));
     } catch (error: any) {
       return reply.code(500).send(createErrorResponse(error.message));
     }

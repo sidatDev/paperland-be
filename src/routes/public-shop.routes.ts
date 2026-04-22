@@ -60,27 +60,57 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 type: 'object',
                 properties: {
                     city: { type: 'string' },
-                    amount: { type: 'number' }
+                    amount: { type: 'number' },
+                    productId: { type: 'string' }
                 }
             }
         }
     }, async (request: any, reply: any) => {
         try {
-            const { city, amount } = request.query;
+            const { city, amount, productId } = request.query;
             const { LogisticsEngine } = await import('../services/logistics-engine.service');
+            
+            // Try to find where the product is actually stored
+            let productShipsFrom = null;
+            if (productId) {
+                const stock = await fastify.prisma.stock.findFirst({
+                    where: { productId, qty: { gt: 0 } },
+                    include: { warehouse: true }
+                });
+                if (stock?.warehouse) {
+                    productShipsFrom = stock.warehouse.city;
+                } else {
+                    // Check variants if parent has no direct stock
+                    const variantStock = await fastify.prisma.stock.findFirst({
+                        where: { product: { id: productId }, qty: { gt: 0 } },
+                        include: { warehouse: true }
+                    });
+                    if (variantStock?.warehouse) {
+                        productShipsFrom = variantStock.warehouse.city;
+                    }
+                }
+            }
+
             const estimate = await LogisticsEngine.getShippingEstimate(city || null, amount || 0, fastify.prisma);
             
             if (!estimate) {
-                // Return default fallback
-                return createResponse({
+                // Return default fallback but with dynamic shipsFrom if found
+                return reply.send(createResponse({
                     estimatedDays: '3-5 business days',
                     baseCost: 250,
-                    shipsFrom: 'Islamabad',
+                    shipsFrom: productShipsFrom || 'Islamabad',
                     logisticsType: 'THIRD_PARTY',
                     courier: 'Standard'
-                });
+                }));
             }
-            return createResponse(estimate);
+
+            // If we found a specific product warehouse, override the rule's generic shipsFrom 
+            // unless the rule specifically assigned a fulfillment warehouse
+            if (productShipsFrom && estimate.shipsFrom === 'Processing Center') {
+                estimate.shipsFrom = productShipsFrom;
+            }
+
+            return reply.send(createResponse(estimate));
         } catch (err) {
             fastify.log.error(err);
             return reply.status(500).send(createErrorResponse('Internal Server Error'));
@@ -374,14 +404,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         }
                     });
 
-                    const pruneEmpty = (nodes: any[]) => {
-                        return nodes.filter(node => {
-                            node.subCategories = pruneEmpty(node.subCategories);
-                            return node.productsCount > 0 || node.subCategories.length > 0;
-                        });
-                    };
-
-                    return pruneEmpty(rootCategories);
+                    return rootCategories;
                 })(categories);
 
                 await fastify.cache.set(cacheKey, hierarchy, 3600);

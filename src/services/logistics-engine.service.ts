@@ -155,7 +155,7 @@ export class LogisticsEngine {
 
       return {
           estimatedDays: bestRule.estimatedDays || '3-5 business days',
-          baseCost: bestRule.baseShippingCost ? parseFloat(bestRule.baseShippingCost.toString()) : 0,
+          baseCost: 250, // Enforce flat Rs. 250 everywhere
           shipsFrom,
           logisticsType: bestRule.logisticsType,
           courier: bestRule.courierProvider?.name || null

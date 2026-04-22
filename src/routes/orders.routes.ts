@@ -1669,27 +1669,94 @@ export default async function orderRoutes(fastify: FastifyInstance) {
     return createResponse(responseData);
   });
 
-  // PATCH /orders/:id/cancel (Customer Cancellation)
+  // PATCH /orders/:id/cancel (Customer Cancellation Request)
   fastify.patch('/orders/:id/cancel', {
     preHandler: [fastify.authenticate],
     schema: {
-        description: 'Cancel Order by Customer',
+        description: 'Request Order Cancellation by Customer',
+        tags: ['Orders'],
+        params: { type: 'object', properties: { id: { type: 'string' } } },
+        body: {
+            type: 'object',
+            required: ['reason'],
+            properties: {
+                reason: { type: 'string' }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    const { reason } = request.body;
+    const userId = (request.user as any).id;
+
+    try {
+        const order = await (fastify.prisma as any).order.findFirst({
+            where: { id, userId, deletedAt: null }
+        });
+
+        if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+        
+        // Allowed to request cancellation only if in certain statuses
+        const allowedStatuses = ['PENDING', 'PROCESSING'];
+        if (!allowedStatuses.includes(order.status)) {
+            return reply.status(400).send(createErrorResponse(`Order cannot be cancelled in its current state (${order.status})`));
+        }
+
+        const updatedOrder = await (fastify.prisma as any).order.update({
+            where: { id: order.id },
+            data: { 
+                status: 'CANCELLATION_REQUESTED',
+                cancellationReason: reason,
+                cancelRequestedAt: new Date()
+            }
+        });
+
+        // Log to History
+        await (fastify.prisma as any).orderStatusHistory.create({
+            data: {
+                orderId: order.id,
+                status: 'CANCELLATION_REQUESTED',
+                notes: `Cancellation requested by customer. Reason: ${reason}`,
+                changedBy: userId
+            }
+        });
+
+        await logActivity(fastify, {
+            entityType: 'ORDER',
+            entityId: id,
+            action: 'UPDATE_STATUS',
+            performedBy: userId,
+            details: { oldStatus: order.status, newStatus: 'CANCELLATION_REQUESTED', reason }
+        });
+
+        return createResponse(updatedOrder, "Cancellation Requested Successfully");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // PATCH /admin/orders/:id/approve-cancellation
+  fastify.patch('/admin/orders/:id/approve-cancellation', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('order_manage')],
+    schema: {
+        description: 'Approve Order Cancellation Request by Admin',
         tags: ['Orders'],
         params: { type: 'object', properties: { id: { type: 'string' } } }
     }
   }, async (request: any, reply) => {
     const { id } = request.params;
-    const userId = (request.user as any).id;
+    const adminId = (request.user as any).id;
 
     try {
         const order = await (fastify.prisma as any).order.findFirst({
-            where: { id, userId, deletedAt: null },
-            include: { items: true }
+            where: { id, deletedAt: null },
+            include: { items: true, user: true }
         });
 
         if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
-        if (order.status !== 'PENDING' && order.status !== 'PROCESSING') {
-            return reply.status(400).send(createErrorResponse("Order cannot be cancelled in its current state"));
+        if (order.status !== 'CANCELLATION_REQUESTED') {
+            return reply.status(400).send(createErrorResponse("Order is not in CANCELLATION_REQUESTED status"));
         }
 
         const updatedOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
@@ -1705,6 +1772,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                             where: { id: stock.id },
                             data: { reservedQty: { decrement: Math.min(Number(item.quantity), stock.reservedQty) } }
                         });
+                        await syncProductStockStatus(tx, item.productId);
                     }
                 }
             }
@@ -1720,8 +1788,8 @@ export default async function orderRoutes(fastify: FastifyInstance) {
             data: {
                 orderId: order.id,
                 status: 'CANCELLED',
-                notes: "Cancelled by Customer",
-                changedBy: userId
+                notes: "Cancellation approved by Admin",
+                changedBy: adminId
             }
         });
 
@@ -1729,11 +1797,20 @@ export default async function orderRoutes(fastify: FastifyInstance) {
             entityType: 'ORDER',
             entityId: id,
             action: 'UPDATE_STATUS',
-            performedBy: userId,
-            details: { oldStatus: order.status, newStatus: 'CANCELLED', reason: 'User Cancelled' }
+            performedBy: adminId,
+            details: { oldStatus: order.status, newStatus: 'CANCELLED', action: 'ADMIN_APPROVE' }
         });
 
-        return createResponse(updatedOrder, "Order Cancelled Successfully");
+        // Trigger Email
+        if (order.user?.email) {
+            try {
+                await emailService.sendOrderStatusUpdateEmail(order.user.email, order as any, 'CANCELLED');
+            } catch (emailErr) {
+                fastify.log.error(emailErr, `Failed to send cancellation email for order ${id}`);
+            }
+        }
+
+        return createResponse(updatedOrder, "Order Cancellation Approved Successfully");
     } catch (err: any) {
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse(err.message));

@@ -241,7 +241,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         switch (shippingMethodId) {
             case 'express': shippingCost = 500; break;
             case 'overnight': shippingCost = 1000; break;
-            default: shippingCost = (city?.toLowerCase() === 'karachi' ? 150 : 250);
+            default: shippingCost = 250;
         }
 
         // 2.5 Coupon Calculation (Fixed Logic)
@@ -650,7 +650,6 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         
         // Server-side calculation
         let standardCost = 250; 
-        if (city?.toLowerCase() === 'karachi') standardCost = 150;
         
         return {
             methods: [

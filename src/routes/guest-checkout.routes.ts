@@ -313,7 +313,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             switch (shippingMethodId) {
                 case 'express': shippingCost = 500; break;
                 case 'overnight': shippingCost = 1000; break;
-                default: shippingCost = (city?.toLowerCase() === 'karachi' ? 150 : 250);
+                default: shippingCost = 250;
             }
 
             // 5. Coupon validation
