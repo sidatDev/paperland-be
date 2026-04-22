@@ -598,6 +598,7 @@ model Order {
   trackingStatus         String?              @map("tracking_status")
   cancellationReason     String?              @map("cancellation_reason")
   cancelRequestedAt      DateTime?            @map("cancel_requested_at")
+  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
   items                  OrderItem[]
   history                OrderStatusHistory[]
   address                Address              @relation(fields: [addressId], references: [id])
