@@ -401,6 +401,14 @@ export default async function catalogsRoutes(fastify: FastifyInstance) {
 
             const companies = await (fastify.prisma as any).company.findMany({
                 where,
+                select: {
+                    id: true,
+                    name: true,
+                    registrationCountry: true,
+                    taxId: true,
+                    companyAddress: true,
+                    billingEmail: true
+                },
                 take: limit,
                 orderBy: { name: 'asc' }
             });

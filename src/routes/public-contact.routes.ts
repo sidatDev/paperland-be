@@ -40,7 +40,7 @@ export default async function publicContactRoutes(fastify: FastifyInstance) {
       const { name, email, phone, subject, message, captchaToken } = fields;
 
       // 1. Verify ReCaptcha
-      const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET_KEY || '6LegAZ4sAAAAAPsGG_d9clkTGhqtu_bf6Gv3x1ub';
+      const RECAPTCHA_SECRET = process.env.RECAPTCHA_SECRET_KEY || '6LeR38UsAAAAANyNgw9Fnp6PwLcWkC20UkElJO1F';
       
       const captchaResponse = await axios.post(`https://www.google.com/recaptcha/api/siteverify?secret=${RECAPTCHA_SECRET}&response=${captchaToken}`);
       

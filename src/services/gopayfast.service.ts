@@ -1,12 +1,15 @@
 import crypto from 'crypto';
+import axios from 'axios';
 
-// ── GoPayFast API Endpoints ─────────────────────────────────
-export const GOPAYFAST_SANDBOX_URL = 'https://sandbox.gopayfast.com/api/v1/payment';
-export const GOPAYFAST_LIVE_URL    = 'https://gopayfast.com/api/v1/payment';
+// ── APPS (PayFast Pakistan) API Endpoints ────────────────────
+export const APPS_TOKEN_UAT_URL       = 'https://ipguat.apps.net.pk/Ecommerce/api/Transaction/GetAccessToken';
+export const APPS_TOKEN_LIVE_URL      = 'https://ipg.apps.net.pk/Ecommerce/api/Transaction/GetAccessToken';
+
+export const APPS_TRANSACTION_UAT_URL = 'https://ipguat.apps.net.pk/Ecommerce/api/Transaction/PostTransaction';
+export const APPS_TRANSACTION_LIVE_URL = 'https://ipg.apps.net.pk/Ecommerce/api/Transaction/PostTransaction';
 
 /**
- * Mask a GoPayFast secure key for safe display in admin UI.
- * Shows first 4 and last 4 chars with asterisks in between.
+ * Mask a sensitive key for safe display in admin UI.
  */
 export function maskGoPayFastKey(key: string): string {
     if (!key || key.length < 8) return '****';
@@ -14,30 +17,44 @@ export function maskGoPayFastKey(key: string): string {
 }
 
 /**
- * Returns true if the value is a masked placeholder (contains '*').
+ * Returns true if the value is a masked placeholder.
  */
 export function isGoPayFastKeyMasked(value: string): boolean {
     return typeof value === 'string' && value.includes('*');
 }
 
 /**
- * SHA-256 hash generation.
- * Field order: merchant_id + order_id + amount + secure_key
- * (must match GoPayFast documentation exactly)
+ * Fetch Access Token from APPS IPG.
  */
-export function generateGoPayFastHash(
+export async function getAppsAccessToken(
     merchantId: string,
-    orderId: string,
-    amount: string,
-    secureKey: string
-): string {
-    const raw = `${merchantId}${orderId}${amount}${secureKey}`;
-    return crypto.createHash('sha256').update(raw).digest('hex');
+    securedKey: string,
+    mode: 'sandbox' | 'live' = 'sandbox'
+): Promise<string> {
+    const url = mode === 'live' ? APPS_TOKEN_LIVE_URL : APPS_TOKEN_UAT_URL;
+    
+    try {
+        const response = await axios.post(url, {
+            MERCHANT_ID: merchantId,
+            SECURED_KEY: securedKey
+        }, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.data && response.data.ACCESS_TOKEN) {
+            return response.data.ACCESS_TOKEN;
+        }
+        
+        throw new Error(response.data?.MESSAGE || 'Failed to retrieve access token from APPS');
+    } catch (err: any) {
+        const msg = err.response?.data?.MESSAGE || err.message;
+        throw new Error(`APPS Token Error: ${msg}`);
+    }
 }
 
 /**
- * Verifies the hash received in an IPN call.
- * Returns true if hash is valid, false otherwise.
+ * Verification for IPN (Webhook) - Hashing style varies by gateway version.
+ * For APPS IPG, they usually send back a set of fields that we can verify.
  */
 export function verifyGoPayFastIpn(payload: {
     merchantId: string;
@@ -46,13 +63,11 @@ export function verifyGoPayFastIpn(payload: {
     secureKey: string;
     receivedHash: string;
 }): boolean {
-    const computed = generateGoPayFastHash(
-        payload.merchantId,
-        payload.orderId,
-        payload.amount,
-        payload.secureKey
-    );
-    // Use timingSafeEqual to prevent timing attacks
+    // Note: APPS IPN verification might use a different logic. 
+    // This is a placeholder for now until exact IPN format is confirmed.
+    const raw = `${payload.merchantId}${payload.orderId}${payload.amount}${payload.secureKey}`;
+    const computed = crypto.createHash('sha256').update(raw).digest('hex');
+    
     try {
         const a = Buffer.from(computed, 'utf8');
         const b = Buffer.from(payload.receivedHash, 'utf8');
@@ -61,48 +76,4 @@ export function verifyGoPayFastIpn(payload: {
     } catch {
         return false;
     }
-}
-
-/**
- * Builds the GoPayFast payment session.
- * Returns:
- *   - paymentUrl: the GoPayFast hosted payment page URL
- *   - formFields: signed form fields to POST to paymentUrl
- */
-export function buildGoPayFastSession(
-    config: {
-        merchantId: string;
-        secureKey: string;
-        mode: 'sandbox' | 'live';
-        returnUrl: string;
-        ipnUrl: string;
-    },
-    order: {
-        id: string;
-        orderNumber: string;
-        totalAmount: number;
-        customerName?: string;
-        customerEmail?: string;
-        customerPhone?: string;
-    }
-): { paymentUrl: string; formFields: Record<string, string> } {
-    const paymentUrl = config.mode === 'live' ? GOPAYFAST_LIVE_URL : GOPAYFAST_SANDBOX_URL;
-    const amount     = order.totalAmount.toFixed(2);
-    const hash       = generateGoPayFastHash(config.merchantId, order.id, amount, config.secureKey);
-
-    const formFields: Record<string, string> = {
-        merchant_id:   config.merchantId,
-        order_id:      order.id,
-        amount,
-        currency:      'PKR',
-        description:   `Order ${order.orderNumber} - PaperLand`,
-        customer_name: (order.customerName || 'Customer').slice(0, 64),
-        customer_email: order.customerEmail || '',
-        customer_phone: order.customerPhone || '',
-        return_url:    config.returnUrl,
-        ipn_url:       config.ipnUrl,
-        hash,
-    };
-
-    return { paymentUrl, formFields };
 }

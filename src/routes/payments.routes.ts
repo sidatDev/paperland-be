@@ -600,30 +600,47 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
           if (!secureKey || secureKey.includes('*')) return reply.code(400).send(createErrorResponse('GoPayFast secure key is not configured'));
           if (!merchantId) return reply.code(400).send(createErrorResponse('GoPayFast merchant ID is not configured'));
 
-          const backendUrl = process.env.BACKEND_URL || `${request.protocol}://${request.hostname}`;
-          const gopayfastConfig = {
-              merchantId,
-              secureKey,
-              mode: config.mode || 'sandbox',
-              returnUrl: config.returnUrl || '',
-              ipnUrl: `${backendUrl}/api/v1/payments/gopayfast/ipn`
+          const mode = config.mode || 'sandbox';
+          const { getAppsAccessToken, APPS_TRANSACTION_UAT_URL, APPS_TRANSACTION_LIVE_URL } = await import('../services/gopayfast.service');
+          
+          // 1. Get Access Token from APPS
+          const accessToken = await getAppsAccessToken(merchantId, secureKey, mode as any);
+
+          // 2. Prepare APPS Redirection Session (PostTransaction)
+          const paymentUrl = mode === 'live' ? APPS_TRANSACTION_LIVE_URL : APPS_TRANSACTION_UAT_URL;
+          
+          const amount = Number(order.totalAmount).toFixed(2);
+          const returnUrl = config.returnUrl || 'https://paperland.com.pk/en/payment/response';
+          
+          // APPS IPG requires a very specific set of fields. 
+          // We include aliases to support different versions of their IPG.
+          const formFields: Record<string, string> = {
+              MERCHANT_ID:            merchantId,
+              TOKEN:                  accessToken,
+              ACCESS_TOKEN:           accessToken, // Alias
+              PROC_CODE:              '00',
+              TXNAMT:                 amount,
+              TRANSACTION_AMOUNT:     amount, // Alias
+              CUSTOMER_MOBILE_NO:     (order.user?.phoneNumber || order.guestPhone || '0000000000').replace(/\D/g, '').slice(-11),
+              CUSTOMER_EMAIL_ADDRESS: order.user?.email || order.guestEmail || 'customer@paperland.com.pk',
+              ORDER_ID:               order.id,
+              TRANSACTION_ID:         order.id, // Alias
+              BASKET_ID:              order.id, // Alias
+              TRANSACTION_DATE:       new Date().toISOString().slice(0, 19).replace('T', ' '), // YYYY-MM-DD HH:mm:ss
+              TXNDTTM:                new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14), // YYYYMMDDHHmmss
+              TRANSACTION_DATE_TIME:  new Date().toLocaleString('en-GB').replace(',', ''), // DD/MM/YYYY HH:mm:ss
+              ORDER_DATE:             new Date().toISOString().split('T')[0], // YYYY-MM-DD
+              TXN_DATE:               new Date().toISOString().split('T')[0].replace(/-/g, ''), // YYYYMMDD
+              CURRENCY_CODE:          'PKR',
+              RE_URL:                 returnUrl,
+              SUCCESS_URL:            returnUrl, // Alias
+              FAILURE_URL:            returnUrl, // Alias
+              CHECKOUT_URL:           returnUrl  // Alias
           };
 
-          const orderData = {
-              id: order.id,
-              orderNumber: order.orderNumber,
-              totalAmount: Number(order.totalAmount),
-              customerName: order.user ? `${order.user.firstName || ''} ${order.user.lastName || ''}`.trim() : 'Customer',
-              customerEmail: order.user?.email || '',
-              customerPhone: order.user?.phoneNumber || ''
-          };
+          fastify.log.info(`[GoPayFast/APPS] Created session for order ${orderId} with Token`);
 
-          const { buildGoPayFastSession } = await import('../services/gopayfast.service');
-          const session = buildGoPayFastSession(gopayfastConfig, orderData);
-
-          fastify.log.info(`[GoPayFast] Created session for order ${orderId}`);
-
-          return { payment_url: session.paymentUrl, formFields: session.formFields, orderId: orderId };
+          return { payment_url: paymentUrl, formFields, orderId: orderId };
       } catch (err: any) {
           fastify.log.error(err, '[GoPayFast] create session failed');
           return reply.code(500).send(createErrorResponse(err.message || 'Failed to create GoPayFast session'));

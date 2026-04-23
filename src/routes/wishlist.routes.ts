@@ -241,4 +241,57 @@ export default async function wishlistRoutes(fastify: FastifyInstance) {
       return reply.code(500).send(createErrorResponse(error.message));
     }
   });
+
+  // POST /wishlist/merge — merge guest wishlist items (bulk add)
+  fastify.post('/wishlist/merge', {
+    schema: {
+      description: 'Merge guest wishlist items into user wishlist',
+      body: {
+        type: 'object',
+        required: ['productIds'],
+        properties: {
+          productIds: { type: 'array', items: { type: 'string' } },
+        },
+      },
+      response: {
+        200: { type: 'object', additionalProperties: true },
+        500: { type: 'object', additionalProperties: true },
+      },
+    },
+  }, async (request: any, reply: any) => {
+    try {
+      const userId = request.user?.id;
+      if (!userId) return reply.code(401).send(createErrorResponse('Unauthorized'));
+
+      const { productIds } = request.body;
+      if (!Array.isArray(productIds) || productIds.length === 0) {
+        return reply.send(createResponse(null, 'No items to merge'));
+      }
+
+      const wishlist = await getOrCreateWishlist(userId);
+
+      // Add all items that are not already in wishlist
+      const existingItems = await fastify.prisma.wishlistItem.findMany({
+        where: { wishlistId: wishlist.id, productId: { in: productIds } },
+        select: { productId: true }
+      });
+
+      const existingIds = existingItems.map((i: any) => i.productId);
+      const newIds = productIds.filter(id => !existingIds.includes(id));
+
+      if (newIds.length > 0) {
+        await fastify.prisma.wishlistItem.createMany({
+          data: newIds.map(productId => ({
+            wishlistId: wishlist.id,
+            productId
+          })),
+          skipDuplicates: true
+        });
+      }
+
+      return reply.send(createResponse({ mergedCount: newIds.length }, 'Wishlist merged successfully'));
+    } catch (error: any) {
+      return reply.code(500).send(createErrorResponse(error.message));
+    }
+  });
 }

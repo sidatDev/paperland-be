@@ -245,9 +245,13 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         // Approve: Set active, update status
         const companyDetails = user.b2bCompanyDetails;
         
-        // Find or create company
+        // Find or create company - Match by name and taxId if available to avoid duplicates but distinguish separate entities
         let company = await (fastify.prisma as any).company.findFirst({
-            where: { name: companyDetails.companyName, deletedAt: null }
+            where: { 
+                name: companyDetails.companyName, 
+                taxId: companyDetails.taxId,
+                deletedAt: null 
+            }
         });
 
         if (!company) {
