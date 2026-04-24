@@ -129,7 +129,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ message: 'Invalid credentials' });
       }
 
-      const token = fastify.jwt.sign({ id: user.id, role: user.role.name, email: user.email });
+      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
+      const token = fastify.jwt.sign({ id: user.id, role: user.role.name, email: user.email, permissions });
 
       // Merge Guest Cart if token provided
       if (guestToken) {
@@ -153,7 +154,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         })
       ]);
 
-      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
+
 
       return {
         token,
@@ -335,7 +336,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
         return reply.status(401).send({ message: 'Invalid credentials' });
       }
 
-      const token = fastify.jwt.sign({ id: user.id, role: user.role.name, email: user.email });
+      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
+      const token = fastify.jwt.sign({ id: user.id, role: user.role.name, email: user.email, permissions });
 
       // Merge Guest Cart if token provided (Fix for Universal Login)
       const { guestToken } = request.body as any;
@@ -360,7 +362,7 @@ export default async function authRoutes(fastify: FastifyInstance) {
         })
       ]);
 
-      const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
+
 
       return {
         token,

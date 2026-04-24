@@ -462,10 +462,12 @@ fastify.post('/auth/verify-otp', {
         });
 
         // Generate JWT token
+        const permissions = (user.role as any).permissions?.map((rp: any) => rp.permission?.key).filter(Boolean) || [];
         token = fastify.jwt.sign({ 
           id: user.id, 
           role: (user as any).role.name, 
-          email: user.email 
+          email: user.email,
+          permissions
         });
         
         // Merge Guest Cart if token provided

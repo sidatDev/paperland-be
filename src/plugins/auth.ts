@@ -40,18 +40,57 @@ export default fp(async (fastify: FastifyInstance) => {
         await request.jwtVerify();
         const user = request.user as any;
         
-        // SUPER_ADMIN bypass
+        // 1. SUPER_ADMIN bypass
         if (user && user.role?.toUpperCase() === 'SUPER_ADMIN') {
           return;
         }
 
-        if (!user || !user.permissions || !user.permissions.includes(permissionKey)) {
-          return reply.status(403).send({
-            status: 'error',
-            message: `Forbidden: Missing required permission [${permissionKey}]`,
-            code: 'PERMISSION_DENIED'
-          });
+        if (!user) {
+          return reply.status(401).send({ message: 'Unauthorized' });
         }
+
+        // Use lowercase for robust comparison
+        const permissions = (user.permissions ?? []).map((p: string) => p.toLowerCase());
+        const searchKey = permissionKey.toLowerCase();
+
+        // 2. Direct match
+        if (permissions.includes(searchKey)) {
+          return;
+        }
+
+        // 3. Fallback for manage permissions
+        if (searchKey.endsWith('_manage')) {
+          const module = searchKey.replace('_manage', '');
+          const hasMod = permissions.some((p: string) => 
+            p === `${module}_create` || 
+            p === `${module}_edit` || 
+            p === `${module}_delete` || 
+            p === `${module}_update` ||
+            p === `${module}_manage`
+          );
+          if (hasMod) return;
+        }
+
+        // 4. Fallback for view permissions
+        if (searchKey.endsWith('_view')) {
+          const module = searchKey.replace('_view', '');
+          const hasView = permissions.some((p: string) => 
+            p === `${module}_create` || 
+            p === `${module}_edit` || 
+            p === `${module}_delete` || 
+            p === `${module}_update` ||
+            p === `${module}_manage` ||
+            p === `${module}_view`
+          );
+          if (hasView) return;
+        }
+
+        // If we get here, no permission matches
+        return reply.status(403).send({
+          status: 'error',
+          message: `Forbidden: Missing required permission [${permissionKey}]`,
+          code: 'PERMISSION_DENIED'
+        });
       } catch (err) {
         return reply.status(401).send({ message: 'Unauthorized' });
       }
