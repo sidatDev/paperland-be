@@ -10,6 +10,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         schema: {
             description: 'Check Redis connection status',
             tags: ['Public Shop'],
+            security: [],
             response: {
                 200: {
                     type: 'object',
@@ -34,7 +35,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
     }, async (request, reply) => {
         try {
             if (!fastify.redis) {
-                return reply.status(503).send(createErrorResponse('Redis plugin not initialized'));
+                return createResponse({ status: 'disabled' }, 'Redis caching is disabled via REDIS_ENABLED=false');
             }
             const ping = await fastify.redis.ping();
             const info = await fastify.redis.info('server');
@@ -56,12 +57,31 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         schema: {
             description: 'Get shipping estimate for a product/city',
             tags: ['Public Shop'],
+            security: [],
             querystring: {
                 type: 'object',
                 properties: {
                     city: { type: 'string' },
                     amount: { type: 'number' },
                     productId: { type: 'string' }
+                }
+            },
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        success: { type: 'boolean' },
+                        data: {
+                            type: 'object',
+                            properties: {
+                                estimatedDays: { type: 'string' },
+                                baseCost: { type: 'number' },
+                                shipsFrom: { type: 'string' },
+                                logisticsType: { type: 'string' },
+                                courier: { type: 'string' }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -166,173 +186,179 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             }
         }
     }, async (request: any, reply: any) => {
-        const userId = (request.user as any)?.id;
-        try {
-            // Let's fetch the CMS data for the home page if it exists
-            const cmsPage = await (fastify.prisma as any).cMSPage.findUnique({
-                where: { slug: 'home' }
-            });
+        const userId = (request.user as any)?.id || 'guest';
+        const cacheKey = `shop:home:${userId}`;
+        const TTL = 900; // 15 minutes (Industry Standard)
 
-            const sections = await (async () => {
-                let s = await (fastify.prisma as any).homepageSection.findMany({
-                    where: { isActive: true },
-                        include: {
-                            items: {
-                                where: { isActive: true },
-                                include: {
-                                    product: {
-                                        where: { 
-                                            isActive: true, 
-                                            isVisibleOnEcommerce: true, 
-                                            deletedAt: null,
-                                            parentId: null // Ensure only parent products are featured
-                                        },
-                                        include: { 
-                                            prices: { include: { currency: true } },
-                                            stocks: true,
-                                            variants: {
-                                                where: { deletedAt: null },
-                                                include: { stocks: true }
-                                            },
-                                            reviews: {
-                                                where: { status: 'APPROVED' },
-                                                select: { rating: true }
-                                            }
-                                        }
-                                    }
-                                },
-                                orderBy: { sortOrder: 'asc' }
-                            }
-                        },
-                    orderBy: { sortOrder: 'asc' }
+        try {
+            const result = await fastify.cache.wrap(cacheKey, async () => {
+                // Let's fetch the CMS data for the home page if it exists
+                const cmsPage = await (fastify.prisma as any).cMSPage.findUnique({
+                    where: { slug: 'home' }
                 });
 
-                // Check which types are missing
-                const hasCategories = s.some((sec: any) => sec.type === 'categories');
-                const hasFeatured = s.some((sec: any) => sec.type === 'featured_products');
-                const hasPremium = s.some((sec: any) => sec.type === 'special_offers');
-                const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
-
-                if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
-                    const [popularProducts, latestProducts, premiumProducts] = await Promise.all([
-                        (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
-                            take: 10,
-                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
-                        }),
-                        (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
-                            take: 10,
-                            orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
-                        }),
-                        (fastify.prisma as any).product.findMany({
-                            where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
-                            take: 10,
-                            orderBy: { updatedAt: 'desc' },
-                            include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
-                        })
-                    ]);
-
-                    if (!hasCategories) {
-                        const productsForCategories = await (fastify.prisma as any).product.findMany({
-                            where: { 
-                                name: { in: ['Dollar Premium A4 Paper 80gsm', 'Pelikan Fountain Pen', 'Deli Stapler', 'Faber-Castell Pencils'] }, 
-                                isActive: true, 
-                                deletedAt: null,
-                                parentId: null // Suppression
+                const sections = await (async () => {
+                    let s = await (fastify.prisma as any).homepageSection.findMany({
+                        where: { isActive: true },
+                            include: {
+                                items: {
+                                    where: { isActive: true },
+                                    include: {
+                                        product: {
+                                            where: { 
+                                                isActive: true, 
+                                                isVisibleOnEcommerce: true, 
+                                                deletedAt: null,
+                                                parentId: null // Ensure only parent products are featured
+                                            },
+                                            include: { 
+                                                prices: { include: { currency: true } },
+                                                stocks: true,
+                                                variants: {
+                                                    where: { deletedAt: null },
+                                                    include: { stocks: true }
+                                                },
+                                                reviews: {
+                                                    where: { status: 'APPROVED' },
+                                                    select: { rating: true }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    orderBy: { sortOrder: 'asc' }
+                                }
                             },
-                            include: { category: true },
-                            take: 4
-                        });
-                        if (productsForCategories.length > 0) {
-                            s.push({
-                                id: 'categories-auto', type: 'categories', sortOrder: 0,
-                                displayTitle: 'Shop Stationeries by Category',
-                                subtitle: 'Browse our premium stationeries and office supplies for the perfect solution.',
-                                items: productsForCategories.map((p: any) => ({ id: p.id, customTitle: p.name, customLink: `/en/products/${p.slug || p.id}`, product: p }))
+                        orderBy: { sortOrder: 'asc' }
+                    });
+
+                    // Check which types are missing
+                    const hasCategories = s.some((sec: any) => sec.type === 'categories');
+                    const hasFeatured = s.some((sec: any) => sec.type === 'featured_products');
+                    const hasPremium = s.some((sec: any) => sec.type === 'special_offers');
+                    const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
+
+                    if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
+                        const [popularProducts, latestProducts, premiumProducts] = await Promise.all([
+                            (fastify.prisma as any).product.findMany({
+                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                                take: 10,
+                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            }),
+                            (fastify.prisma as any).product.findMany({
+                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                                take: 10,
+                                orderBy: { createdAt: 'desc' }, // Latest Arrivals
+                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            }),
+                            (fastify.prisma as any).product.findMany({
+                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                                take: 10,
+                                orderBy: { updatedAt: 'desc' },
+                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            })
+                        ]);
+
+                        if (!hasCategories) {
+                            const productsForCategories = await (fastify.prisma as any).product.findMany({
+                                where: { 
+                                    name: { in: ['Dollar Premium A4 Paper 80gsm', 'Pelikan Fountain Pen', 'Deli Stapler', 'Faber-Castell Pencils'] }, 
+                                    isActive: true, 
+                                    deletedAt: null,
+                                    parentId: null // Suppression
+                                },
+                                include: { category: true },
+                                take: 4
                             });
+                            if (productsForCategories.length > 0) {
+                                s.push({
+                                    id: 'categories-auto', type: 'categories', sortOrder: 0,
+                                    displayTitle: 'Shop Stationeries by Category',
+                                    subtitle: 'Browse our premium stationeries and office supplies for the perfect solution.',
+                                    items: productsForCategories.map((p: any) => ({ id: p.id, customTitle: p.name, customLink: `/en/products/${p.slug || p.id}`, product: p }))
+                                });
+                            }
                         }
+                        if (!hasFeatured && latestProducts.length > 0) {
+                            s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: latestProducts.map((p: any) => ({ id: p.id, product: p })) });
+                        }
+                        if (!hasPremium && premiumProducts.length > 0) {
+                            s.push({ id: 'premium-auto', type: 'special_offers', sortOrder: 1, displayTitle: 'Our Premium Collection', subtitle: 'Our COLLECTIONS', items: premiumProducts.map((p: any) => ({ id: p.id, product: p })) });
+                        }
+                        if (!hasBestSellers && popularProducts.length > 0) {
+                            s.push({ id: 'bestsellers-auto', type: 'bestsellers', sortOrder: 3, displayTitle: 'Our Best Sellers', subtitle: 'OUR COLLECTIONS', items: popularProducts.map((p: any) => ({ id: p.id, product: p })) });
+                        }
+                        s.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
                     }
-                    if (!hasFeatured && latestProducts.length > 0) {
-                        s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: latestProducts.map((p: any) => ({ id: p.id, product: p })) });
-                    }
-                    if (!hasPremium && premiumProducts.length > 0) {
-                        s.push({ id: 'premium-auto', type: 'special_offers', sortOrder: 1, displayTitle: 'Our Premium Collection', subtitle: 'Our COLLECTIONS', items: premiumProducts.map((p: any) => ({ id: p.id, product: p })) });
-                    }
-                    if (!hasBestSellers && popularProducts.length > 0) {
-                        s.push({ id: 'bestsellers-auto', type: 'bestsellers', sortOrder: 3, displayTitle: 'Our Best Sellers', subtitle: 'OUR COLLECTIONS', items: popularProducts.map((p: any) => ({ id: p.id, product: p })) });
-                    }
-                    s.sort((a: any, b: any) => a.sortOrder - b.sortOrder);
-                }
-                return s;
-            })();
+                    return s;
+                })();
 
-            const pricedSections = await Promise.all(sections.map(async (s: any) => {
-                const itemsWithProducts = (s.items || []).filter((i: any) => i.product);
-                if (itemsWithProducts.length === 0 || !userId) {
-                    return {
-                        id: s.id, type: s.type, sort_order: s.sortOrder, title: s.displayTitle, subtitle: s.subtitle, cta_label: s.ctaLabel, cta_link: s.ctaLink, styles: s.styles,
-                        items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => ({
-                            id: i.product?.id || i.id, name: i.customTitle || i.product?.name || 'Unnamed', image: i.customImage || i.product?.imageUrl || '',
-                            price: (() => {
-                                const pkr = i.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                                return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
-                            })(),
-                            currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
-                            ... (i.product ? calculateAvailability(i.product) : {}),
-                            rating: i.product?.reviews?.length > 0 
-                                ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
-                                : 0,
-                            reviewsCount: i.product?.reviews?.length || 0
-                        }))
-                    };
-                }
-
-                const priced = await PricingEngine.calculateBulkPrices(
-                    fastify.prisma as any,
-                    itemsWithProducts.map((i: any) => {
-                        const pkr = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                const pricedSections = await Promise.all(sections.map(async (s: any) => {
+                    const itemsWithProducts = (s.items || []).filter((i: any) => i.product);
+                    if (itemsWithProducts.length === 0 || (!userId || userId === 'guest')) {
                         return {
-                            productId: i.product.id,
-                            basePrice: pkr ? Number(pkr.priceRetail) : Number(i.product.prices?.[0]?.priceRetail || i.product.price || 0),
-                            sku: i.product.sku
-                        };
-                    }),
-                    userId
-                );
-
-                let pricedIdx = 0;
-                return {
-                    id: s.id, type: s.type, sort_order: s.sortOrder, title: s.displayTitle, subtitle: s.subtitle, cta_label: s.ctaLabel, cta_link: s.ctaLink, styles: s.styles,
-                    items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => {
-                        if (i.product) {
-                            const p = priced[pricedIdx++];
-                            return {
-                                id: i.product.id, name: i.product.name, image: i.product.imageUrl || '',
-                                price: p.finalPrice,
-                                originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
-                                currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
-                                ...calculateAvailability(i.product),
-                                rating: i.product.reviews?.length > 0 
+                            id: s.id, type: s.type, sort_order: s.sortOrder, title: s.displayTitle, subtitle: s.subtitle, cta_label: s.ctaLabel, cta_link: s.ctaLink, styles: s.styles,
+                            items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => ({
+                                id: i.product?.id || i.id, name: i.customTitle || i.product?.name || 'Unnamed', image: i.customImage || i.product?.imageUrl || '',
+                                price: (() => {
+                                    const pkr = i.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                                    return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
+                                })(),
+                                currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
+                                ... (i.product ? calculateAvailability(i.product) : {}),
+                                rating: i.product?.reviews?.length > 0 
                                     ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
                                     : 0,
-                                reviewsCount: i.product.reviews?.length || 0
-                            };
-                        }
-                        return {
-                            id: i.id, name: i.customTitle || 'Unnamed', image: i.customImage || '',
-                            price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
+                                reviewsCount: i.product?.reviews?.length || 0
+                            }))
                         };
-                    })
+                    }
+
+                    const priced = await PricingEngine.calculateBulkPrices(
+                        fastify.prisma as any,
+                        itemsWithProducts.map((i: any) => {
+                            const pkr = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                            return {
+                                productId: i.product.id,
+                                basePrice: pkr ? Number(pkr.priceRetail) : Number(i.product.prices?.[0]?.priceRetail || i.product.price || 0),
+                                sku: i.product.sku
+                            };
+                        }),
+                        userId
+                    );
+
+                    let pricedIdx = 0;
+                    return {
+                        id: s.id, type: s.type, sort_order: s.sortOrder, title: s.displayTitle, subtitle: s.subtitle, cta_label: s.ctaLabel, cta_link: s.ctaLink, styles: s.styles,
+                        items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => {
+                            if (i.product) {
+                                const p = priced[pricedIdx++];
+                                return {
+                                    id: i.product.id, name: i.product.name, image: i.product.imageUrl || '',
+                                    price: p.finalPrice,
+                                    originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
+                                    currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
+                                    ...calculateAvailability(i.product),
+                                    rating: i.product.reviews?.length > 0 
+                                        ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
+                                        : 0,
+                                    reviewsCount: i.product.reviews?.length || 0
+                                };
+                            }
+                            return {
+                                id: i.id, name: i.customTitle || 'Unnamed', image: i.customImage || '',
+                                price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
+                            };
+                        })
+                    };
+                }));
+
+                return { 
+                    homepage_sections: pricedSections,
+                    cms_data: cmsPage ? (cmsPage.contentJson || JSON.parse(cmsPage.content || '{}')) : null
                 };
-            }));
+            }, TTL);
 
-            const result = { 
-                homepage_sections: pricedSections,
-                cms_data: cmsPage ? (cmsPage.contentJson || JSON.parse(cmsPage.content || '{}')) : null
-            };
-
+            reply.header('X-Cache-TTL', TTL);
             return reply.send(createResponse(result));
         } catch (err) {
             fastify.log.error(err);
@@ -345,6 +371,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         schema: {
             description: 'Get all categories in hierarchical order',
             tags: ['Public Shop'],
+            security: [],
             response: {
                 200: {
                     type: 'object',
@@ -353,7 +380,21 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         data: {
                             type: 'object',
                             properties: {
-                                categories: { type: 'array', items: { type: 'object', additionalProperties: true } }
+                                categories: { 
+                                    type: 'array', 
+                                    items: { 
+                                        type: 'object', 
+                                        properties: {
+                                            id: { type: 'string' },
+                                            name: { type: 'string' },
+                                            slug: { type: 'string' },
+                                            imageUrl: { type: 'string', nullable: true },
+                                            parentId: { type: 'string', nullable: true },
+                                            productsCount: { type: 'integer' },
+                                            subCategories: { type: 'array', items: { type: 'object', additionalProperties: true } }
+                                        }
+                                    } 
+                                }
                             }
                         }
                     }
@@ -369,14 +410,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         },
         handler: async (request, reply) => {
             const cacheKey = 'shop:categories:hierarchy';
-            try {
-                const cached = await fastify.cache.get(cacheKey);
-                if (cached) {
-                    reply.header('X-Cache', 'HIT');
-                    return reply.send(createResponse({ categories: cached }));
-                }
+            const TTL = 600; // 10 minutes
 
-                 const categories = await (fastify.prisma as any).category.findMany({
+            try {
+                const result = await fastify.cache.wrap(cacheKey, async () => {
+                    const categories = await (fastify.prisma as any).category.findMany({
                         where: { isActive: true, deletedAt: null },
                         select: { 
                             id: true, 
@@ -391,25 +429,27 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         orderBy: { position: 'asc' }
                     });
 
-                const hierarchy = ((cats: any[]) => {
-                    const categoryMap = new Map(cats.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
-                    const rootCategories: any[] = [];
-                    
-                    cats.forEach(c => {
-                        const node = categoryMap.get(c.id);
-                        if (c.parentId && categoryMap.has(c.parentId)) {
-                            categoryMap.get(c.parentId).subCategories.push(node);
-                        } else if (!c.parentId) {
-                            rootCategories.push(node);
-                        }
-                    });
+                    const hierarchy = ((cats: any[]) => {
+                        const categoryMap = new Map(cats.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
+                        const rootCategories: any[] = [];
+                        
+                        cats.forEach(c => {
+                            const node = categoryMap.get(c.id);
+                            if (c.parentId && categoryMap.has(c.parentId)) {
+                                categoryMap.get(c.parentId).subCategories.push(node);
+                            } else if (!c.parentId) {
+                                rootCategories.push(node);
+                            }
+                        });
 
-                    return rootCategories;
-                })(categories);
+                        return rootCategories;
+                    })(categories);
 
-                await fastify.cache.set(cacheKey, hierarchy, 3600);
-                reply.header('X-Cache', 'MISS');
-                return reply.send(createResponse({ categories: hierarchy }));
+                    return hierarchy;
+                }, TTL);
+
+                reply.header('X-Cache-TTL', TTL);
+                return reply.send(createResponse({ categories: result }));
             } catch (err) {
                 fastify.log.error(err);
                 return reply.status(500).send(createErrorResponse('Internal Server Error'));
@@ -422,6 +462,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         schema: {
             description: 'Public product search and discovery',
             tags: ['Public Shop'],
+            security: [],
             querystring: {
                 type: 'object',
                 properties: {
@@ -444,387 +485,384 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
     }, async (request: any, reply: any) => {
         const userId = (request.user as any)?.id || 'guest';
+        const { q, page, limit, sort, price_min, price_max, groupNo, category, brand, industry, availability } = request.query;
+        const skip = (page - 1) * limit;
+
         // Create a stable cache key based on sorted query parameters
         const queryKey = Object.keys(request.query).sort().reduce((acc, key) => {
             acc[key] = request.query[key];
             return acc;
         }, {} as any);
         const cacheKey = `shop:products:${userId}:${JSON.stringify(queryKey)}`;
+        
+        // TTL logic: Search (q) gets 2 mins, general listing gets 5 mins
+        const TTL = q ? 120 : 300; 
 
         try {
-            const cached = await fastify.cache.get(cacheKey);
-            if (cached) {
-                reply.header('X-Cache', 'HIT');
-                return reply.send(createResponse(cached));
-            }
-
-            const { q, page, limit, sort, price_min, price_max, groupNo, category, brand, industry, availability } = request.query;
-            const skip = (page - 1) * limit;
-
-            // Fetch user's catalogs for filtering if logged in
-            let catalogIds: string[] = [];
-            if (userId && userId !== 'guest') {
-                const user = await (fastify.prisma as any).user.findUnique({
-                    where: { id: userId },
-                    select: {
-                        company: {
-                            select: {
-                                catalogs: {
-                                    where: {
-                                        catalog: {
-                                            isActive: true,
-                                            deletedAt: null,
-                                            OR: [
-                                                { validFrom: null, validUntil: null },
-                                                {
-                                                    validFrom: { lte: new Date() },
-                                                    validUntil: { gte: new Date() }
-                                                }
-                                            ]
-                                        }
-                                    },
-                                    select: { catalogId: true }
+            const result = await fastify.cache.wrap(cacheKey, async () => {
+                // Fetch user's catalogs for filtering if logged in
+                let catalogIds: string[] = [];
+                if (userId && userId !== 'guest') {
+                    const user = await (fastify.prisma as any).user.findUnique({
+                        where: { id: userId },
+                        select: {
+                            company: {
+                                select: {
+                                    catalogs: {
+                                        where: {
+                                            catalog: {
+                                                isActive: true,
+                                                deletedAt: null,
+                                                OR: [
+                                                    { validFrom: null, validUntil: null },
+                                                    {
+                                                        validFrom: { lte: new Date() },
+                                                        validUntil: { gte: new Date() }
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        select: { catalogId: true }
+                                    }
                                 }
                             }
                         }
+                    });
+                    if (user?.company?.catalogs) {
+                        catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                     }
-                });
-                if (user?.company?.catalogs) {
-                    catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 }
-            }
 
-            const where: any = {
-                AND: [
-                    { isActive: true },
-                    { isVisibleOnEcommerce: true },
-                    { deletedAt: null },
-                    { parentId: null },
-                    { category: { isActive: true, deletedAt: null } },
-                    { brand: { isActive: true, deletedAt: null } },
-                    {
-                        OR: [
-                            { industries: { none: {} } },
-                            { industries: { some: { industry: { isActive: true, deletedAt: null } } } }
-                        ]
-                    }
-                ]
-            };
-
-            // Catalog Visibility Filter for B2B Users
-            if (catalogIds.length > 0) {
-                where.AND.push({
-                    catalogProducts: {
-                        some: {
-                            catalogId: { in: catalogIds }
+                const where: any = {
+                    AND: [
+                        { isActive: true },
+                        { isVisibleOnEcommerce: true },
+                        { deletedAt: null },
+                        { parentId: null },
+                        { category: { isActive: true, deletedAt: null } },
+                        { brand: { isActive: true, deletedAt: null } },
+                        {
+                            OR: [
+                                { industries: { none: {} } },
+                                { industries: { some: { industry: { isActive: true, deletedAt: null } } } }
+                            ]
                         }
-                    }
-                });
-            }
-
-            // Availability (Status) Filter
-            if (availability === 'in_stock') {
-                where.AND.push({
-                    OR: [
-                        { specifications: { path: ['status'], equals: 'Active' } },
-                        { specifications: { path: ['status'], equals: null } },
-                        { specifications: { equals: null } }
                     ]
-                });
-            } else if (availability === 'out_of_stock') {
-                where.AND.push({
-                    specifications: { path: ['status'], equals: 'Out of Stock' }
-                });
-            }
+                };
 
-            if (q) {
-                // Check if q matches a category name exactly
-                const matchingCategory = await (fastify.prisma as any).category.findFirst({
-                    where: { name: { equals: q, mode: 'insensitive' }, isActive: true, deletedAt: null },
-                    select: { id: true, slug: true }
-                });
+                // Catalog Visibility Filter for B2B Users
+                if (catalogIds.length > 0) {
+                    where.AND.push({
+                        catalogProducts: {
+                            some: {
+                                catalogId: { in: catalogIds }
+                            }
+                        }
+                    });
+                }
 
-                if (matchingCategory) {
-                    // Recursive subcategories for matching category
-                    let categoryIds = [matchingCategory.id];
-                    let currentParentIds = [matchingCategory.id];
+                // Availability (Status) Filter
+                if (availability === 'in_stock') {
+                    where.AND.push({
+                        OR: [
+                            { specifications: { path: ['status'], equals: 'Active' } },
+                            { specifications: { path: ['status'], equals: null } },
+                            { specifications: { equals: null } }
+                        ]
+                    });
+                } else if (availability === 'out_of_stock') {
+                    where.AND.push({
+                        specifications: { path: ['status'], equals: 'Out of Stock' }
+                    });
+                }
+
+                if (q) {
+                    // Check if q matches a category name exactly
+                    const matchingCategory = await (fastify.prisma as any).category.findFirst({
+                        where: { name: { equals: q, mode: 'insensitive' }, isActive: true, deletedAt: null },
+                        select: { id: true, slug: true }
+                    });
+
+                    if (matchingCategory) {
+                        // Recursive subcategories for matching category
+                        let categoryIds = [matchingCategory.id];
+                        let currentParentIds = [matchingCategory.id];
+                        for (let i = 0; i < 5 && currentParentIds.length > 0; i++) {
+                            const children = await (fastify.prisma as any).category.findMany({
+                                where: { parentId: { in: currentParentIds }, deletedAt: null },
+                                select: { id: true }
+                            });
+                            currentParentIds = children.map((c: any) => c.id);
+                            categoryIds = [...categoryIds, ...currentParentIds];
+                        }
+
+                        // If it matches a category, restrict results to that category and its descendants
+                        where.AND.push({
+                            categoryId: { in: categoryIds }
+                        });
+                    } else {
+                        // Otherwise do general search including category name
+                        where.AND.push({
+                            OR: [
+                                { name: { contains: q, mode: 'insensitive' } },
+                                { sku: { contains: q, mode: 'insensitive' } },
+                                { specifications: { path: ['partNo'], string_contains: q } },
+                                { category: { name: { contains: q, mode: 'insensitive' } } }
+                            ]
+                        });
+                    }
+                }
+
+                if (groupNo) {
+                    where.groupNumber = groupNo;
+                }
+
+                // Helper to handle single or array input for multi-select, including comma-separated strings
+                const ensureArray = (val: any) => {
+                    if (Array.isArray(val)) return val;
+                    if (typeof val === 'string' && val.includes(',')) return val.split(',');
+                    return [val];
+                };
+
+                if (category) {
+                    const categoryParams = ensureArray(category);
+                    
+                    // Find initial categories to get their IDs
+                    const initialCategories = await (fastify.prisma as any).category.findMany({
+                        where: {
+                            OR: categoryParams.map((c: string) => ({
+                                OR: [
+                                    { id: c },
+                                    { slug: c },
+                                    { name: { equals: c, mode: 'insensitive' } }
+                                ]
+                            }))
+                        },
+                        select: { id: true }
+                    });
+                    
+                    let allCategoryIds = initialCategories.map((c: any) => c.id);
+                    let currentParentIds = [...allCategoryIds];
+                    
+                    // Iterative approach for descendants (up to depth 5)
                     for (let i = 0; i < 5 && currentParentIds.length > 0; i++) {
                         const children = await (fastify.prisma as any).category.findMany({
                             where: { parentId: { in: currentParentIds }, deletedAt: null },
                             select: { id: true }
                         });
                         currentParentIds = children.map((c: any) => c.id);
-                        categoryIds = [...categoryIds, ...currentParentIds];
+                        allCategoryIds = [...allCategoryIds, ...currentParentIds];
                     }
 
-                    // If it matches a category, restrict results to that category and its descendants
                     where.AND.push({
-                        categoryId: { in: categoryIds }
-                    });
-                } else {
-                    // Otherwise do general search including category name
-                    where.AND.push({
-                        OR: [
-                            { name: { contains: q, mode: 'insensitive' } },
-                            { sku: { contains: q, mode: 'insensitive' } },
-                            { specifications: { path: ['partNo'], string_contains: q } },
-                            { category: { name: { contains: q, mode: 'insensitive' } } }
-                        ]
+                        categoryId: { in: allCategoryIds }
                     });
                 }
-            }
 
-            if (groupNo) {
-                where.groupNumber = groupNo;
-            }
-
-            // Helper to handle single or array input for multi-select, including comma-separated strings
-            const ensureArray = (val: any) => {
-                if (Array.isArray(val)) return val;
-                if (typeof val === 'string' && val.includes(',')) return val.split(',');
-                return [val];
-            };
-
-            if (category) {
-                const categoryParams = ensureArray(category);
-                
-                // Find initial categories to get their IDs
-                const initialCategories = await (fastify.prisma as any).category.findMany({
-                    where: {
-                        OR: categoryParams.map((c: string) => ({
-                            OR: [
-                                { id: c },
-                                { slug: c },
-                                { name: { equals: c, mode: 'insensitive' } }
-                            ]
-                        }))
-                    },
-                    select: { id: true }
-                });
-                
-                let allCategoryIds = initialCategories.map((c: any) => c.id);
-                let currentParentIds = [...allCategoryIds];
-                
-                // Iterative approach for descendants (up to depth 5)
-                for (let i = 0; i < 5 && currentParentIds.length > 0; i++) {
-                    const children = await (fastify.prisma as any).category.findMany({
-                        where: { parentId: { in: currentParentIds }, deletedAt: null },
-                        select: { id: true }
+                if (brand) {
+                    const brands = ensureArray(brand);
+                    where.AND.push({
+                        brand: {
+                            OR: brands.map((b: string) => ({
+                                OR: [
+                                    { id: b },
+                                    { slug: b },
+                                    { name: { equals: b, mode: 'insensitive' } }
+                                ]
+                            }))
+                        }
                     });
-                    currentParentIds = children.map((c: any) => c.id);
-                    allCategoryIds = [...allCategoryIds, ...currentParentIds];
                 }
 
-                where.AND.push({
-                    categoryId: { in: allCategoryIds }
-                });
-            }
+                if (industry) {
+                    const industries = ensureArray(industry);
+                    where.AND.push({
+                        industries: {
+                            some: {
+                                industry: {
+                                    OR: industries.map((ind: string) => ({
+                                        OR: [
+                                            { id: ind },
+                                            { slug: ind },
+                                            { name: { equals: ind, mode: 'insensitive' } }
+                                        ]
+                                    }))
+                                }
+                            }
+                        }
+                    });
+                }
 
-            if (brand) {
-                const brands = ensureArray(brand);
-                where.AND.push({
-                    brand: {
-                        OR: brands.map((b: string) => ({
-                            OR: [
-                                { id: b },
-                                { slug: b },
-                                { name: { equals: b, mode: 'insensitive' } }
-                            ]
-                        }))
-                    }
-                });
-            }
-
-            if (industry) {
-                const industries = ensureArray(industry);
-                where.AND.push({
-                    industries: {
+                if (price_min || price_max) {
+                    where.prices = {
                         some: {
-                            industry: {
-                                OR: industries.map((ind: string) => ({
-                                    OR: [
-                                        { id: ind },
-                                        { slug: ind },
-                                        { name: { equals: ind, mode: 'insensitive' } }
-                                    ]
-                                }))
+                            priceRetail: {
+                                gte: price_min ? parseFloat(price_min) : undefined,
+                                lte: price_max ? parseFloat(price_max) : undefined
                             }
                         }
-                    }
-                });
-            }
+                    };
+                }
 
-            if (price_min || price_max) {
-                 where.prices = {
-                    some: {
-                        priceRetail: {
-                            gte: price_min ? parseFloat(price_min) : undefined,
-                            lte: price_max ? parseFloat(price_max) : undefined
-                        }
-                    }
-                 };
-            }
+                // Build sort logic
+                let orderBy: any;
+                switch (sort) {
+                    case 'price_asc':
+                        orderBy = [{ price: 'asc' }, { name: 'asc' }];
+                        break;
+                    case 'price_desc':
+                        orderBy = [{ price: 'desc' }, { name: 'asc' }];
+                        break;
+                    case 'alphabetical':
+                        orderBy = { name: 'asc' };
+                        break;
+                    case 'featured':
+                        orderBy = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
+                        break;
+                    case 'best_seller':
+                        orderBy = [{ orderItems: { _count: 'desc' } }, { name: 'asc' }];
+                        break;
+                    case 'newest':
+                    default:
+                        orderBy = { createdAt: 'desc' };
+                        break;
+                }
 
-            // Build sort logic
-            let orderBy: any;
-            switch (sort) {
-                case 'price_asc':
-                    orderBy = [{ price: 'asc' }, { name: 'asc' }];
-                    break;
-                case 'price_desc':
-                    orderBy = [{ price: 'desc' }, { name: 'asc' }];
-                    break;
-                case 'alphabetical':
-                    orderBy = { name: 'asc' };
-                    break;
-                case 'featured':
-                    orderBy = [{ isFeatured: 'desc' }, { createdAt: 'desc' }];
-                    break;
-                case 'best_seller':
-                    orderBy = [{ orderItems: { _count: 'desc' } }, { name: 'asc' }];
-                    break;
-                case 'newest':
-                default:
-                    orderBy = { createdAt: 'desc' };
-                    break;
-            }
-
-            const [products, total, totalCategories, totalBrands, totalIndustries] = await Promise.all([
-                (fastify.prisma as any).product.findMany({
-                    where,
-                    include: {
-                        category: true,
-                        brand: true,
-                        stocks: true, 
-                        prices: { include: { currency: true } },
-                        industries: { include: { industry: true } },
-                        variants: {
-                            where: { deletedAt: null },
-                            include: { stocks: true }
+                const [products, total, totalCategories, totalBrands, totalIndustries] = await Promise.all([
+                    (fastify.prisma as any).product.findMany({
+                        where,
+                        include: {
+                            category: true,
+                            brand: true,
+                            stocks: true, 
+                            prices: { include: { currency: true } },
+                            industries: { include: { industry: true } },
+                            variants: {
+                                where: { deletedAt: null },
+                                include: { stocks: true }
+                            },
+                            reviews: {
+                                where: { status: 'APPROVED' },
+                                select: { rating: true }
+                            }
                         },
-                        reviews: {
-                            where: { status: 'APPROVED' },
-                            select: { rating: true }
-                        }
-                    },
-                    skip,
-                    take: limit,
-                    orderBy
-                }).then(async (prods: any[]) => {
-                    const userId = (request.user as any)?.id;
-                    if (!userId) return prods.map((p: any) => {
-                        const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                        const basePrice = pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0);
-                        return { 
-                            ...p, 
-                            price: basePrice,
-                            ...calculateAvailability(p)
-                        };
-                    });
-
-                    const priced = await PricingEngine.calculateBulkPrices(
-                        fastify.prisma as any,
-                        prods.map((p: any) => {
+                        skip,
+                        take: limit,
+                        orderBy
+                    }).then(async (prods: any[]) => {
+                        if (!userId || userId === 'guest') return prods.map((p: any) => {
                             const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                            return {
-                                productId: p.id,
-                                basePrice: pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0),
-                                sku: p.sku
+                            const basePrice = pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0);
+                            return { 
+                                ...p, 
+                                price: basePrice,
+                                ...calculateAvailability(p)
                             };
-                        }),
-                        userId
-                    );
-
-                    return prods.map((p: any, idx: number) => ({
-                        ...p,
-                        originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
-                        price: priced[idx].finalPrice,
-                        ...calculateAvailability(p),
-                        rating: p.reviews?.length > 0 
-                            ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
-                            : 0,
-                        reviewsCount: p.reviews?.length || 0
-                    }));
-                }),
-                (fastify.prisma as any).product.count({ where }),
-                (fastify.prisma as any).category.findMany({ 
-                    where: { 
-                        isActive: true, 
-                        deletedAt: null 
-                    }, 
-                    select: { 
-                        id: true, 
-                        name: true, 
-                        slug: true, 
-                        imageUrl: true, 
-                        parentId: true,
-                        _count: {
-                            select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
-                        }
-                    },
-                    orderBy: { name: 'asc' }
-                }),
-                (fastify.prisma as any).brand.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } }),
-                (fastify.prisma as any).industry.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } })
-            ]);
-
-            const result = {
-                metadata: {
-                    total_results: total,
-                    categories: ((categories: any[]) => {
-                        const categoryMap = new Map(categories.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
-                        const rootCategories: any[] = [];
-                        
-                        categories.forEach(c => {
-                            const node = categoryMap.get(c.id);
-                            if (c.parentId && categoryMap.has(c.parentId)) {
-                                categoryMap.get(c.parentId).subCategories.push(node);
-                            } else if (!c.parentId) {
-                                rootCategories.push(node);
-                            }
                         });
 
-                        const pruneEmpty = (nodes: any[]) => {
-                            return nodes.filter(node => {
-                                node.subCategories = pruneEmpty(node.subCategories);
-                                return node.productsCount > 0 || node.subCategories.length > 0;
+                        const priced = await PricingEngine.calculateBulkPrices(
+                            fastify.prisma as any,
+                            prods.map((p: any) => {
+                                const pkr = p.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                                return {
+                                    productId: p.id,
+                                    basePrice: pkr ? Number(pkr.priceRetail) : Number(p.prices?.[0]?.priceRetail || p.price || 0),
+                                    sku: p.sku
+                                };
+                            }),
+                            userId
+                        );
+
+                        return prods.map((p: any, idx: number) => ({
+                            ...p,
+                            originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
+                            price: priced[idx].finalPrice,
+                            ...calculateAvailability(p),
+                            rating: p.reviews?.length > 0 
+                                ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
+                                : 0,
+                            reviewsCount: p.reviews?.length || 0
+                        }));
+                    }),
+                    (fastify.prisma as any).product.count({ where }),
+                    (fastify.prisma as any).category.findMany({ 
+                        where: { 
+                            isActive: true, 
+                            deletedAt: null 
+                        }, 
+                        select: { 
+                            id: true, 
+                            name: true, 
+                            slug: true, 
+                            imageUrl: true, 
+                            parentId: true,
+                            _count: {
+                                select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
+                            }
+                        },
+                        orderBy: { name: 'asc' }
+                    }),
+                    (fastify.prisma as any).brand.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } }),
+                    (fastify.prisma as any).industry.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } })
+                ]);
+
+                return {
+                    metadata: {
+                        total_results: total,
+                        categories: ((categories: any[]) => {
+                            const categoryMap = new Map(categories.map(c => [c.id, { ...c, productsCount: c._count?.products || 0, subCategories: [] }]));
+                            const rootCategories: any[] = [];
+                            
+                            categories.forEach(c => {
+                                const node = categoryMap.get(c.id);
+                                if (c.parentId && categoryMap.has(c.parentId)) {
+                                    categoryMap.get(c.parentId).subCategories.push(node);
+                                } else if (!c.parentId) {
+                                    rootCategories.push(node);
+                                }
                             });
-                        };
 
-                        return pruneEmpty(rootCategories);
-                    })(totalCategories),
-                    brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
-                    industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
-                },
-                products: products.map((p: any) => ({
-                    id: p.id,
-                    name: p.name,
-                    slug: p.slug,
-                    partNumber: (p.specifications as any)?.partNo || p.sku,
-                    sku: p.sku,
-                    price: p.price,
-                    originalPrice: p.originalPrice,
-                    currency: 'PKR',
-                    image_url: p.imageUrl || (p.images && p.images.length > 0 ? p.images[0] : null),
-                    images: p.images || [],
-                    category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
-                    brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : null,
-                    industries: p.industries?.map((i: any) => ({ id: i.industry.id, name: i.industry.name })) || [],
-                    totalStock: p.totalStock,
-                    isInStock: p.isInStock,
-                    rating: p.rating || 0,
-                    reviewsCount: p.reviewsCount || 0,
-                    tags: [p.category?.name, p.brand?.name, ...(p.industries?.map((i: any) => i.industry.name) || [])].filter(Boolean)
-                })),
-                pagination: {
-                    current_page: page,
-                    next_page: page + 1,
-                    has_more: skip + limit < total
-                }
-            };
+                            const pruneEmpty = (nodes: any[]) => {
+                                return nodes.filter(node => {
+                                    node.subCategories = pruneEmpty(node.subCategories);
+                                    return node.productsCount > 0 || node.subCategories.length > 0;
+                                });
+                            };
 
-            await fastify.cache.set(cacheKey, result, 60); // Cache for 60 seconds
-            reply.header('X-Cache', 'MISS');
+                            return pruneEmpty(rootCategories);
+                        })(totalCategories),
+                        brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
+                        industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
+                    },
+                    products: products.map((p: any) => ({
+                        id: p.id,
+                        name: p.name,
+                        slug: p.slug,
+                        partNumber: (p.specifications as any)?.partNo || p.sku,
+                        sku: p.sku,
+                        price: p.price,
+                        originalPrice: p.originalPrice,
+                        currency: 'PKR',
+                        image_url: p.imageUrl || (p.images && p.images.length > 0 ? p.images[0] : null),
+                        images: p.images || [],
+                        category: p.category ? { id: p.category.id, name: p.category.name, slug: p.category.slug } : null,
+                        brand: p.brand ? { id: p.brand.id, name: p.brand.name, slug: p.brand.slug } : null,
+                        industries: p.industries?.map((i: any) => ({ id: i.industry.id, name: i.industry.name })) || [],
+                        totalStock: p.totalStock,
+                        isInStock: p.isInStock,
+                        rating: p.rating || 0,
+                        reviewsCount: p.reviewsCount || 0,
+                        tags: [p.category?.name, p.brand?.name, ...(p.industries?.map((i: any) => i.industry.name) || [])].filter(Boolean)
+                    })),
+                    pagination: {
+                        current_page: page,
+                        next_page: page + 1,
+                        has_more: skip + limit < total
+                    }
+                };
+            }, TTL);
+
+            reply.header('X-Cache-TTL', TTL);
             return reply.send(createResponse(result));
         } catch (err) {
             fastify.log.error(err);
@@ -1012,6 +1050,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
       schema: {
         description: 'Get public product details by slug',
         tags: ['Public Shop'],
+        security: [],
         params: { type: 'object', properties: { slug: { type: 'string' } } },
         response: {
             200: { type: 'object', additionalProperties: true },
@@ -1242,9 +1281,44 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         schema: {
             description: 'Get public approved reviews for a product',
             tags: ['Public Shop'],
+            security: [],
             params: { type: 'object', properties: { productId: { type: 'string' } } },
             response: {
-                200: { type: 'object', additionalProperties: true },
+                200: {
+                    type: 'object',
+                    properties: {
+                        success: { type: 'boolean' },
+                        data: {
+                            type: 'object',
+                            properties: {
+                                reviews: { 
+                                    type: 'array', 
+                                    items: { 
+                                        type: 'object', 
+                                        properties: {
+                                            id: { type: 'string' },
+                                            rating: { type: 'integer' },
+                                            comment: { type: 'string' },
+                                            customerName: { type: 'string' },
+                                            isVerified: { type: 'boolean' },
+                                            images: { type: 'array', items: { type: 'string' } },
+                                            createdAt: { type: 'string' },
+                                            helpfulCount: { type: 'integer' }
+                                        }
+                                    } 
+                                },
+                                summary: {
+                                    type: 'object',
+                                    properties: {
+                                        averageRating: { type: 'number' },
+                                        totalReviews: { type: 'integer' },
+                                        distribution: { type: 'object', additionalProperties: { type: 'integer' } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
                 500: { type: 'object', additionalProperties: true }
             }
         }

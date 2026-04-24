@@ -85,23 +85,19 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                 const endpoint = (process.env.S3_PUBLIC_URL || process.env.S3_ENDPOINT || "").replace(/\/$/, "");
                 url = `${endpoint}/${S3_BUCKET_NAME}/${key}`;
 
-                // Process and Save WebP Version (if it's an image)
-                if (data.mimetype.startsWith('image/')) {
-                    try {
-                        const webpBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer();
-                        const webpFilename = `${uuid}.webp`;
-                        const webpKey = `${folder}/${webpFilename}`;
-                        
-                        await s3Client.send(new PutObjectCommand({
-                            Bucket: S3_BUCKET_NAME,
-                            Key: webpKey,
-                            Body: webpBuffer,
-                            ContentType: 'image/webp',
-                            ACL: 'public-read'
-                        }));
-                    } catch (sharpErr) {
-                        fastify.log.warn({ err: sharpErr }, `Failed to generate WebP for ${data.filename} on S3`);
-                    }
+                // 2. Offload WebP Version Generation to Worker (if it's an image)
+                if (data.mimetype.startsWith('image/') && (fastify as any).queues?.image) {
+                    await (fastify as any).queues.image.add('optimize-image', {
+                        url,
+                        key,
+                        mimetype: data.mimetype,
+                        folder
+                    }, {
+                        attempts: 2,
+                        backoff: 5000,
+                        removeOnComplete: true
+                    });
+                    fastify.log.info(`📸 Image optimization job queued for ${filename}`);
                 }
             } else {
                 const uploadPath = path.join(process.cwd(), 'public', 'uploads', folder);
@@ -112,16 +108,19 @@ export default async function uploadRoutes(fastify: FastifyInstance) {
                 const filePath = path.join(uploadPath, filename);
                 await fs.writeFile(filePath, buffer);
 
-                // 2. Process and Save WebP Version (if it's an image)
-                if (data.mimetype.startsWith('image/')) {
-                    try {
-                        const webpBuffer = await sharp(buffer).webp({ quality: 80 }).toBuffer();
-                        const webpFilename = `${uuid}.webp`;
-                        const webpPath = path.join(uploadPath, webpFilename);
-                        await fs.writeFile(webpPath, webpBuffer);
-                    } catch (sharpErr) {
-                        fastify.log.warn({ err: sharpErr }, `Failed to generate WebP for ${data.filename}`);
-                    }
+                // 2. Offload WebP Version Generation to Worker (if it's an image)
+                if (data.mimetype.startsWith('image/') && (fastify as any).queues?.image) {
+                    await (fastify as any).queues.image.add('optimize-image', {
+                        url: `${process.env.API_URL || 'http://localhost:3001'}/uploads/${folder}/${filename}`,
+                        key: `${folder}/${filename}`,
+                        mimetype: data.mimetype,
+                        folder
+                    }, {
+                        attempts: 2,
+                        backoff: 5000,
+                        removeOnComplete: true
+                    });
+                    fastify.log.info(`📸 Image optimization job queued for ${filename}`);
                 }
 
                 const apiUrl = process.env.API_URL || `http://127.0.0.1:${process.env.PORT || 3001}`;

@@ -74,6 +74,16 @@ export class CacheService {
     await this.set(key, freshData, ttl);
     return freshData;
   }
+
+  /**
+   * Invalidate all shop-related cache keys
+   */
+  async invalidateShopCache(type: 'products' | 'categories' | 'home' | 'all' = 'all'): Promise<void> {
+    if (type === 'products' || type === 'all') await this.clearPattern('shop:products:*');
+    if (type === 'categories' || type === 'all') await this.clearPattern('shop:categories:*');
+    if (type === 'home' || type === 'all') await this.clearPattern('shop:home:*');
+    this.fastify.log.info(`[Cache] Invalidated shop cache: ${type}`);
+  }
 }
 
 // Fastify plugin to decorate instance with cache service

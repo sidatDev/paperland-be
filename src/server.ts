@@ -60,7 +60,7 @@ const start = async () => {
     // Register Redis & Cache Service (NEW)
     await fastify.register(import('./plugins/redis'));
     await fastify.register(import('./services/cache.service'));
-    await fastify.register(import('./plugins/import-queue'));
+    await fastify.register(import('./plugins/bullmq'));
 
     // Initialize Email Service with Prisma
     const { initializeEmailService } = await import('./services/email.service');

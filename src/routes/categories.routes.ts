@@ -212,6 +212,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           userAgent: request.headers['user-agent']
       });
 
+      // Invalidate Cache
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category create');
+      }
+
       return reply.status(201).send(category);
     } catch (err: any) {
       if (err.code === 'P2002') {
@@ -283,6 +291,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           ip: request.ip,
           userAgent: request.headers['user-agent']
       });
+
+      // Invalidate Cache
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category update');
+      }
 
       return category;
     } catch (err) {
@@ -395,6 +411,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           ip: request.ip,
           userAgent: request.headers['user-agent']
       });
+
+      // Invalidate Cache
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category delete');
+      }
 
       return reply.status(204).send();
     } catch (err) {
@@ -509,6 +533,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           userAgent: request.headers['user-agent']
       });
 
+      // Invalidate Cache
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category permanent delete');
+      }
+
       return { success: true, message: 'Category permanently deleted' };
     } catch (err) {
       fastify.log.error(err);
@@ -575,6 +607,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           userAgent: request.headers['user-agent']
       });
 
+      // Invalidate Cache
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category restore');
+      }
+
       return { success: true, message: 'Category restored successfully' };
     } catch (err) {
       fastify.log.error(err);
@@ -634,8 +674,11 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       );
 
       // Invalidate public cache
-      if ((fastify as any).cache) {
-        await (fastify as any).cache.del('shop:categories:hierarchy');
+      try {
+          await fastify.cache.invalidateShopCache('categories');
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category reorder');
       }
 
       return { success: true, message: 'Category order updated successfully' };

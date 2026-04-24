@@ -131,6 +131,7 @@ export default fp(async (fastify: FastifyInstance) => {
       '/public/newsletter/unsubscribe',
       '/public/upload',
       '/redis-health',
+      '/api/redis-health',
     ];
 
     // Allow Swagger
@@ -149,7 +150,18 @@ export default fp(async (fastify: FastifyInstance) => {
     }
 
     // 2. Discover/Public Discovery (Mostly GETs)
-    const isDiscoveryPath = normalizedPath.startsWith('/shop') || normalizedPath.startsWith('/public') || path.startsWith('/api/shop') || path.startsWith('/api/public');
+    const isDiscoveryPath = 
+      normalizedPath.startsWith('/shop') || 
+      normalizedPath.startsWith('/public') || 
+      path.startsWith('/api/shop') || 
+      path.startsWith('/api/v1/shop') || 
+      path.startsWith('/api/public') || 
+      path.startsWith('/api/v1/public') ||
+      path.startsWith('/api/v1/homepage') ||
+      path.startsWith('/api/v1/system/public-settings') ||
+      path.startsWith('/api/logistics') ||
+      path.startsWith('/api/newsletter');
+
     if (request.method === 'GET' && isDiscoveryPath) {
       try {
         await request.jwtVerify(); 

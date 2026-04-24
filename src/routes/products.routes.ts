@@ -747,17 +747,23 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache for listings and homepage
         try {
-            await fastify.cache.del('shop:home');
-            await fastify.cache.clearPattern('shop:products:*');
+            await fastify.cache.invalidateShopCache('products');
+            await fastify.cache.invalidateShopCache('home');
         } catch (cacheErr) {
             fastify.log.error(cacheErr, 'Failed to invalidate cache on create');
         }
 
-        // Sync to Typesense
+        // Sync to Typesense (Async via Queue)
         try {
-            await fastify.typesense.collections('products').documents().upsert(mapToTypesenseDocument(productCreated));
+            if ((fastify as any).queues?.search) {
+                await (fastify as any).queues.search.add('product-sync', {
+                    type: 'product',
+                    action: 'upsert',
+                    data: mapToTypesenseDocument(productCreated)
+                });
+            }
         } catch (tsErr: any) {
-            fastify.log.error(tsErr, 'Failed to index product in Typesense');
+            fastify.log.error(tsErr, 'Failed to queue product for Typesense');
         }
 
         return createResponse(transformProduct(productCreated), "Product Created");
@@ -1058,8 +1064,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache
         try {
-            await fastify.cache.del('shop:home');
-            await fastify.cache.clearPattern('shop:products:*');
+            await fastify.cache.invalidateShopCache('products');
+            await fastify.cache.invalidateShopCache('home');
             if (updated.slug) await fastify.cache.clearPattern(`product:${updated.slug}:*`);
             // Also invalidate the old slug if it changed
             if (existing.slug && existing.slug !== updated.slug) {
@@ -1069,11 +1075,17 @@ export default async function productRoutes(fastify: FastifyInstance) {
             fastify.log.error(cacheErr, 'Failed to invalidate cache on update');
         }
 
-        // Sync to Typesense
+        // Sync to Typesense (Async via Queue)
         try {
-            await fastify.typesense.collections('products').documents().upsert(mapToTypesenseDocument(updated));
+            if ((fastify as any).queues?.search) {
+                await (fastify as any).queues.search.add('product-sync', {
+                    type: 'product',
+                    action: 'upsert',
+                    data: mapToTypesenseDocument(updated)
+                });
+            }
         } catch (tsErr: any) {
-            fastify.log.error(tsErr, 'Failed to update product in Typesense');
+            fastify.log.error(tsErr, 'Failed to queue product update for Typesense');
         }
 
         return createResponse(transformProduct(updated), "Product Updated");
@@ -1147,14 +1159,12 @@ export default async function productRoutes(fastify: FastifyInstance) {
           }
 
           // Invalidate Cache
-          if (product) {
-              try {
-                  await fastify.cache.del('shop:home');
-                  await fastify.cache.clearPattern('shop:products:*');
-                  if (product.slug) await fastify.cache.del(`product:${product.slug}`);
-              } catch (cacheErr) {
-                  fastify.log.error(cacheErr, 'Failed to invalidate cache on delete');
-              }
+          try {
+              await fastify.cache.invalidateShopCache('products');
+              await fastify.cache.invalidateShopCache('home');
+              if (product.slug) await fastify.cache.clearPattern(`product:${product.slug}:*`);
+          } catch (cacheErr) {
+              fastify.log.error(cacheErr, 'Failed to invalidate cache on delete');
           }
 
           // Audit Log

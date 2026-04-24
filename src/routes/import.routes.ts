@@ -112,7 +112,7 @@ export default async function importRoutes(fastify: FastifyInstance) {
         });
 
         // 3. Add to Queue
-        await fastify.importQueue.add('process-import', {
+        await fastify.queues.import.add('process-import', {
             logId: importLog.id,
             fileKey: key,
             mode,
