@@ -7,7 +7,7 @@ import { Readable } from 'stream';
 
 const prisma = new PrismaClient();
 
-const HEADER_MAP: Record<string, string> = {
+export const HEADER_MAP: Record<string, string> = {
   sku: 'sku', SKU: 'sku', part_no: 'sku', partnumber: 'sku',
   name: 'name', title: 'name', product_name: 'name',
   brand: 'brand', Brand: 'brand',
@@ -80,6 +80,15 @@ export async function processImportJob(job: Job) {
             data: { status: 'PROCESSING' }
         });
 
+        await prisma.auditLog.create({
+            data: {
+                entityType: 'IMPORT',
+                entityId: logId,
+                action: 'IMPORT_STARTED',
+                details: { fileKey, mode, stockMode }
+            }
+        });
+
         // 1. Get file from S3
         const s3Response = await s3Client.send(new GetObjectCommand({
             Bucket: S3_BUCKET_NAME,
@@ -92,6 +101,7 @@ export async function processImportJob(job: Job) {
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.read(body);
         const worksheet = workbook.worksheets[0];
+        const jobMappings = job.data.mappings || null;
 
         const rows: any[] = [];
         let headers: string[] = [];
@@ -105,9 +115,20 @@ export async function processImportJob(job: Job) {
             } else {
                 const rowData: any = {};
                 headers.forEach((header, idx) => {
-                    const sysField = HEADER_MAP[header] || HEADER_MAP[header.toLowerCase().replace(/[\s_-]/g, '')];
+                    // 1. Try user-defined mappings first
+                    let sysField = jobMappings ? jobMappings[header] : null;
+                    
+                    // 2. Fallback to hardcoded HEADER_MAP
+                    if (!sysField) {
+                        sysField = HEADER_MAP[header] || HEADER_MAP[header.toLowerCase().replace(/[\s_-]/g, '')];
+                    }
+
                     if (sysField) {
                         rowData[sysField] = values[idx];
+                    } else if (values[idx] !== undefined && values[idx] !== null && values[idx] !== '') {
+                        // Task 3.2: Dynamic Option Columns Processing (Unmapped columns)
+                        rowData.variantAttributes = rowData.variantAttributes || {};
+                        rowData.variantAttributes[header] = String(values[idx]);
                     }
                 });
                 rowData._rowNumber = rowNumber;
@@ -173,6 +194,7 @@ export async function processImportJob(job: Job) {
                     width: row.width?.toString(),
                     length: row.length?.toString(),
                     volume: row.volume?.toString(),
+                    ...(row.variantAttributes ? { variantAttributes: row.variantAttributes } : {})
                 };
 
                 const existing = await prisma.product.findUnique({ where: { sku: row.sku } });
@@ -184,10 +206,20 @@ export async function processImportJob(job: Job) {
                             data: productData
                         });
                         updated++;
+                        if (isVariant) {
+                            await prisma.auditLog.create({
+                                data: { entityType: 'VARIANT', entityId: existing.id, action: 'VARIANT_UPDATED', details: { sku: row.sku } }
+                            });
+                        }
+                    } else {
+                        // INSERT_ONLY mode — product exists, skip
+                        await prisma.auditLog.create({
+                            data: { entityType: isVariant ? 'VARIANT' : 'PRODUCT', entityId: existing.id, action: 'VARIANT_SKIPPED', details: { sku: row.sku, reason: 'INSERT_ONLY: already exists' } }
+                        });
                     }
                 } else {
                     const slug = row.slug || await generateUniqueSlug(row.name, row.sku);
-                    await prisma.product.create({
+                    const newProd = await prisma.product.create({
                         data: {
                             ...productData,
                             sku: row.sku,
@@ -195,6 +227,32 @@ export async function processImportJob(job: Job) {
                         }
                     });
                     added++;
+                    if (isVariant) {
+                        // Also update parent's variantOptions if new attribute added
+                        if (parentId && row.variantAttributes) {
+                             const parentRec = await prisma.product.findUnique({ where: { id: parentId } });
+                             if (parentRec) {
+                                 let pOpts: any[] = Array.isArray(parentRec.variantOptions) ? parentRec.variantOptions : [];
+                                 let optionsChanged = false;
+                                 Object.entries(row.variantAttributes).forEach(([k, v]) => {
+                                     const opt = pOpts.find((o: any) => o.name === k);
+                                     if (opt) {
+                                         if (!opt.values.includes(v)) { opt.values.push(v); optionsChanged = true; }
+                                     } else {
+                                         pOpts.push({ name: k, values: [v] });
+                                         optionsChanged = true;
+                                     }
+                                 });
+                                 if (optionsChanged) {
+                                     await prisma.product.update({ where: { id: parentId }, data: { variantOptions: pOpts } });
+                                 }
+                             }
+                        }
+
+                        await prisma.auditLog.create({
+                            data: { entityType: 'VARIANT', entityId: newProd.id, action: 'VARIANT_CREATED', details: { sku: row.sku } }
+                        });
+                    }
                 }
 
                 // Handle Stock
@@ -257,11 +315,30 @@ export async function processImportJob(job: Job) {
             }
         });
 
+        await prisma.auditLog.create({
+            data: {
+                entityType: 'IMPORT',
+                entityId: logId,
+                action: 'IMPORT_EXECUTED',
+                details: { added, updated, failed, total: rows.length, duration: Date.now() - startTime }
+            }
+        });
+
     } catch (err: any) {
         await prisma.productImportLog.update({
             where: { id: logId },
             data: { status: 'FAILED', errorsJson: [{ reason: err.message }], duration: Date.now() - startTime, completedAt: new Date() }
         });
+        
+        await prisma.auditLog.create({
+            data: {
+                entityType: 'IMPORT',
+                entityId: logId,
+                action: 'IMPORT_FAILED',
+                details: { error: err.message }
+            }
+        });
+        
         throw err;
     }
 }

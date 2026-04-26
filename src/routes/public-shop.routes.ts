@@ -169,6 +169,28 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         };
     };
 
+    const calculateVariantPriceRange = (p: any) => {
+        const hasVariants = p.variants && p.variants.length > 0;
+        if (!hasVariants) return { hasVariants: false };
+
+        const prices = p.variants
+            .map((v: any) => {
+                const pkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                return pkr ? Number(pkr.priceRetail) : Number(v.prices?.[0]?.priceRetail || v.price || 0);
+            })
+            .filter((pr: number) => pr > 0);
+
+        if (prices.length === 0) {
+            return { hasVariants: true, minVariantPrice: Number(p.price), maxVariantPrice: Number(p.price) };
+        }
+
+        return {
+            hasVariants: true,
+            minVariantPrice: Math.min(...prices),
+            maxVariantPrice: Math.max(...prices)
+        };
+    };
+
     // 1. GET /api/shop/home
     fastify.get('/shop/home', {
         schema: {
@@ -305,6 +327,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 })(),
                                 currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
                                 ... (i.product ? calculateAvailability(i.product) : {}),
+                                ... (i.product ? calculateVariantPriceRange(i.product) : {}),
                                 rating: i.product?.reviews?.length > 0 
                                     ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
                                     : 0,
@@ -338,6 +361,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                     originalPrice: p.basePrice !== p.finalPrice ? p.basePrice : undefined,
                                     currency: 'PKR', slug: i.product.slug, link: `/en/products/${i.product.slug || i.product.id}`, is_featured_large: i.isFeaturedLarge,
                                     ...calculateAvailability(i.product),
+                                    ...calculateVariantPriceRange(i.product),
                                     rating: i.product.reviews?.length > 0 
                                         ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
                                         : 0,
@@ -756,7 +780,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             return { 
                                 ...p, 
                                 price: basePrice,
-                                ...calculateAvailability(p)
+                                ...calculateAvailability(p),
+                                ...calculateVariantPriceRange(p)
                             };
                         });
 
@@ -778,6 +803,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
                             price: priced[idx].finalPrice,
                             ...calculateAvailability(p),
+                            ...calculateVariantPriceRange(p),
                             rating: p.reviews?.length > 0 
                                 ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
                                 : 0,
@@ -852,6 +878,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         isInStock: p.isInStock,
                         rating: p.rating || 0,
                         reviewsCount: p.reviewsCount || 0,
+                        hasVariants: p.hasVariants,
+                        minVariantPrice: p.minVariantPrice,
+                        maxVariantPrice: p.maxVariantPrice,
                         tags: [p.category?.name, p.brand?.name, ...(p.industries?.map((i: any) => i.industry.name) || [])].filter(Boolean)
                     })),
                     pagination: {

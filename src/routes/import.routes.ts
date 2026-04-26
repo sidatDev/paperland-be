@@ -6,6 +6,8 @@ import fs from 'fs/promises';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { s3Client, S3_BUCKET_NAME } from '../plugins/storage';
 import ExcelJS from 'exceljs';
+import { featureFlags } from '../config/feature-flags';
+import { HEADER_MAP } from '../services/import-worker.service';
 
 export default async function importRoutes(fastify: FastifyInstance) {
 
@@ -35,25 +37,68 @@ export default async function importRoutes(fastify: FastifyInstance) {
             rows.push({ rowNumber, values });
         });
 
+        // Task 0.7: Extract Mappings for Accurate Preview
+        const mappingsRaw = data.fields?.mappings?.value || request.body?.mappings;
+        let mappings: any = null;
+        if (mappingsRaw) {
+            try {
+                mappings = typeof mappingsRaw === 'string' ? JSON.parse(mappingsRaw) : mappingsRaw;
+            } catch (_) { /* invalid json */ }
+        }
+
         const totalRows = rows.length;
         const validRows: any[] = [];
         const invalidRows: any[] = [];
         
-        // Basic preview validation logic (Simplified for UI feedback)
+        // Accurate preview validation using mappings
+        const headers = worksheet.getRow(1).values as any[];
+        const headerList = Array.isArray(headers) ? headers.slice(1).map(h => String(h).trim()) : [];
+
         rows.forEach(r => {
-            if (r.values[0] && r.values[1]) { // Assuming SKU and Name are first two
+            const rowData: any = {};
+            headerList.forEach((h, idx) => {
+                let sysField = mappings ? mappings[h] : null;
+                if (!sysField) {
+                    sysField = HEADER_MAP[h] || HEADER_MAP[h.toLowerCase().replace(/[\s_-]/g, '')];
+                }
+                if (sysField) {
+                    rowData[sysField] = r.values[idx];
+                }
+            });
+
+            // SKU and Name are mandatory
+            if (rowData.sku && rowData.name) {
                 validRows.push(r);
             } else {
-                invalidRows.push({ ...r, reason: "Missing required fields" });
+                let reason = "Missing required fields";
+                if (!rowData.sku && !rowData.name) reason = "Missing SKU and Name";
+                else if (!rowData.sku) reason = "Missing SKU";
+                else if (!rowData.name) reason = "Missing Name";
+                
+                invalidRows.push({ ...r, reason });
             }
         });
 
-        return createResponse({
+        const previewResult = {
             total: totalRows,
             valid: validRows.length,
             invalid: invalidRows.length,
             sampleErrors: invalidRows.slice(0, 10)
-        }, "Preview generated");
+        };
+
+        // Task 0.7 Observability: IMPORT_PREVIEW_GENERATED
+        try {
+            await (fastify.prisma as any).auditLog.create({
+                data: {
+                    entityType: 'IMPORT',
+                    entityId: 'preview',
+                    action: 'IMPORT_PREVIEW_GENERATED',
+                    details: { total: totalRows, valid: validRows.length, invalid: invalidRows.length }
+                }
+            });
+        } catch (_) { /* non-critical — don't block response */ }
+
+        return createResponse(previewResult, "Preview generated");
 
     } catch (err: any) {
         fastify.log.error(err);
@@ -81,6 +126,12 @@ export default async function importRoutes(fastify: FastifyInstance) {
         const ext = path.extname(data.filename);
         if (!['.xlsx', '.csv'].includes(ext.toLowerCase())) {
             return reply.status(400).send(createErrorResponse("Only .xlsx and .csv files are supported"));
+        }
+
+        // Feature flag safety check for V2 (variant mapping)
+        const variantOptionColumns = request.body?.variantOptionColumns;
+        if (variantOptionColumns && !featureFlags.IMPORT_V2_ENABLED) {
+             return reply.status(400).send(createErrorResponse("Import V2 is not enabled."));
         }
 
         const buffer = await data.toBuffer();
@@ -111,12 +162,28 @@ export default async function importRoutes(fastify: FastifyInstance) {
             }
         });
 
-        // 3. Add to Queue
+        // 3. Add to Queue (Check if available)
+        if (!fastify.queues?.import) {
+            return reply.status(400).send({
+                success: false,
+                message: 'Background import queue is not enabled. Please enable REDIS_ENABLED in your environment.'
+            });
+        }
+
+        const mappingsRaw = data.fields?.mappings?.value || request.body?.mappings;
+        let mappings: any = null;
+        if (mappingsRaw) {
+            try {
+                mappings = typeof mappingsRaw === 'string' ? JSON.parse(mappingsRaw) : mappingsRaw;
+            } catch (_) { /* invalid json */ }
+        }
+
         await fastify.queues.import.add('process-import', {
             logId: importLog.id,
             fileKey: key,
             mode,
             stockMode,
+            mappings, // Pass mappings to the worker
             userId: (request.user as any)?.id
         }, {
             attempts: 3,

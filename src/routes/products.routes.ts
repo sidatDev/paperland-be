@@ -4,6 +4,8 @@ import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 import { stringify } from 'csv-stringify';
 import ExcelJS from 'exceljs';
+import crypto from 'crypto';
+import { featureFlags } from '../config/feature-flags';
 
 export default async function productRoutes(fastify: FastifyInstance) {
   
@@ -156,6 +158,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
         return results;
       })(),
 
+      imageUrl: p.imageUrl || (p.images && p.images.length > 0 ? p.images[0] : null),
+
       inventory: p.stocks?.filter((s: any) => !s.deletedAt).map((stock: any) => ({
          warehouseId: stock.warehouseId,
          locationId: stock.locationId, // Keep for backward compat
@@ -270,6 +274,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         isActive, status,
         country, locationId, warehouseId,
         includeVariants, stockStatus,
+        groupedView, parentId: parentIdFilter,
         ...dynamicFilters 
     } = request.query;
 
@@ -320,7 +325,14 @@ export default async function productRoutes(fastify: FastifyInstance) {
           maxPrice !== undefined && maxPrice !== "" ? { price: { lte: Number(maxPrice) } } : {},
 
           // Only Base Products (Hide Variants unless explicitly requested)
-          String(includeVariants) === 'true' ? {} : { parentId: null },
+          String(includeVariants) === 'true' || groupedView === 'variants' ? {} : { parentId: null },
+
+          // Parent Filter (Task 2.2)
+          parentIdFilter !== undefined ? (parentIdFilter === 'null' ? { parentId: null } : { parentId: parentIdFilter }) : {},
+
+          // Grouped View (Task 2.2)
+          groupedView === 'parents' ? { parentId: null } : {},
+          groupedView === 'variants' ? { parentId: { not: null } } : {},
 
           isActive !== undefined && isActive !== 'all' ? { isActive: isActive === 'true' || isActive === true } : {},
 
@@ -368,25 +380,37 @@ export default async function productRoutes(fastify: FastifyInstance) {
         where.AND.push({ groupNumber: { contains: dynamicFilters.groupNumber, mode: 'insensitive' } });
       }
 
+      const include: any = { 
+        category: true, 
+        brand: true, 
+        prices: {
+            where: country && country !== 'all' ? { currency: { countries: { some: { code: country } } } } : undefined,
+            include: { currency: true }
+        },
+        stocks: {
+            where: (warehouseId || locationId) && (warehouseId !== 'all' && locationId !== 'all') 
+              ? { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } 
+              : undefined
+        },
+        industries: {
+            include: { industry: true }
+        }
+      };
+
+      if (String(includeVariants) === 'true' || groupedView === 'variants') {
+        include.variants = {
+            where: { deletedAt: null },
+            include: {
+                prices: true,
+                stocks: true
+            }
+        };
+      }
+
       const [products, total] = await Promise.all([
         (fastify.prisma as any).product.findMany({
           where,
-          include: { 
-            category: true, 
-            brand: true, 
-            prices: {
-                where: country && country !== 'all' ? { currency: { countries: { some: { code: country } } } } : undefined,
-                include: { currency: true }
-            },
-            stocks: {
-                where: (warehouseId || locationId) && (warehouseId !== 'all' && locationId !== 'all') 
-                  ? { OR: [ { warehouseId: warehouseId || locationId }, { locationId: warehouseId || locationId } ] } 
-                  : undefined
-            },
-            industries: {
-                include: { industry: true }
-            }
-          },
+          include,
           skip,
           take,
           orderBy: { createdAt: 'desc' }
@@ -631,6 +655,17 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (!resolvedBrandId) return reply.status(400).send(createErrorResponse('Valid Brand ID or Name is required'));
         if (!resolvedSku) return reply.status(400).send(createErrorResponse('SKU is required'));
 
+        let finalCategoryId = resolvedCategoryId;
+        let finalBrandId = resolvedBrandId;
+
+        if (parentId) {
+            const parent = await (fastify.prisma as any).product.findUnique({ where: { id: parentId } });
+            if (parent) {
+                finalCategoryId = parent.categoryId;
+                finalBrandId = parent.brandId;
+            }
+        }
+
         const resolvedIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : true;
         
         const mediaUrls = (media || []).map((m: any) => typeof m === 'string' ? m : m.url);
@@ -652,6 +687,34 @@ export default async function productRoutes(fastify: FastifyInstance) {
         
         const slug = await generateUniqueSlug(name, partNum, skuVal);
 
+        // Prepare variants with unique slugs
+        const variantsWithSlugs = await Promise.all(variants.map(async (v: any) => {
+            const variantHash = v.variantAttributes ? crypto.createHash('md5').update(JSON.stringify(Object.entries(v.variantAttributes).sort())).digest('hex') : null;
+            const vSlug = await generateUniqueSlug(v.name || name, "", v.sku);
+            return {
+                name: v.name,
+                slug: vSlug,
+                sku: v.sku,
+                price: Number(v.price || v.salesPrice || 0),
+                isActive: v.isActive !== undefined ? v.isActive : true,
+                variantAttributes: v.variantAttributes,
+                specifications: variantHash ? { variantHash } : {},
+                category: { connect: { id: finalCategoryId } },
+                brand: { connect: { id: finalBrandId } },
+                imageUrl: v.imageUrl || null,
+                prices: {
+                    create: {
+                        currencyId: currencyRec.id,
+                        priceRetail: Number(v.price || v.salesPrice || 0),
+                        isActive: true
+                    }
+                },
+                stocks: {
+                    create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
+                }
+            };
+        }));
+
         const productCreated = await (fastify.prisma as any).product.create({
             data: {
                 name,
@@ -668,8 +731,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 isVisibleOnEcommerce,
                 imageUrl: resolvedImageUrl,
                 images: mediaUrls,
-                category: { connect: { id: resolvedCategoryId } },
-                brand: { connect: { id: resolvedBrandId } },
+                category: { connect: { id: finalCategoryId } },
+                brand: { connect: { id: finalBrandId } },
                 length: length?.toString(),
                 width: width?.toString(),
                 weight: weight?.toString(),
@@ -700,28 +763,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 parent: parentId ? { connect: { id: parentId } } : undefined,
                 variantOptions,
                 variantAttributes,
-                variants: variants.length > 0 ? {
-                    create: variants.map((v: any) => ({
-                        name: v.name,
-                        slug: v.slug || (slugify(v.name) + "-" + v.sku), // Simplified slug for variants
-                        sku: v.sku,
-                        price: Number(v.price || v.salesPrice || 0),
-                        isActive: v.isActive !== undefined ? v.isActive : true,
-                        variantAttributes: v.variantAttributes,
-                        category: { connect: { id: resolvedCategoryId } },
-                        brand: { connect: { id: resolvedBrandId } },
-                        imageUrl: v.imageUrl || null,
-                        prices: {
-                            create: {
-                                currencyId: currencyRec.id,
-                                priceRetail: Number(v.price || v.salesPrice || 0),
-                                isActive: true
-                            }
-                        },
-                        stocks: {
-                            create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
-                        }
-                    }))
+                variants: variantsWithSlugs.length > 0 ? {
+                    create: variantsWithSlugs
                 } : undefined
             },
             include: { 
@@ -802,6 +845,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
               },
               400: ErrorResponseSchema,
               404: ErrorResponseSchema,
+              409: ErrorResponseSchema,
               500: ErrorResponseSchema
           }
       }
@@ -811,6 +855,14 @@ export default async function productRoutes(fastify: FastifyInstance) {
     try {
         const existing = await (fastify.prisma as any).product.findUnique({where:{id}});
         if(!existing) return reply.status(404).send(createErrorResponse("Not found"));
+
+        if (data.updatedAt) {
+            const clientTime = new Date(data.updatedAt).getTime();
+            const serverTime = new Date(existing.updatedAt).getTime();
+            if (Math.abs(clientTime - serverTime) > 2000) { // 2s tolerance
+                return reply.status(409).send(createErrorResponse("Product was modified by another user. Please refresh."));
+            }
+        }
 
         const { 
             name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
@@ -832,8 +884,17 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         const resolvedIsVisible = isVisibleOnEcommerce !== undefined ? isVisibleOnEcommerce : isEcommerceVisible;
 
-        const resolvedCategoryId = await resolveEntityId('category', bodyCategoryId || bodyCategory) || existing.categoryId;
-        const resolvedBrandId = await resolveEntityId('brand', bodyBrandId || bodyBrand) || existing.brandId;
+        let finalCategoryId = await resolveEntityId('category', bodyCategoryId || bodyCategory) || existing.categoryId;
+        let finalBrandId = await resolveEntityId('brand', bodyBrandId || bodyBrand) || existing.brandId;
+
+        const actualParentId = parentId !== undefined ? parentId : existing.parentId;
+        if (actualParentId) {
+             const parent = await (fastify.prisma as any).product.findUnique({ where: { id: actualParentId } });
+             if (parent) {
+                 finalCategoryId = parent.categoryId;
+                 finalBrandId = parent.brandId;
+             }
+        }
         
         // Variables moved closer to usage
         
@@ -842,7 +903,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         const updateData: any = {};
         
-        if (name !== undefined || bodySku !== undefined) {
+        if ((name !== undefined && name !== existing.name) || (bodySku !== undefined && bodySku !== existing.sku)) {
              const newName = name || existing.name;
              const newSku = bodySku !== undefined ? bodySku : existing.sku;
              updateData.slug = await generateUniqueSlug(newName, "", newSku, id);
@@ -866,8 +927,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (mediaUrls !== undefined) updateData.images = mediaUrls;
         
-        if (resolvedCategoryId) updateData.category = { connect: { id: resolvedCategoryId } };
-        if (resolvedBrandId) updateData.brand = { connect: { id: resolvedBrandId } };
+        if (finalCategoryId) updateData.category = { connect: { id: finalCategoryId } };
+        if (finalBrandId) updateData.brand = { connect: { id: finalBrandId } };
         
         if (length !== undefined) updateData.length = length?.toString();
         if (width !== undefined) updateData.width = width?.toString();
@@ -968,13 +1029,22 @@ export default async function productRoutes(fastify: FastifyInstance) {
                     }
                 }
 
+                const variantHash = v.variantAttributes ? crypto.createHash('md5').update(JSON.stringify(Object.entries(v.variantAttributes).sort())).digest('hex') : null;
+
                 await (fastify.prisma as any).product.update({
                     where: { id: v.id },
                     data: {
                         name: v.name,
                         sku: v.sku,
+                        slug: await generateUniqueSlug(v.name, "", v.sku, v.id),
                         price: Number(v.salesPrice || v.price || 0),
                         variantAttributes: v.variantAttributes,
+                        ...(variantHash ? {
+                            specifications: {
+                                ...(current?.specifications as object || {}),
+                                variantHash
+                            }
+                        } : {}),
                         stocks: {
                             upsert: {
                                 where: { productId_warehouseId: { productId: v.id, warehouseId: defaultWarehouseId || '' } },
@@ -1009,16 +1079,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 // Get default currency for variants
                 const currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
                 
-                updateData.variants = {
-                    create: newVariants.map((v: any) => ({
+                const newVariantsWithSlugs = await Promise.all(newVariants.map(async (v: any) => {
+                    const variantHash = v.variantAttributes ? crypto.createHash('md5').update(JSON.stringify(Object.entries(v.variantAttributes).sort())).digest('hex') : null;
+                    const vSlug = await generateUniqueSlug(v.name || name || existing.name, "", v.sku);
+                    return {
                         name: v.name,
-                        slug: v.slug || (slugify(v.name) + "-" + v.sku),
+                        slug: vSlug,
                         sku: v.sku,
                         price: Number(v.price || v.salesPrice || 0),
                         isActive: v.isActive !== undefined ? v.isActive : true,
                         variantAttributes: v.variantAttributes,
-                        category: { connect: { id: resolvedCategoryId } },
-                        brand: { connect: { id: resolvedBrandId } },
+                        specifications: variantHash ? { variantHash } : {},
+                        category: { connect: { id: finalCategoryId } },
+                        brand: { connect: { id: finalBrandId } },
                         imageUrl: v.imageUrl || null,
                         prices: {
                             create: {
@@ -1030,7 +1103,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         stocks: {
                             create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
                         }
-                    }))
+                    };
+                }));
+
+                updateData.variants = {
+                    create: newVariantsWithSlugs
                 };
             }
         }
@@ -1050,6 +1127,29 @@ export default async function productRoutes(fastify: FastifyInstance) {
                  }
              }
         });
+
+        // Task 4.2: Variant Status Sync (both directions)
+        if (!existing.parentId && resolvedIsActive !== undefined) {
+             if (resolvedIsActive === false) {
+                 // Deactivate all variants when parent is deactivated
+                 await (fastify.prisma as any).product.updateMany({
+                     where: { parentId: id, deletedAt: null },
+                     data: { isActive: false }
+                 });
+             } else if (resolvedIsActive === true && existing.isActive === false) {
+                 // Re-activate all variants when parent is re-activated
+                 await (fastify.prisma as any).product.updateMany({
+                     where: { parentId: id, deletedAt: null },
+                     data: { isActive: true }
+                 });
+             }
+             // Refresh variants
+             const refreshedVariants = await (fastify.prisma as any).product.findMany({
+                 where: { parentId: id, deletedAt: null },
+                 include: { prices: true, stocks: true }
+             });
+             updated.variants = refreshedVariants;
+        }
 
         // Audit Log
         await logActivity(fastify, {
