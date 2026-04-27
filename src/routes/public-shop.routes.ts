@@ -450,7 +450,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
                             }
                         },
-                        orderBy: { position: 'asc' }
+                        orderBy: { name: 'asc' }
                     });
 
                     const hierarchy = ((cats: any[]) => {

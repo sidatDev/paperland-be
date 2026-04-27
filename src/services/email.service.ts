@@ -528,7 +528,7 @@ export class EmailService {
    */
   async sendOrderConfirmationEmail(to: string, orderData: any): Promise<void> {
     try {
-      const portalUrl = (process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com').replace(/\/+$/, '');
+      const portalUrl = (process.env.FRONTEND_URL || 'https://paperland.com.pk').replace(/\/+$/, '');
       const userName = orderData.user?.firstName || (orderData.shippingSnapshot as any)?.firstName || 'Customer';
       
       await this.sendDynamicEmail('ORDER_PLACED', to, {
@@ -552,7 +552,7 @@ export class EmailService {
    * Send order status update email to customer
    */
   async sendOrderStatusUpdateEmail(to: string, orderData: any, newStatus: string): Promise<void> {
-    const portalUrl = process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com';
+    const portalUrl = process.env.FRONTEND_URL || 'https://paperland.com.pk';
     const statusMap: Record<string, string> = {
       'PENDING': 'ORDER_PLACED',
       'PROCESSING': 'ORDER_PROCESSING',
@@ -670,7 +670,7 @@ export class EmailService {
   }
 
   private buildOrderItemsHtml(items: any[], currency: string): string {
-    const portalUrl = (process.env.FRONTEND_URL || 'https://pl-portal.sidattech.com').replace(/\/+$/, '');
+    const portalUrl = (process.env.FRONTEND_URL || 'https://paperland.com.pk').replace(/\/+$/, '');
     if (!items || items.length === 0) return '<tr><td colspan="4">No items found</td></tr>';
     
     return items.map(item => `

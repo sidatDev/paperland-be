@@ -3,8 +3,8 @@
  * Optimized for Paperland brand guidelines (Red #E31E24, Yellow #FDB714)
  */
 
-const LOGO_URL = 'https://pl-portal.sidattech.com/images/logo/Paperland%20logo.png';
-const WEBSITE_URL = 'https://pl-portal.sidattech.com';
+const LOGO_URL = 'https://paperland.com.pk/images/logo/Company%20Logos.webp.png';
+const WEBSITE_URL = 'https://paperland.com.pk';
 const PHONE = '+92 300 1234567';
 const EMAIL = 'info@paperland.com.pk';
 
@@ -33,7 +33,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
             table { border-collapse: collapse; }
             .content-table { max-width: 600px; width: 100%; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
             .header { background-color: #E31E24; padding: 30px 20px; text-align: center; }
-            .logo { width: 120px; height: auto; }
+            .logo { width: 180px; height: auto; }
             .body-padding { padding: 40px 30px; }
             .footer { background-color: #f1f3f5; padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13px; }
             .social-icon { display: inline-block; margin: 0 8px; width: 32px; height: 32px; }
@@ -58,8 +58,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                         <tr>
                             <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 25px 20px;">
                                 <a href="${WEBSITE_URL}" style="text-decoration: none;">
-                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 140px; height: auto; border:0; outline:none; text-decoration:none; display:inline-block; vertical-align: middle; margin: 0 auto; max-width:100%;">
-                                    <div style="color: #E31E24; font-size: 28px; font-weight: 800; font-family: 'Arial Black', sans-serif; margin-top: 5px; letter-spacing: 1px;">PAPERLAND</div>
+                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 180px; height: auto; border:0; outline:none; text-decoration:none; display:inline-block; vertical-align: middle; margin: 0 auto; max-width:100%;">
                                 </a>
                             </td>
                         </tr>
