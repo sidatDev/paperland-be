@@ -34,7 +34,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
             .content-table { max-width: 600px; width: 100%; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
             .header { background-color: #E31E24; padding: 30px 20px; text-align: center; }
             .logo { width: 180px; height: auto; }
-            .body-padding { padding: 40px 30px; }
+            .body-padding { padding: 15px 30px 40px 30px; }
             .footer { background-color: #f1f3f5; padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13px; }
             .social-icon { display: inline-block; margin: 0 8px; width: 32px; height: 32px; }
             .btn { display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; transition: transform 0.2s; }
@@ -42,7 +42,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
             p { color: #4b5563; line-height: 1.6; margin: 16px 0; }
             .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
             @media screen and (max-width: 480px) {
-                .body-padding { padding: 30px 20px; }
+                .body-padding { padding: 15px 20px 30px 20px; }
             }
         </style>
     </head>
@@ -56,7 +56,7 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                     <table class="content-table" cellpadding="0" cellspacing="0" border="0">
                         <!-- Red Header with Logo -->
                         <tr>
-                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 25px 20px;">
+                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 25px 20px 5px 20px;">
                                 <a href="${WEBSITE_URL}" style="text-decoration: none;">
                                     <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 180px; height: auto; border:0; outline:none; text-decoration:none; display:inline-block; vertical-align: middle; margin: 0 auto; max-width:100%;">
                                 </a>
@@ -74,10 +74,10 @@ export function getEmailLayout(content: string, preheader: string = "Paperland U
                         <tr>
                             <td class="footer">
                                 <div style="margin-bottom: 20px;">
-                                    <a href="${SOCIALS.facebook}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/733/733547.png" width="24" alt="FB" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.instagram}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/2111/2111463.png" width="24" alt="IG" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.twitter}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/3256/3256013.png" width="24" alt="TW" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.linkedin}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/145/145807.png" width="24" alt="LI" style="margin: 0 5px;"></a>
+                                    <a href="${SOCIALS.facebook}" style="text-decoration: none;"><img src="https://img.icons8.com/color/32/facebook-new.png" width="24" alt="FB" style="margin: 0 5px;"></a>
+                                    <a href="${SOCIALS.instagram}" style="text-decoration: none;"><img src="https://img.icons8.com/color/32/instagram-new.png" width="24" alt="IG" style="margin: 0 5px;"></a>
+                                    <a href="${SOCIALS.twitter}" style="text-decoration: none;"><img src="https://img.icons8.com/color/32/twitter--v1.png" width="24" alt="TW" style="margin: 0 5px;"></a>
+                                    <a href="${SOCIALS.linkedin}" style="text-decoration: none;"><img src="https://img.icons8.com/color/32/linkedin.png" width="24" alt="LI" style="margin: 0 5px;"></a>
                                 </div>
                                 <p style="margin-bottom: 5px;"><strong>Paperland E-Commerce Portal</strong></p>
                                 <p style="margin: 5px 0;">Lahore, Pakistan</p>
@@ -169,18 +169,20 @@ export function getContactUsConfirmationTemplate(name: string, subject: string):
 export function getOrderConfirmationTemplate(order: any): string {
     const itemsHtml = order.items.map((item: any) => {
         // Ensure absolute URL for product image
-        let imgUrl = item.product.imageUrl || item.product.image_url || 'https://via.placeholder.com/100';
+        let imgUrl = item.product?.imageUrl || item.product?.image_url || 'https://via.placeholder.com/100';
+        
         if (imgUrl && !imgUrl.startsWith('http')) {
-            imgUrl = `https://data-fe.sidattech.com/public-bucket/${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
+            // Use current S3 bucket for product images
+            imgUrl = `https://pl-s3.sidattech.com/paperland-bucket/${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
         }
 
         return `
         <tr style="border-bottom: 1px solid #f3f4f6;">
             <td style="padding: 15px 0; vertical-align: top;">
-                <img src="${imgUrl}" alt="${item.product.name}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid #eee;">
+                <img src="${imgUrl}" alt="${item.product?.name || 'Product'}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid #eee;">
             </td>
             <td style="padding: 15px 10px; vertical-align: top;">
-                <p style="margin: 0; font-weight: bold; color: #111827; font-size: 14px;">${item.product.name}</p>
+                <p style="margin: 0; font-weight: bold; color: #111827; font-size: 14px;">${item.product?.name || 'Item'}</p>
                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">Qty: ${item.quantity}</p>
             </td>
             <td style="padding: 15px 0; text-align: right; vertical-align: top; font-weight: bold; color: #111827;">

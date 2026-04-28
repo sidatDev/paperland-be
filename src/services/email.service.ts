@@ -670,13 +670,20 @@ export class EmailService {
   }
 
   private buildOrderItemsHtml(items: any[], currency: string): string {
-    const portalUrl = (process.env.FRONTEND_URL || 'https://paperland.com.pk').replace(/\/+$/, '');
+    const s3BaseUrl = 'https://pl-s3.sidattech.com/paperland-bucket/';
     if (!items || items.length === 0) return '<tr><td colspan="4">No items found</td></tr>';
     
-    return items.map(item => `
+    return items.map(item => {
+      let imgUrl = item.product?.imageUrl || '/images/placeholder.png';
+      
+      if (imgUrl && !imgUrl.startsWith('http')) {
+        imgUrl = `${s3BaseUrl}${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
+      }
+
+      return `
       <tr style="border-bottom: 1px solid #eee;">
         <td style="padding: 15px 0; width: 60px;">
-          <img src="${item.product?.imageUrl?.startsWith('http') ? item.product.imageUrl : portalUrl + (item.product?.imageUrl ? (item.product.imageUrl.startsWith('/') ? item.product.imageUrl : '/' + item.product.imageUrl) : '/images/placeholder.png')}" alt="${item.product?.name || 'Item'}" style="width: 50px; height: 50px; object-fit: contain; border-radius: 8px; border: 1px solid #fafafa; display: block;">
+          <img src="${imgUrl}" alt="${item.product?.name || 'Item'}" style="width: 50px; height: 50px; object-fit: contain; border-radius: 8px; border: 1px solid #fafafa; display: block;">
         </td>
         <td style="padding: 15px 10px;">
           <div style="font-weight: bold; color: #111827; font-size: 14px;">${item.product?.name || item.sku || 'Product'}</div>
@@ -685,7 +692,7 @@ export class EmailService {
         <td style="padding: 15px 10px; color: #4b5563; font-size: 14px; text-align: center;">x${item.quantity}</td>
         <td style="padding: 15px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(item.price).toLocaleString()}</td>
       </tr>
-    `).join('');
+    `;}).join('');
   }
 
   private buildOrderSummaryHtml(order: any): string {
