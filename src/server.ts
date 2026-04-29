@@ -102,6 +102,7 @@ const start = async () => {
     await fastify.register(import('./routes/warehouse.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/industries.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/orders.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/finance.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/payments.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/checkout.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/guest-checkout.routes'), { prefix: '/api/v1' });

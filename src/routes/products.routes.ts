@@ -83,12 +83,30 @@ export default async function productRoutes(fastify: FastifyInstance) {
       id: p.id,
       name: p.name,
       isActive: p.isActive,
-      status: p.status, 
       isFeatured: p.isFeatured || false,
       sku: p.sku,
       slug: p.slug, 
       groupNumber: p.groupNumber,
       groupId: p.groupId,
+      status: (() => {
+        // Dynamic Status Logic
+        const baseStock = p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
+        const variantsStock = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.qty || 0), 0) || 0), 0) || 0;
+        const totalStock = p.variants?.length > 0 ? variantsStock : baseStock;
+
+        const baseThreshold = p.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 0;
+        const variantsThreshold = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
+        const effectiveThreshold = p.variants?.length > 0 ? variantsThreshold : baseThreshold;
+
+        // If manual status is already 'Out of Stock', keep it.
+        // Otherwise, if stock <= threshold, mark as 'Out of Stock'
+        if (p.status === 'Out of Stock') return 'Out of Stock';
+        if (totalStock <= effectiveThreshold) return 'Out of Stock';
+        
+        return p.status || (p.isActive ? 'Active' : 'Draft');
+      })(),
       price: Number(p.price || 0),
       relatedProductsCount: 0, 
 
@@ -111,6 +129,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
         { key: "fullDescription", title: "Full Description", value: p.fullDescription, order: 10 },
         { key: "status", title: "Status", value: p.status, order: 11 }
       ],
+
+      // Stock & Availability Calculations
+      hasOutOfStockVariants: p.variants?.some((v: any) => {
+          const vStock = v.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
+          return vStock <= 0;
+      }) || false,
+
+      effectiveThreshold: (() => {
+        const base = p.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 0;
+        const variants = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
+        return p.variants?.length > 0 ? variants : base;
+      })(),
 
       technicalSpecifications: [
         { key: "width", title: "Width", value: p.width, unit: "mm", order: 1 },
@@ -193,6 +224,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isVisibleOnEcommerce: p.isVisibleOnEcommerce,
       fullDescription: p.fullDescription, // Return fullDescription
       specifications: p.specifications || {}, // Return specifications for raw access
+      costPrice: p.costPrice ? Number(p.costPrice) : 0,
 
       // Variants
       parentId: p.parentId,
@@ -457,6 +489,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isVisibleOnEcommerce: { type: 'boolean' },
       industries: { type: 'array', items: { type: 'object', additionalProperties: true } },
       specifications: { type: 'object', additionalProperties: true },
+      costPrice: { type: 'number' },
       
       // Variants
       parentId: { type: 'string', nullable: true },
@@ -486,6 +519,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         salesPrice: { type: 'number' },
         currency: { type: 'string' },
         stock: { type: 'number' },
+        costPrice: { type: 'number' },
         
         // Tech Specs (Dimensions/Weight now in model)
         weight: { type: 'string' },
@@ -631,7 +665,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status = "Draft",
-            salesPrice = 0, currency = "PKR", stock = 0, specifications = {}, specs = [],
+            salesPrice = 0, currency = "PKR", stock = 0, costPrice = 0, specifications = {}, specs = [],
             promotionalPrice = 0, tierPricing = {},
             weight, width, length, volume,
             media, seo, 
@@ -696,6 +730,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 slug: vSlug,
                 sku: v.sku,
                 price: Number(v.price || v.salesPrice || 0),
+                costPrice: Number(v.costPrice || 0),
                 isActive: v.isActive !== undefined ? v.isActive : true,
                 variantAttributes: v.variantAttributes,
                 specifications: variantHash ? { variantHash } : {},
@@ -721,6 +756,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 slug,
                 sku: resolvedSku,
                 price: Number(salesPrice || 0),
+                costPrice: Number(costPrice || 0),
                 description,
                 fullDescription,
                 status,
@@ -868,7 +904,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status,
-            salesPrice, stock, specifications, specs,
+            salesPrice, stock, costPrice, specifications, specs,
             promotionalPrice, tierPricing,
             weight, width, length, volume,
             media, seo, 
@@ -924,6 +960,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
         if (groupId !== undefined) updateData.groupId = groupId;
         if (status !== undefined) updateData.status = status;
+        if (costPrice !== undefined) updateData.costPrice = Number(costPrice);
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (mediaUrls !== undefined) updateData.images = mediaUrls;
         
@@ -1038,6 +1075,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         sku: v.sku,
                         slug: await generateUniqueSlug(v.name, "", v.sku, v.id),
                         price: Number(v.salesPrice || v.price || 0),
+                        costPrice: Number(v.costPrice || 0),
                         variantAttributes: v.variantAttributes,
                         ...(variantHash ? {
                             specifications: {

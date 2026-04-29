@@ -392,6 +392,12 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }
 
         // 6. Create DRAFT Order
+        const totalCost = pricedItems.reduce((acc, item) => {
+            const cartItem = cart.items.find(i => i.productId === item.productId);
+            const cost = Number((cartItem?.product as any)?.costPrice || 0);
+            return acc + (cost * (cartItem?.quantity || 0));
+        }, 0);
+
         const order = await fastify.prisma.order.create({
             data: {
                 orderNumber: `DRAFT-${Date.now().toString().slice(-6)}`,
@@ -400,6 +406,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 totalAmount: total,      
                 taxAmount: tax,          
                 shippingAmount: shippingCost, 
+                totalCost: totalCost,
                 currency: { connect: { id: currency.id } },
                 address: { connect: { id: addr.id } }, 
                 ...(couponId ? { coupon: { connect: { id: couponId } } } : {}),
@@ -422,18 +429,22 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
                 
                 items: {
-                    create: pricedItems.map(item => ({
-                        product: { connect: { id: item.productId } },
-                        quantity: cart.items.find(i => i.productId === item.productId)!.quantity,
-                        price: item.finalPrice,
-                        sku: item.sku,
-                        pricingSnapshot: {
-                            basePrice: item.basePrice,
-                            finalPrice: item.finalPrice,
-                            discountType: item.discountType,
-                            tierName: item.tierName
-                        }
-                    }))
+                    create: pricedItems.map(item => {
+                        const cartItem = cart.items.find(i => i.productId === item.productId);
+                        return {
+                            product: { connect: { id: item.productId } },
+                            quantity: cartItem!.quantity,
+                            price: item.finalPrice,
+                            unitCost: (cartItem?.product as any)?.costPrice || 0,
+                            sku: item.sku,
+                            pricingSnapshot: {
+                                basePrice: item.basePrice,
+                                finalPrice: item.finalPrice,
+                                discountType: item.discountType,
+                                tierName: item.tierName
+                            }
+                        };
+                    })
                 }
             }
         });

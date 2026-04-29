@@ -276,27 +276,27 @@ model Category {
   imageUrl         String?          @map("image_url")
   parentId         String?          @map("parent_id")
   position         Int              @default(0)
+  normalizedName   String?          @unique @map("normalized_name")
   parent           Category?        @relation("CategoryHierarchy", fields: [parentId], references: [id])
   subCategories    Category[]       @relation("CategoryHierarchy")
   couponCategories CouponCategory[]
   products         Product[]
-  normalizedName   String?          @unique @map("normalized_name")
 
   @@map("categories")
 }
 
 model Brand {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  logoUrl     String?   @map("logo_url")
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
-  slug        String?   @unique
-  products    Product[]
+  id             String    @id @default(uuid())
+  name           String    @unique
+  description    String?
+  logoUrl        String?   @map("logo_url")
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  deletedAt      DateTime? @map("deleted_at")
+  slug           String?   @unique
   normalizedName String?   @unique @map("normalized_name")
+  products       Product[]
 
   @@map("brands")
 }
@@ -372,6 +372,7 @@ model Product {
   parentId             String?                   @map("parent_id")
   variantAttributes    Json?                     @map("variant_attributes")
   variantOptions       Json?                     @map("variant_options")
+  costPrice            Decimal?                  @map("cost_price") @db.Decimal(10, 2)
   batches              Batch[]
   cartItems            CartItem[]
   catalogPricing       CatalogPricing[]
@@ -466,8 +467,8 @@ model Warehouse {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   type      String    @default("WAREHOUSE")
-  stocks    Stock[]
   orders    Order[]
+  stocks    Stock[]
 
   @@map("warehouses")
 }
@@ -527,22 +528,22 @@ model ReviewHelpfulVote {
 
 model ProductImportLog {
   id          String    @id @default(uuid())
+  triggeredBy String?   @map("triggered_by")
+  status      String    @default("QUEUED")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  added       Int       @default(0)
+  completedAt DateTime? @map("completed_at")
+  duration    Int?
+  errorsJson  Json?     @map("errors_json")
+  failed      Int       @default(0)
   fileName    String?   @map("file_name")
   filePath    String?   @map("file_path")
-  totalRows   Int       @default(0) @map("total_rows")
-  added       Int       @default(0)
-  updated     Int       @default(0)
-  failed      Int       @default(0)
-  skipped     Int       @default(0)
-  progress    Int       @default(0)
-  errorsJson  Json?     @map("errors_json")
-  status      String    @default("QUEUED")
-  duration    Int?
   mode        String    @default("UPSERT")
+  progress    Int       @default(0)
+  skipped     Int       @default(0)
   stockMode   String    @default("OVERWRITE")
-  triggeredBy String?   @map("triggered_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  completedAt DateTime? @map("completed_at")
+  totalRows   Int       @default(0) @map("total_rows")
+  updated     Int       @default(0)
 
   @@index([createdAt])
   @@index([status])
@@ -596,18 +597,20 @@ model Order {
   riderId                String?              @map("rider_id")
   trackingResponseJson   Json?                @map("tracking_response_json")
   trackingStatus         String?              @map("tracking_status")
+  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
   cancellationReason     String?              @map("cancellation_reason")
   cancelRequestedAt      DateTime?            @map("cancel_requested_at")
-  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
+  totalCost              Decimal?             @map("total_cost") @db.Decimal(12, 2)
+  totalExpenses          Decimal?             @map("total_expenses") @db.Decimal(12, 2)
   items                  OrderItem[]
   history                OrderStatusHistory[]
   address                Address              @relation(fields: [addressId], references: [id])
   coupon                 Coupon?              @relation(fields: [couponId], references: [id])
   courierProvider        CourierProvider?     @relation(fields: [courierProviderId], references: [id])
   currency               Currency             @relation(fields: [currencyId], references: [id])
+  fulfillmentWarehouse   Warehouse?           @relation(fields: [fulfillmentWarehouseId], references: [id])
   rider                  Rider?               @relation(fields: [riderId], references: [id])
   user                   User?                @relation(fields: [userId], references: [id])
-  fulfillmentWarehouse   Warehouse?           @relation(fields: [fulfillmentWarehouseId], references: [id])
   purchase_orders        purchase_orders?
   returnRequests         ReturnRequest[]
   trackingLogs           TrackingLog[]
@@ -618,16 +621,17 @@ model Order {
 }
 
 model OrderItem {
-  id                String  @id @default(uuid())
-  orderId           String  @map("order_id")
-  productId         String  @map("product_id")
+  id                String   @id @default(uuid())
+  orderId           String   @map("order_id")
+  productId         String   @map("product_id")
   quantity          Int
-  price             Decimal @db.Decimal(10, 2)
-  inventorySnapshot Json?   @map("inventory_snapshot")
-  pricingSnapshot   Json?   @map("pricing_snapshot")
+  price             Decimal  @db.Decimal(10, 2)
+  inventorySnapshot Json?    @map("inventory_snapshot")
+  pricingSnapshot   Json?    @map("pricing_snapshot")
   sku               String?
-  order             Order   @relation(fields: [orderId], references: [id])
-  product           Product @relation(fields: [productId], references: [id])
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(10, 2)
+  order             Order    @relation(fields: [orderId], references: [id])
+  product           Product  @relation(fields: [productId], references: [id])
 
   @@map("order_items")
 }
@@ -1026,18 +1030,18 @@ model GlobalSettings {
 }
 
 model PaymentGateway {
-  id            String   @id @default(uuid())
+  id            String        @id @default(uuid())
   name          String
-  identifier    String   @unique
-  type          String   @default("WALLET")
-  isActive      Boolean  @default(true) @map("is_active")
+  identifier    String        @unique
+  type          String        @default("WALLET")
+  isActive      Boolean       @default(true) @map("is_active")
   config        Json?
   instructions  String?
-  feePercentage Decimal  @default(0) @map("fee_percentage") @db.Decimal(5, 2)
-  feeFixed      Decimal  @default(0) @map("fee_fixed") @db.Decimal(10, 2)
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  feePercentage Decimal       @default(0) @map("fee_percentage") @db.Decimal(5, 2)
+  feeFixed      Decimal       @default(0) @map("fee_fixed") @db.Decimal(10, 2)
+  sortOrder     Int           @default(0) @map("sort_order")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
   rules         PaymentRule[]
 
   @@map("payment_gateways")
@@ -1056,19 +1060,19 @@ model PaymentZone {
 }
 
 model PaymentRule {
-  id            String         @id @default(uuid())
-  zoneId        String?        @map("zone_id")
+  id            String          @id @default(uuid())
+  zoneId        String?         @map("zone_id")
+  gatewayId     String?         @map("gateway_id")
+  isEnabled     Boolean         @default(true) @map("is_enabled")
+  minOrderValue Decimal?        @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue Decimal?        @map("max_order_value") @db.Decimal(12, 2)
+  extraCharge   Decimal?        @map("extra_charge") @db.Decimal(10, 2)
+  priority      Int             @default(0)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
   paymentType   String
-  gatewayId     String?        @map("gateway_id")
-  isEnabled     Boolean        @default(true) @map("is_enabled")
-  minOrderValue Decimal?       @map("min_order_value") @db.Decimal(12, 2)
-  maxOrderValue Decimal?       @map("max_order_value") @db.Decimal(12, 2)
-  extraCharge   Decimal?       @map("extra_charge") @db.Decimal(10, 2)
-  priority      Int            @default(0)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  zone          PaymentZone?   @relation(fields: [zoneId], references: [id])
   gateway       PaymentGateway? @relation(fields: [gatewayId], references: [id])
+  zone          PaymentZone?    @relation(fields: [zoneId], references: [id])
 
   @@index([zoneId])
   @@index([gatewayId])
@@ -1605,15 +1609,15 @@ model CompanyCatalog {
 }
 
 model CourierProvider {
-  id          String   @id @default(uuid())
-  name        String
-  code        String   @unique
-  region      String   @default("PK")
-  trackingUrl String?  @map("tracking_url")
-  apiConfig   Json?    @map("api_config")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String         @id @default(uuid())
+  name          String
+  code          String         @unique
+  region        String         @default("PK")
+  trackingUrl   String?        @map("tracking_url")
+  apiConfig     Json?          @map("api_config")
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   orders        Order[]
   shippingRules ShippingRule[]
 
@@ -1638,20 +1642,20 @@ model Rider {
 }
 
 model ShippingRule {
-  id                String   @id @default(uuid())
-  name              String   @unique
-  region            String   @default("PK")
+  id                String           @id @default(uuid())
+  name              String           @unique
+  region            String           @default("PK")
   city              String?
-  logisticsType     String   @map("logistics_type")
-  minOrderValue     Decimal? @map("min_order_value") @db.Decimal(12, 2)
-  maxOrderValue     Decimal? @map("max_order_value") @db.Decimal(12, 2)
-  courierProviderId String?  @map("courier_provider_id")
-  warehouseId       String?  @map("warehouse_id")
-  priority          Int      @default(0)
-  isActive          Boolean  @default(true) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  estimatedDays     String?  @map("estimated_days")
+  logisticsType     String           @map("logistics_type")
+  minOrderValue     Decimal?         @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue     Decimal?         @map("max_order_value") @db.Decimal(12, 2)
+  courierProviderId String?          @map("courier_provider_id")
+  warehouseId       String?          @map("warehouse_id")
+  priority          Int              @default(0)
+  isActive          Boolean          @default(true) @map("is_active")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  estimatedDays     String?          @map("estimated_days")
   baseShippingCost  Decimal?         @map("base_shipping_cost") @db.Decimal(12, 2)
   courierProvider   CourierProvider? @relation(fields: [courierProviderId], references: [id])
 

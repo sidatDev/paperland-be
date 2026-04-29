@@ -377,6 +377,18 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 });
             }
 
+            // 9.5 Fetch Product details to get cost prices
+            const productIds = items.map((i: any) => i.productId);
+            const products = await fastify.prisma.product.findMany({
+                where: { id: { in: productIds } },
+                select: { id: true, costPrice: true }
+            });
+
+            const totalCost = items.reduce((sum: number, item: any) => {
+                const product = products.find((p: any) => p.id === item.productId);
+                return sum + (Number(item.quantity) * Number(product?.costPrice || 0));
+            }, 0);
+
             // 10. Create DRAFT Order for guest
             const order = await (fastify.prisma as any).order.create({
                 data: {
@@ -384,6 +396,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     ...(guestUser?.id ? { user: { connect: { id: guestUser.id } } } : {}), // Link to hidden guest user via Prisma relations
                     status: 'DRAFT',
                     totalAmount: total,
+                    totalCost: totalCost,
                     taxAmount: tax,
                     shippingAmount: shippingCost,
                     currency: { connect: { id: currency.id } },
@@ -418,12 +431,16 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
 
                     items: {
-                        create: items.map((item: any) => ({
-                            product: { connect: { id: item.productId } },
-                            quantity: item.quantity,
-                            price: item.price,
-                            sku: item.sku
-                        }))
+                        create: items.map((item: any) => {
+                            const product = products.find((p: any) => p.id === item.productId);
+                            return {
+                                product: { connect: { id: item.productId } },
+                                quantity: item.quantity,
+                                price: item.price,
+                                unitCost: product?.costPrice || 0,
+                                sku: item.sku
+                            };
+                        })
                     }
                 } as any
             });

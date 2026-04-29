@@ -13,13 +13,14 @@ export interface ApiResponse<T = any> {
     page: number;
     limit: number;
     total: number;
+    [key: string]: any;
   };
 }
 
 export function createResponse<T>(
   data: T,
   message: string = 'Success',
-  meta?: { page: number; limit: number; total: number }
+  meta?: { page: number; limit: number; total: number; [key: string]: any }
 ): ApiResponse<T> {
   return {
     status: 'success',
@@ -31,9 +32,7 @@ export function createResponse<T>(
         limit: meta.limit,
         total: meta.total,
         metadata: {
-            page: meta.page,
-            limit: meta.limit,
-            total: meta.total
+            ...meta
         }
     })
   };

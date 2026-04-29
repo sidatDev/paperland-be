@@ -138,7 +138,19 @@ export default async function orderRoutes(fastify: FastifyInstance) {
               });
           }
 
-          // 4. Create Order
+          // 4. Fetch Product details to get cost prices
+          const productIds = items.map((i: any) => i.productId);
+          const products = await prisma.product.findMany({
+              where: { id: { in: productIds } },
+              select: { id: true, costPrice: true }
+          });
+
+          const totalCost = items.reduce((sum: number, item: any) => {
+              const product = products.find((p: any) => p.id === item.productId);
+              return sum + (Number(item.quantity) * Number(product?.costPrice || 0));
+          }, 0);
+
+          // 5. Create Order
           const newOrder = await prisma.order.create({
               data: {
                   orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
@@ -147,6 +159,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   currency: { connect: { id: country.currencyId } },
                   status: 'PENDING',
                   totalAmount,
+                  totalCost,
                   taxAmount: 0,
                   shippingAmount: 0,
                   paymentMethod: data.paymentMethod || 'Direct',
@@ -154,12 +167,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   deliveryMethod: 'Standard Delivery',
                   estimatedDeliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                   items: {
-                      create: items.map((item: any) => ({
-                          productId: item.productId,
-                          sku: item.sku || 'N/A',
-                          quantity: Number(item.quantity),
-                          price: Number(item.unitPrice),
-                      }))
+                      create: items.map((item: any) => {
+                          const product = products.find((p: any) => p.id === item.productId);
+                          return {
+                              productId: item.productId,
+                              sku: item.sku || 'N/A',
+                              quantity: Number(item.quantity),
+                              price: Number(item.unitPrice),
+                              unitCost: product?.costPrice || 0
+                          };
+                      })
                   },
                   billingSnapshot: {
                       name: data.customer.name,
