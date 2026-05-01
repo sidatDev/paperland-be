@@ -1,25 +1,23 @@
 # Stage 1: Build
-FROM node:20 AS builder
+FROM node:20-alpine AS builder
 
 # Set Node memory limit for the entire build process
 ENV NODE_OPTIONS="--max-old-space-size=2048"
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libc6-dev \
+RUN apk add --no-cache \
+    libc6-compat \
     openssl \
     python3 \
     make \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+    g++
 
 WORKDIR /app
 
 # Increase npm network reliability
 RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000 && \
-    npm config set loglevel info
+    npm config set fetch-retry-maxtimeout 120000
 
 COPY package*.json ./
 COPY prisma ./prisma/
@@ -30,17 +28,15 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 
 # Generate Prisma client and build the application
+# Combining these steps reduces layer overhead
 RUN npx prisma generate && \
     npm run build && \
     npm prune --omit=dev --no-audit --no-fund
 
 # Stage 2: Production
-FROM node:20-slim AS runner
+FROM node:20-alpine AS runner
 
-# Install production dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    openssl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 ENV NODE_ENV production
