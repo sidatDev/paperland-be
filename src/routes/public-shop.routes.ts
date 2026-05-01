@@ -1029,10 +1029,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             const currentUserId = (request.user as any)?.id;
             const { basePrice, finalPrice: promoPrice, isSale: hasPromo } = getProductPrices(product);
-            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, currentUserId, product.sku);
+            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, currentUserId, product.sku);
             
-            const displayPrice = hasPromo ? Math.min(promoPrice, finalPrice) : finalPrice;
-            const originalPrice = (displayPrice < basePrice) ? basePrice : undefined;
+            const displayPrice = pricing.finalPrice;
+            const originalPrice = pricing.originalPrice !== pricing.finalPrice ? pricing.originalPrice : undefined;
 
             return reply.send(createResponse({
                 id: product.id,
@@ -1045,6 +1045,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 price: displayPrice,
                 originalPrice: originalPrice,
                 isSale: hasPromo || (displayPrice < basePrice),
+                discountType: pricing.discountType,
+                badgeText: pricing.badgeText,
+                campaignType: pricing.campaignType,
                 currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
@@ -1071,10 +1074,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     })
                     .map(async (v: any) => {
                         const { basePrice: vBaseRaw, finalPrice: vPromo, isSale: vHasPromo } = getProductPrices(v);
-                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, currentUserId, v.sku);
+                        const vPricing = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, currentUserId, v.sku);
                         
-                        const vDisplayPrice = vHasPromo ? Math.min(vPromo, vFinal) : vFinal;
-                        const vOriginalPrice = (vDisplayPrice < vBaseRaw) ? vBaseRaw : undefined;
+                        const vDisplayPrice = vPricing.finalPrice;
+                        const vOriginalPrice = (vPricing.originalPrice !== vPricing.finalPrice) ? vPricing.originalPrice : undefined;
                         
                         // Extract MOQ if in catalog
                         let moq = 1;
@@ -1097,6 +1100,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             price: vDisplayPrice,
                             originalPrice: vOriginalPrice,
                             isSale: vHasPromo || (vDisplayPrice < vBaseRaw),
+                            discountType: vPricing.discountType,
+                            badgeText: vPricing.badgeText,
+                            campaignType: vPricing.campaignType,
                             currency: 'PKR',
                             image_url: v.imageUrl,
                             totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
@@ -1222,10 +1228,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
             
             const { basePrice, finalPrice: promoPrice, isSale: hasPromo } = getProductPrices(product);
-            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, userId, product.sku);
+            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, userId, product.sku);
             
-            const displayPrice = hasPromo ? Math.min(promoPrice, finalPrice) : finalPrice;
-            const originalPrice = (displayPrice < basePrice) ? basePrice : undefined;
+            const displayPrice = pricing.finalPrice;
+            const originalPrice = pricing.originalPrice !== pricing.finalPrice ? pricing.originalPrice : undefined;
             
             const result = {
                 id: product.id,
@@ -1239,6 +1245,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 price: displayPrice,
                 originalPrice: originalPrice,
                 isSale: hasPromo || (displayPrice < basePrice),
+                discountType: pricing.discountType,
+                badgeText: pricing.badgeText,
+                campaignType: pricing.campaignType,
                 currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
@@ -1264,10 +1273,10 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     })
                     .map(async (v: any) => {
                         const { basePrice: vBaseRaw, finalPrice: vPromo, isSale: vHasPromo } = getProductPrices(v);
-                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, userId, v.sku);
+                        const vPricing = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, userId, v.sku);
                         
-                        const vDisplayPrice = vHasPromo ? Math.min(vPromo, vFinal) : vFinal;
-                        const vOriginalPrice = (vDisplayPrice < vBaseRaw) ? vBaseRaw : undefined;
+                        const vDisplayPrice = vPricing.finalPrice;
+                        const vOriginalPrice = (vPricing.originalPrice !== vPricing.finalPrice) ? vPricing.originalPrice : undefined;
                         
                         // Extract MOQ if in catalog
                         let moq = 1;
@@ -1291,6 +1300,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             price: vDisplayPrice,
                             originalPrice: vOriginalPrice,
                             isSale: vHasPromo || (vDisplayPrice < vBaseRaw),
+                            discountType: vPricing.discountType,
+                            badgeText: vPricing.badgeText,
+                            campaignType: vPricing.campaignType,
                             currency: 'PKR',
                             image_url: v.imageUrl,
                             totalStock: calculateAvailability(v).totalStock,
@@ -1449,6 +1461,193 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     averageRating,
                     totalReviews,
                     distribution
+                }
+            }));
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+
+    // GET /api/shop/promotions/campaign/:id
+    fastify.get('/shop/promotions/campaign/:id', {
+        schema: {
+            description: 'Get campaign details and its targeted products with full listing logic',
+            tags: ['Public Shop'],
+            params: { type: 'object', properties: { id: { type: 'string' } } },
+            querystring: {
+                type: 'object',
+                properties: {
+                    page: { type: 'integer', default: 1 },
+                    limit: { type: 'integer', default: 12 },
+                    sort: { type: 'string', enum: ['price_asc', 'price_desc', 'newest', 'alphabetical', 'featured', 'best_seller'] },
+                    category: { type: 'string' },
+                    brand: { type: 'string' },
+                    price_min: { type: 'number' },
+                    price_max: { type: 'number' }
+                }
+            }
+        }
+    }, async (request: any, reply: any) => {
+        try {
+            const { id } = request.params;
+            const { page, limit, sort, category, brand, price_min, price_max } = request.query;
+            const skip = (page - 1) * limit;
+
+            // 1. Fetch the promotion (Campaign)
+            const isUuid = id.length === 36;
+            const promotion = await (fastify.prisma as any).promotion.findFirst({
+                where: {
+                    AND: [
+                        {
+                            OR: [
+                                isUuid ? { id } : undefined,
+                                { slug: id }
+                            ].filter(Boolean) as any[]
+                        },
+                        { isActive: true },
+                        { startDate: { lte: new Date() } },
+                        { endDate: { gte: new Date() } }
+                    ]
+                },
+                include: { tiers: true }
+            });
+
+            if (!promotion) {
+                return reply.status(404).send(createErrorResponse('Campaign not found or expired'));
+            }
+
+            // 2. Base filter for the campaign
+            let campaignProductFilter: any = {
+                isActive: true,
+                isVisibleOnEcommerce: true,
+                deletedAt: null,
+                parentId: null
+            };
+
+            if (promotion.targetType === 'PRODUCT') {
+                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
+                campaignProductFilter.id = { in: [promotion.targetProductId, ...targetIds].filter(Boolean) };
+            } else if (promotion.targetType === 'CATEGORY') {
+                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
+                campaignProductFilter.categoryId = { in: [promotion.targetCategoryId, ...targetIds].filter(Boolean) };
+            } else if (promotion.targetType === 'BRAND') {
+                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
+                campaignProductFilter.brandId = { in: [promotion.targetBrandId, ...targetIds].filter(Boolean) };
+            }
+
+            // 3. User applied filters
+            const userWhere: any = { AND: [campaignProductFilter] };
+            
+            if (category) {
+                const categories = category.split(',');
+                userWhere.AND.push({
+                    category: {
+                        OR: categories.map((c: string) => ({ slug: c }))
+                    }
+                });
+            }
+
+            if (brand) {
+                const brands = brand.split(',');
+                userWhere.AND.push({
+                    brand: {
+                        OR: brands.map((b: string) => ({ slug: b }))
+                    }
+                });
+            }
+
+            if (price_min || price_max) {
+                userWhere.AND.push({
+                    price: {
+                        gte: price_min ? parseFloat(price_min) : undefined,
+                        lte: price_max ? parseFloat(price_max) : undefined
+                    }
+                });
+            }
+
+            // 4. Sort logic
+            let orderBy: any = { createdAt: 'desc' };
+            if (sort === 'price_asc') orderBy = { price: 'asc' };
+            else if (sort === 'price_desc') orderBy = { price: 'desc' };
+            else if (sort === 'alphabetical') orderBy = { name: 'asc' };
+            else if (sort === 'best_seller') orderBy = { orderItems: { _count: 'desc' } };
+
+            // 5. Fetch Products and Metadata
+            const [products, total, categories, brands] = await Promise.all([
+                (fastify.prisma as any).product.findMany({
+                    where: userWhere,
+                    include: {
+                        category: true,
+                        brand: true,
+                        stocks: true,
+                        prices: { include: { currency: true } }
+                    },
+                    skip,
+                    take: limit,
+                    orderBy
+                }),
+                (fastify.prisma as any).product.count({ where: userWhere }),
+                // Fetch categories for sidebar (limited to campaign products)
+                (fastify.prisma as any).category.findMany({
+                    where: { products: { some: campaignProductFilter } },
+                    select: { id: true, name: true, slug: true }
+                }),
+                // Fetch brands for sidebar (limited to campaign products)
+                (fastify.prisma as any).brand.findMany({
+                    where: { products: { some: campaignProductFilter } },
+                    select: { id: true, name: true, slug: true, logoUrl: true }
+                })
+            ]);
+
+            // 6. Apply pricing and map
+            const userId = (request.user as any)?.id;
+            const pricedProducts = await Promise.all(products.map(async (p: any) => {
+                const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR') || p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                const basePrice = sar ? Number(sar.priceRetail) : Number(p.price || 0);
+                const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, basePrice, userId, p.sku);
+                
+                return {
+                    id: p.id,
+                    name: p.name,
+                    slug: p.slug,
+                    sku: p.sku,
+                    image_url: p.imageUrl,
+                    price: pricing.finalPrice,
+                    originalPrice: basePrice !== pricing.finalPrice ? basePrice : undefined,
+                    badgeText: pricing.badgeText || promotion.badgeText,
+                    category: p.category?.name,
+                    brand: p.brand?.name,
+                    totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0)
+                };
+            }));
+
+            return reply.send(createResponse({
+                campaign: {
+                    id: promotion.id,
+                    name: promotion.name,
+                    slug: promotion.slug,
+                    displayTitle: promotion.displayTitle,
+                    displaySubtitle: promotion.displaySubtitle,
+                    campaignType: promotion.campaignType,
+                    bannerImage: promotion.bannerImageDesktop || promotion.bannerImage,
+                    backgroundColor: promotion.backgroundColor,
+                    textColor: promotion.textColor,
+                    endDate: promotion.endDate,
+                    showCountdown: promotion.showCountdown,
+                    layoutType: promotion.layoutType
+                },
+                metadata: {
+                    total_results: total,
+                    categories: categories.map((c: any) => ({ ...c, subCategories: [] })),
+                    brands: brands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })),
+                    industries: []
+                },
+                products: pricedProducts,
+                pagination: {
+                    total,
+                    current_page: page,
+                    has_more: skip + limit < total
                 }
             }));
         } catch (err: any) {

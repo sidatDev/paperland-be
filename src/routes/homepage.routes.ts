@@ -412,4 +412,94 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
             return reply.status(500).send({ message: 'Internal Server Error' });
         }
     });
+
+    // --- HERO CONFIGURATION ENDPOINTS ---
+
+    // PUBLIC: Get hero configuration
+    fastify.get('/homepage/hero-config', {
+        schema: {
+            description: 'Get hero section configuration (layout type)',
+            tags: ['Public Homepage'],
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] }
+                    }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const config = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+            return config?.styles || { layoutType: 'CAROUSEL' };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return { layoutType: 'CAROUSEL' };
+        }
+    });
+
+    // ADMIN: Get hero configuration
+    fastify.get('/admin/homepage/hero-config', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            description: 'Get hero section configuration for admin',
+            tags: ['Admin Homepage Management']
+        }
+    }, async (request, reply) => {
+        try {
+            const config = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+            return config?.styles || { layoutType: 'CAROUSEL' };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
+
+    // ADMIN: Update hero configuration
+    fastify.post('/admin/homepage/hero-config', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            description: 'Update hero section configuration',
+            tags: ['Admin Homepage Management'],
+            body: {
+                type: 'object',
+                required: ['layoutType'],
+                properties: {
+                    layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        const { layoutType } = request.body;
+        try {
+            const existing = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+
+            if (existing) {
+                await (fastify.prisma as any).homepageSection.update({
+                    where: { id: existing.id },
+                    data: { styles: { layoutType } }
+                });
+            } else {
+                await (fastify.prisma as any).homepageSection.create({
+                    data: {
+                        internalName: 'HERO_CONFIG',
+                        type: 'CONFIG',
+                        styles: { layoutType },
+                        isActive: true
+                    }
+                });
+            }
+            return { success: true, layoutType };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
 }

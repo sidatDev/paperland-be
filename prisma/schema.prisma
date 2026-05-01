@@ -281,22 +281,24 @@ model Category {
   subCategories    Category[]       @relation("CategoryHierarchy")
   couponCategories CouponCategory[]
   products         Product[]
+  Promotion        Promotion[]
 
   @@map("categories")
 }
 
 model Brand {
-  id             String    @id @default(uuid())
-  name           String    @unique
+  id             String      @id @default(uuid())
+  name           String      @unique
   description    String?
-  logoUrl        String?   @map("logo_url")
-  isActive       Boolean   @default(true) @map("is_active")
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
-  deletedAt      DateTime? @map("deleted_at")
-  slug           String?   @unique
-  normalizedName String?   @unique @map("normalized_name")
+  logoUrl        String?     @map("logo_url")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  deletedAt      DateTime?   @map("deleted_at")
+  slug           String?     @unique
+  normalizedName String?     @unique @map("normalized_name")
   products       Product[]
+  Promotion      Promotion[]
 
   @@map("brands")
 }
@@ -399,6 +401,7 @@ model Product {
   rfqItems             RFQItem[]
   stocks               Stock[]
   wishlistItems        WishlistItem[]
+  Promotion            Promotion[]
 
   @@map("products")
 }
@@ -1674,4 +1677,98 @@ model TrackingLog {
 
   @@index([orderId])
   @@map("tracking_logs")
+}
+
+enum CampaignType {
+  GENERAL
+  FLASH_SALE
+  CLEARANCE
+  BULK
+}
+
+enum TargetType {
+  ALL
+  CATEGORY
+  BRAND
+  PRODUCT
+}
+
+model Promotion {
+  id                       String          @id @default(uuid())
+  name                     String
+  displayTitle             String?         @map("display_title")
+  displaySubtitle          String?         @map("display_subtitle")
+  description              String?
+  discountType             String          @map("discount_type")
+  targetProductId          String?         @map("target_product_id")
+  targetCategoryId         String?         @map("target_category_id")
+  targetBrandId            String?         @map("target_brand_id")
+  startDate                DateTime        @map("start_date")
+  endDate                  DateTime        @map("end_date")
+  isActive                 Boolean         @default(true) @map("is_active")
+  priority                 Int             @default(0)
+  maxUsesTotal             Int?            @map("max_uses_total")
+  maxUsesPerUser           Int?            @map("max_uses_per_user")
+  currentUses              Int             @default(0) @map("current_uses")
+  customerSegment          String          @default("ALL") @map("customer_segment")
+  minOrderValue            Decimal?        @map("min_order_value") @db.Decimal(10, 2)
+  stackable                Boolean         @default(false)
+  showOnBanner             Boolean         @default(false) @map("show_on_banner")
+  bannerImage              String?         @map("banner_image")
+  bannerColor              String?         @map("banner_color")
+  badgeText                String?         @map("badge_text")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+  createdBy                String?         @map("created_by")
+  ageThresholdDays         Int?            @map("age_threshold_days")
+  backgroundColor          String?         @map("background_color")
+  bannerImageDesktop       String?         @map("banner_image_desktop")
+  bannerImageMobile        String?         @map("banner_image_mobile")
+  campaignType             CampaignType    @default(GENERAL) @map("campaign_type")
+  ctaLink                  String?         @map("cta_link")
+  ctaText                  String?         @map("cta_text")
+  displayLocations         String[]        @default([]) @map("display_locations")
+  isAutoApply              Boolean         @default(false) @map("is_auto_apply")
+  showCountdown            Boolean         @default(false) @map("show_countdown")
+  stockThreshold           Int?            @map("stock_threshold")
+  targetIds                String[]        @default([]) @map("target_ids")
+  textColor                String?         @map("text_color")
+  urgencyMessage           String?         @map("urgency_message")
+  targetType               TargetType      @default(ALL) @map("target_type")
+  campaign_hero_image      String?
+  campaign_page_title      String?
+  campaign_primary_color   String?
+  campaign_secondary_color String?
+  max_discount             Decimal?        @db.Decimal(10, 2)
+  popup_scope              String?
+  show_view_all_button     Boolean         @default(false)
+  layoutType               String?         @default("DEFAULT") @map("layout_type")
+  slug                     String?         @unique @map("slug")
+  tiers                    PromotionTier[]
+  brand                    Brand?          @relation(fields: [targetBrandId], references: [id])
+  category                 Category?       @relation(fields: [targetCategoryId], references: [id])
+  product                  Product?        @relation(fields: [targetProductId], references: [id])
+
+  @@index([isActive, startDate, endDate])
+  @@index([targetType, targetProductId])
+  @@index([targetType, targetCategoryId])
+  @@index([targetType, targetBrandId])
+  @@index([showOnBanner])
+  @@index([campaignType])
+  @@map("promotions")
+}
+
+model PromotionTier {
+  id            String    @id @default(uuid())
+  promotionId   String    @map("promotion_id")
+  minQuantity   Int       @map("min_quantity")
+  discountValue Decimal   @map("discount_value") @db.Decimal(10, 2)
+  label         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  promotion     Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, minQuantity])
+  @@index([promotionId])
+  @@map("promotion_tiers")
 }
