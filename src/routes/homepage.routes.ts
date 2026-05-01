@@ -57,36 +57,41 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
         }
     }, async (request, reply) => {
         try {
-            const sections = await (fastify.prisma as any).homepageSection.findMany({
-                where: { isActive: true },
-                include: {
-                    items: {
-                        include: {
-                            product: {
-                                include: {
-                                    prices: { take: 1 }
+            const cacheKey = 'shop:home:sections';
+            const data = await fastify.cache.wrap(cacheKey, async () => {
+                const sections = await (fastify.prisma as any).homepageSection.findMany({
+                    where: { isActive: true },
+                    include: {
+                        items: {
+                            include: {
+                                product: {
+                                    include: {
+                                        prices: { take: 1 }
+                                    }
                                 }
-                            }
-                        },
-                        orderBy: { sortOrder: 'asc' }
-                    }
-                },
-                orderBy: { sortOrder: 'asc' }
-            });
+                            },
+                            orderBy: { sortOrder: 'asc' }
+                        }
+                    },
+                    orderBy: { sortOrder: 'asc' }
+                });
 
-            // Map to simplify for frontend
-            return sections.map((s: any) => ({
-                ...s,
-                items: s.items.map((i: any) => ({
-                    ...i,
-                    product: i.product ? {
-                        id: i.product.id,
-                        name: i.product.name,
-                        imageUrl: i.product.imageUrl,
-                        price: i.product.prices[0]?.amount
-                    } : null
-                }))
-            }));
+                // Map to simplify for frontend
+                return sections.map((s: any) => ({
+                    ...s,
+                    items: s.items.map((i: any) => ({
+                        ...i,
+                        product: i.product ? {
+                            id: i.product.id,
+                            name: i.product.name,
+                            imageUrl: i.product.imageUrl,
+                            price: i.product.prices[0]?.amount
+                        } : null
+                    }))
+                }));
+            }, 300); // 5 minutes cache
+
+            return data;
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send({ message: 'Internal Server Error' });
@@ -470,33 +475,43 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                 type: 'object',
                 required: ['layoutType'],
                 properties: {
-                    layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] }
+                    layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                    slotAssignments: {
+                        type: 'object',
+                        properties: {
+                            slot1: { type: 'string', nullable: true }, // Big Slot
+                            slot2: { type: 'string', nullable: true }, // Top Small
+                            slot3: { type: 'string', nullable: true }  // Bottom Small
+                        }
+                    }
                 }
             }
         }
     }, async (request: any, reply) => {
-        const { layoutType } = request.body;
+        const { layoutType, slotAssignments } = request.body;
         try {
             const existing = await (fastify.prisma as any).homepageSection.findFirst({
                 where: { internalName: 'HERO_CONFIG' }
             });
 
+            const configData = { layoutType, slotAssignments: slotAssignments || {} };
+
             if (existing) {
                 await (fastify.prisma as any).homepageSection.update({
                     where: { id: existing.id },
-                    data: { styles: { layoutType } }
+                    data: { styles: configData }
                 });
             } else {
                 await (fastify.prisma as any).homepageSection.create({
                     data: {
                         internalName: 'HERO_CONFIG',
                         type: 'CONFIG',
-                        styles: { layoutType },
+                        styles: configData,
                         isActive: true
                     }
                 });
             }
-            return { success: true, layoutType };
+            return { success: true, ...configData };
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send({ message: 'Internal Server Error' });

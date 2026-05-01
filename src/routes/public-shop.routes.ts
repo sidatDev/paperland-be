@@ -1494,8 +1494,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const { page, limit, sort, category, brand, price_min, price_max } = request.query;
             const skip = (page - 1) * limit;
 
-            // 1. Fetch the promotion (Campaign)
+            const now = new Date();
+            const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h buffer for safety
             const isUuid = id.length === 36;
+            
+            fastify.log.info(`[Campaign] Fetching campaign with identifier: ${id} (isUuid: ${isUuid})`);
+
             const promotion = await (fastify.prisma as any).promotion.findFirst({
                 where: {
                     AND: [
@@ -1506,16 +1510,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             ].filter(Boolean) as any[]
                         },
                         { isActive: true },
-                        { startDate: { lte: new Date() } },
-                        { endDate: { gte: new Date() } }
+                        { startDate: { lte: bufferDate } },
+                        { endDate: { gte: now } }
                     ]
                 },
                 include: { tiers: true }
             });
 
             if (!promotion) {
+                fastify.log.warn(`[Campaign] Campaign NOT FOUND or EXPIRED for id: ${id}`);
                 return reply.status(404).send(createErrorResponse('Campaign not found or expired'));
             }
+
+            fastify.log.info(`[Campaign] Successfully found campaign: ${promotion.name}`);
 
             // 2. Base filter for the campaign
             let campaignProductFilter: any = {
@@ -1530,7 +1537,15 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 campaignProductFilter.id = { in: [promotion.targetProductId, ...targetIds].filter(Boolean) };
             } else if (promotion.targetType === 'CATEGORY') {
                 const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
-                campaignProductFilter.categoryId = { in: [promotion.targetCategoryId, ...targetIds].filter(Boolean) };
+                const categoryIds = [promotion.targetCategoryId, ...targetIds].filter(Boolean);
+                
+                // Fetch subcategories to include them in the filter
+                const subCats = await (fastify.prisma as any).category.findMany({
+                    where: { parentId: { in: categoryIds } },
+                    select: { id: true }
+                });
+                const allCategoryIds = [...categoryIds, ...subCats.map((c: any) => c.id)];
+                campaignProductFilter.categoryId = { in: allCategoryIds };
             } else if (promotion.targetType === 'BRAND') {
                 const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
                 campaignProductFilter.brandId = { in: [promotion.targetBrandId, ...targetIds].filter(Boolean) };

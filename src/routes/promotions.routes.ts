@@ -30,35 +30,41 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
   });
 
   // GET /shop/promotions/storefront
-  fastify.get('/shop/promotions/storefront', {
-    schema: {
-      description: 'Get grouped promotions for the homepage display',
-      tags: ['Promotions'],
-      querystring: {
-        type: 'object',
-        properties: {
-          segment: { type: 'string', enum: ['ALL', 'B2B_ONLY', 'RETAIL_ONLY'] }
+    fastify.get('/shop/promotions/storefront', {
+        schema: {
+            description: 'Get all active promotions for storefront grouping',
+            tags: ['Public Shop'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    segment: { type: 'string', default: 'ALL' }
+                }
+            }
         }
-      }
-    }
-  }, async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const { segment = 'ALL' } = request.query as any;
-      const now = new Date();
-      
-      // Fetch all active promotions
-      const promotions = await (fastify.prisma as any).promotion.findMany({
-        where: {
-          isActive: true,
-          startDate: { lte: now },
-          endDate: { gte: now },
-          customerSegment: { in: ['ALL', segment] }
-        },
-        include: {
-          tiers: { orderBy: { minQuantity: 'asc' } }
-        },
-        orderBy: { priority: 'desc' }
-      });
+    }, async (request: any, reply) => {
+        try {
+            const { segment } = request.query;
+            const cacheKey = `shop:promotions:storefront:v2:${segment}`;
+          
+            const promotions = await fastify.cache.wrap(cacheKey, async () => {
+        const now = new Date();
+        const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h buffer for safety
+        const results = await (fastify.prisma as any).promotion.findMany({
+          where: {
+            isActive: true,
+            startDate: { lte: bufferDate },
+            endDate: { gte: now },
+            customerSegment: { in: ['ALL', segment] }
+          },
+          include: {
+            tiers: { orderBy: { minQuantity: 'asc' } }
+          },
+          orderBy: { priority: 'desc' }
+        });
+
+        fastify.log.info(`[Promotions] Found ${results.length} total active promotions for segment ${segment}`);
+        return results;
+      }, 300); // 5 minutes cache
 
       // Grouping Logic
       const result: any = {
