@@ -1620,7 +1620,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const pricedProducts = await Promise.all(products.map(async (p: any) => {
                 const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR') || p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
                 const basePrice = sar ? Number(sar.priceRetail) : Number(p.price || 0);
-                const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, basePrice, userId, p.sku);
+                const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, basePrice, userId, p.sku, 1, promotion.id);
                 
                 return {
                     id: p.id,
@@ -1630,6 +1630,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     image_url: p.imageUrl,
                     price: pricing.finalPrice,
                     originalPrice: basePrice !== pricing.finalPrice ? basePrice : undefined,
+                    discountPercent: pricing.discountPercent,
                     badgeText: pricing.badgeText || promotion.badgeText,
                     category: p.category?.name,
                     brand: p.brand?.name,

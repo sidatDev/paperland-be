@@ -52,7 +52,8 @@ export class PromotionService {
   static evaluatePromotion(
     promotions: any[],
     product: { id: string; categoryId: string; brandId: string; basePrice: number; currentStock?: number },
-    quantity: number
+    quantity: number,
+    forcePromotionId?: string
   ) {
     // 1. Filter promotions that apply to this specific item and pass inventory triggers
     const applicablePromotions = promotions.filter(p => {
@@ -72,12 +73,18 @@ export class PromotionService {
     if (applicablePromotions.length === 0) return null;
 
     // 2. STRICT PRIORITY RESOLUTION:
-    // Sort by priority DESC
-    applicablePromotions.sort((a, b) => b.priority - a.priority);
-    
-    // Only consider promotions from the highest priority group
-    const highestPriority = applicablePromotions[0].priority;
-    const topPriorityPromos = applicablePromotions.filter(p => p.priority === highestPriority);
+    let topPriorityPromos = [];
+    if (forcePromotionId) {
+        // If forced, only consider the specific promotion if it applies
+        topPriorityPromos = applicablePromotions.filter(p => p.id === forcePromotionId);
+        if (topPriorityPromos.length === 0) return null;
+    } else {
+        // Sort by priority DESC
+        applicablePromotions.sort((a, b) => b.priority - a.priority);
+        // Only consider promotions from the highest priority group
+        const highestPriority = applicablePromotions[0].priority;
+        topPriorityPromos = applicablePromotions.filter(p => p.priority === highestPriority);
+    }
 
     let bestPrice = Infinity;
     let selectedPromo = null;

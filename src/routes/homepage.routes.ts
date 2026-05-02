@@ -423,14 +423,19 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
     // PUBLIC: Get hero configuration
     fastify.get('/homepage/hero-config', {
         schema: {
-            description: 'Get hero section configuration (layout type)',
+            description: 'Get hero section configuration',
             tags: ['Public Homepage'],
             response: {
                 200: {
                     type: 'object',
                     properties: {
-                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] }
+                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                        slotAssignments: { type: 'object', additionalProperties: true }
                     }
+                },
+                500: {
+                    type: 'object',
+                    properties: { message: { type: 'string' } }
                 }
             }
         }
@@ -439,7 +444,11 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
             const config = await (fastify.prisma as any).homepageSection.findFirst({
                 where: { internalName: 'HERO_CONFIG' }
             });
-            return config?.styles || { layoutType: 'CAROUSEL' };
+            const styles = (config?.styles || {}) as any;
+            return {
+                layoutType: styles.layoutType || 'CAROUSEL',
+                slotAssignments: styles.slotAssignments || {}
+            };
         } catch (err: any) {
             fastify.log.error(err);
             return { layoutType: 'CAROUSEL' };
@@ -451,14 +460,31 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
         preHandler: [fastify.authenticate],
         schema: {
             description: 'Get hero section configuration for admin',
-            tags: ['Admin Homepage Management']
+            tags: ['Admin Homepage Management'],
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                        slotAssignments: { type: 'object', additionalProperties: true }
+                    }
+                },
+                500: {
+                    type: 'object',
+                    properties: { message: { type: 'string' } }
+                }
+            }
         }
     }, async (request, reply) => {
         try {
             const config = await (fastify.prisma as any).homepageSection.findFirst({
                 where: { internalName: 'HERO_CONFIG' }
             });
-            return config?.styles || { layoutType: 'CAROUSEL' };
+            const styles = (config?.styles || {}) as any;
+            return {
+                layoutType: styles.layoutType || 'CAROUSEL',
+                slotAssignments: styles.slotAssignments || {}
+            };
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send({ message: 'Internal Server Error' });
@@ -478,11 +504,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
                     slotAssignments: {
                         type: 'object',
-                        properties: {
-                            slot1: { type: 'string', nullable: true }, // Big Slot
-                            slot2: { type: 'string', nullable: true }, // Top Small
-                            slot3: { type: 'string', nullable: true }  // Bottom Small
-                        }
+                        additionalProperties: true
                     }
                 }
             }

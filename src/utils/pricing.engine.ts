@@ -44,7 +44,8 @@ export class PricingEngine {
     basePrice: number, 
     userId?: string, 
     productSku?: string,
-    quantity: number = 1
+    quantity: number = 1,
+    forcePromotionId?: string
   ): Promise<PriceResult> {
     const defaultResult: PriceResult = { 
         finalPrice: Number(basePrice), 
@@ -166,7 +167,7 @@ export class PricingEngine {
         brandId: product.brandId,
         basePrice: Number(basePrice),
         currentStock
-      }, quantity);
+      }, quantity, forcePromotionId);
 
       // 4. Check General B2B Tier Discount
       let b2bTierPrice = Number(basePrice);
@@ -184,7 +185,11 @@ export class PricingEngine {
       }
 
       // 5. Compare Promotion vs B2B Tier (Best Price Logic)
-      if (promoResult && hasB2BTier) {
+      if (forcePromotionId && promoResult && promoResult.promoId === forcePromotionId) {
+        finalPrice = promoResult.finalPrice;
+        appliedDiscountType = 'PROMOTION';
+        promotionMetadata = promoResult;
+      } else if (promoResult && hasB2BTier) {
         if (promoResult.finalPrice <= Number(b2bTierPrice.toFixed(2))) {
           finalPrice = promoResult.finalPrice;
           appliedDiscountType = 'PROMOTION';
@@ -205,11 +210,22 @@ export class PricingEngine {
         tierName = user?.b2bProfile?.discountTier?.name;
       }
 
+      const calculatedDiscountPercent = appliedDiscountType === 'TIER' ? b2bTierPercent : (promotionMetadata?.discountPercent || 0);
+      
+      if (forcePromotionId) {
+        console.log(`[Pricing Diagnostic] Product: ${productSku || productId}`);
+        console.log(` - Base: ${basePrice}, Final: ${finalPrice}`);
+        console.log(` - ForcePromoId: ${forcePromotionId}`);
+        console.log(` - PromoResult ID: ${promoResult?.promoId}, Discount: ${promoResult?.discountPercent}%`);
+        console.log(` - B2B Tier Percent: ${b2bTierPercent}%`);
+        console.log(` - Applied Type: ${appliedDiscountType}, Final Discount: ${calculatedDiscountPercent}%`);
+      }
+
       return {
         finalPrice: Number(finalPrice.toFixed(2)),
         originalPrice: Number(basePrice),
         discountAmount: Number((basePrice - finalPrice).toFixed(2)),
-        discountPercent: appliedDiscountType === 'TIER' ? b2bTierPercent : (promotionMetadata?.discountPercent || 0),
+        discountPercent: calculatedDiscountPercent,
         discountType: appliedDiscountType,
         promotionId: promotionMetadata?.promoId,
         tierName,
