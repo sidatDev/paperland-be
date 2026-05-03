@@ -37,6 +37,9 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
                   name: { type: 'string' }
                 }
               },
+              showOnHomepage: { type: 'boolean' },
+              homepageOrder: { type: 'integer' },
+              homepageImage: { type: 'string', nullable: true },
               subCategories: {
                 type: 'array',
                 items: {
@@ -150,7 +153,10 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           imageUrl: { type: 'string' },
           isActive: { type: 'boolean' },
           parentId: { type: 'string', nullable: true },
-          position: { type: 'integer' }
+          position: { type: 'integer' },
+          showOnHomepage: { type: 'boolean' },
+          homepageOrder: { type: 'integer' },
+          homepageImage: { type: 'string' }
         }
       },
       response: {
@@ -165,6 +171,9 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
             imageUrl: { type: 'string', nullable: true },
             isActive: { type: 'boolean' },
             parentId: { type: 'string', nullable: true },
+            showOnHomepage: { type: 'boolean' },
+            homepageOrder: { type: 'integer' },
+            homepageImage: { type: 'string', nullable: true },
             createdAt: { type: 'string', format: 'date-time' },
             updatedAt: { type: 'string', format: 'date-time' },
             deletedAt: { type: 'string', format: 'date-time', nullable: true }
@@ -187,7 +196,10 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { name, description, slug, imageUrl, isActive, parentId, position } = request.body as any;
+    const { 
+      name, description, slug, imageUrl, isActive, parentId, position,
+      showOnHomepage, homepageOrder, homepageImage 
+    } = request.body as any;
     try {
       const category = await (fastify.prisma as any).category.create({
         data: { 
@@ -196,8 +208,11 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
           imageUrl,
           isActive: isActive ?? true,
-          parentId: parentId || null,
-          position: position || 0
+          parent: parentId ? { connect: { id: parentId } } : undefined,
+          position: position || 0,
+          showOnHomepage: showOnHomepage ?? false,
+          homepageOrder: homepageOrder ?? 0,
+          homepageImage: homepageImage || null
         }
       });
 
@@ -251,13 +266,19 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           imageUrl: { type: 'string' },
           isActive: { type: 'boolean' },
           parentId: { type: 'string', nullable: true },
-          position: { type: 'integer' }
+          position: { type: 'integer' },
+          showOnHomepage: { type: 'boolean' },
+          homepageOrder: { type: 'integer' },
+          homepageImage: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { name, description, slug, imageUrl, isActive, parentId, position } = request.body as any;
+    const { 
+      name, description, slug, imageUrl, isActive, parentId, position,
+      showOnHomepage, homepageOrder, homepageImage
+    } = request.body as any;
     try {
       const category = await (fastify.prisma as any).category.update({
         where: { id },
@@ -267,8 +288,11 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           slug, 
           imageUrl, 
           isActive,
-          parentId: parentId || null,
-          position
+          parent: parentId ? { connect: { id: parentId } } : { disconnect: true },
+          position,
+          showOnHomepage,
+          homepageOrder,
+          homepageImage
         }
       });
 
@@ -682,6 +706,71 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
 
       return { success: true, message: 'Category order updated successfully' };
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Internal Server Error' });
+    }
+  });
+
+  // Reorder homepage categories
+  fastify.patch('/admin/categories/reorder-homepage', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('category_manage')],
+    schema: {
+      description: 'Bulk update category homepage order',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['orders'],
+        properties: {
+          orders: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'homepageOrder'],
+              properties: {
+                id: { type: 'string' },
+                homepageOrder: { type: 'integer' }
+              }
+            }
+          }
+        }
+      },
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            success: { type: 'boolean' },
+            message: { type: 'string' }
+          }
+        },
+        500: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' }
+          }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { orders } = request.body as any;
+    try {
+      await (fastify.prisma as any).$transaction(
+        orders.map((o: any) =>
+          (fastify.prisma as any).category.update({
+            where: { id: o.id },
+            data: { homepageOrder: o.homepageOrder }
+          })
+        )
+      );
+
+      // Invalidate home cache
+      try {
+          await fastify.cache.invalidateShopCache('home');
+      } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on category reorder');
+      }
+
+      return { success: true, message: 'Homepage order updated' };
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Internal Server Error' });

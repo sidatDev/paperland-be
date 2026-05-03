@@ -277,6 +277,9 @@ model Category {
   parentId         String?          @map("parent_id")
   position         Int              @default(0)
   normalizedName   String?          @unique @map("normalized_name")
+  showOnHomepage   Boolean          @default(false) @map("show_on_homepage")
+  homepageOrder    Int              @default(0) @map("homepage_order")
+  homepageImage    String?          @map("homepage_image")
   parent           Category?        @relation("CategoryHierarchy", fields: [parentId], references: [id])
   subCategories    Category[]       @relation("CategoryHierarchy")
   couponCategories CouponCategory[]

@@ -539,4 +539,53 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
             return reply.status(500).send({ message: 'Internal Server Error' });
         }
     });
+
+    // PUBLIC: Get homepage categories
+    fastify.get('/homepage/categories', {
+        schema: {
+            description: 'Get all categories flagged for homepage display',
+            tags: ['Public Homepage'],
+            response: {
+                200: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string' },
+                            name: { type: 'string' },
+                            slug: { type: 'string' },
+                            homepageImage: { type: 'string', nullable: true },
+                            imageUrl: { type: 'string', nullable: true }
+                        }
+                    }
+                },
+                500: { type: 'object', properties: { message: { type: 'string' } } }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const cacheKey = 'shop:home:categories';
+            const categories = await fastify.cache.wrap(cacheKey, async () => {
+                return await (fastify.prisma as any).category.findMany({
+                    where: { 
+                        isActive: true, 
+                        deletedAt: null,
+                        showOnHomepage: true 
+                    },
+                    orderBy: { homepageOrder: 'asc' },
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        homepageImage: true,
+                        imageUrl: true
+                    }
+                });
+            }, 3600); // 1 hour cache
+            return categories;
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
 }
