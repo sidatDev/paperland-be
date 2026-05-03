@@ -110,6 +110,8 @@ export default fp(async (fastify: FastifyInstance) => {
     const publicPaths = [
       '/admin/auth/login',
       '/api/public/contact',
+      '/public/contact',
+      '/api/v1/public/contact',
       '/api/public/orders/track',
       '/auth/login',
       '/auth/signup',
@@ -128,7 +130,9 @@ export default fp(async (fastify: FastifyInstance) => {
       '/health',
       '/orders/track',
       '/public/newsletter/subscribe',
+      '/api/public/newsletter/subscribe',
       '/public/newsletter/unsubscribe',
+      '/api/public/newsletter/unsubscribe',
       '/public/upload',
       '/redis-health',
       '/api/redis-health',

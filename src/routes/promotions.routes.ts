@@ -66,6 +66,37 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET /admin/promotions/check-name — Check for unique name
+  fastify.get('/admin/promotions/check-name', {
+    preHandler: [fastify.authenticate],
+    schema: { 
+      description: 'Check if internal campaign name is unique', 
+      tags: ['Admin', 'Promotions'],
+      querystring: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          excludeId: { type: 'string' }
+        },
+        required: ['name']
+      }
+    }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { name, excludeId } = request.query as any;
+      const existing = await (fastify.prisma as any).promotion.findFirst({
+        where: { 
+          name: { equals: name.trim(), mode: 'insensitive' },
+          id: excludeId ? { not: excludeId } : undefined,
+          deletedAt: null
+        }
+      });
+      return createResponse({ isUnique: !existing }, "Uniqueness check completed");
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
   // ============================================================
   // ADMIN ROUTES (Require Auth)
   // ============================================================
