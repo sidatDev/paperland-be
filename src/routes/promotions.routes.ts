@@ -266,8 +266,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
   // ADMIN ROUTES (Require Auth)
   // ============================================================
 
-  // GET /v1/admin/promotions — List all (paginated)
-  fastify.get('/v1/admin/promotions', {
+  // GET /admin/promotions — List all (paginated)
+  fastify.get('/admin/promotions', {
     preHandler: [fastify.authenticate],
     schema: { description: 'List all promotions', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -288,8 +288,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // GET /v1/admin/promotions/:id — Get single
-  fastify.get('/v1/admin/promotions/:id', {
+  // GET /admin/promotions/:id — Get single
+  fastify.get('/admin/promotions/:id', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Get a single promotion by ID', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -311,8 +311,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /v1/admin/promotions — Create
-  fastify.post('/v1/admin/promotions', {
+  // POST /admin/promotions — Create
+  fastify.post('/admin/promotions', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Create a new promotion with tiers', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -379,8 +379,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // PUT /v1/admin/promotions/:id — Update
-  fastify.put('/v1/admin/promotions/:id', {
+  // PUT /admin/promotions/:id — Update
+  fastify.put('/admin/promotions/:id', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Update a promotion and its tiers', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -450,8 +450,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // PATCH /v1/admin/promotions/:id/status — Toggle Active Status
-  fastify.patch('/v1/admin/promotions/:id/status', {
+  // PATCH /admin/promotions/:id/status — Toggle Active Status
+  fastify.patch('/admin/promotions/:id/status', {
     preHandler: [fastify.authenticate],
     schema: { 
       description: 'Toggle promotion active status', 
@@ -478,8 +478,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // GET /v1/admin/promotions/trash — List soft-deleted
-  fastify.get('/v1/admin/promotions/trash', {
+  // GET /admin/promotions/trash — List soft-deleted
+  fastify.get('/admin/promotions/trash', {
     preHandler: [fastify.authenticate],
     schema: { description: 'List soft-deleted promotions', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -498,8 +498,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // DELETE /v1/admin/promotions/:id — Soft Delete
-  fastify.delete('/v1/admin/promotions/:id', {
+  // DELETE /admin/promotions/:id — Soft Delete
+  fastify.delete('/admin/promotions/:id', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Soft delete a promotion', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -515,8 +515,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /v1/admin/promotions/:id/restore — Restore
-  fastify.post('/v1/admin/promotions/:id/restore', {
+  // POST /admin/promotions/:id/restore — Restore
+  fastify.post('/admin/promotions/:id/restore', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Restore a soft-deleted promotion', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -532,8 +532,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // DELETE /v1/admin/promotions/:id/permanent — Permanent Delete
-  fastify.delete('/v1/admin/promotions/:id/permanent', {
+  // DELETE /admin/promotions/:id/permanent — Permanent Delete
+  fastify.delete('/admin/promotions/:id/permanent', {
     preHandler: [fastify.authenticate],
     schema: { description: 'Permanently delete a promotion', tags: ['Admin', 'Promotions'] }
   }, async (request: FastifyRequest, reply: FastifyReply) => {
