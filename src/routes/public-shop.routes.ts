@@ -2,6 +2,7 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { PricingEngine } from '../utils/pricing.engine';
+import { PromotionService } from '../services/promotion.service';
 
 export default async function publicShopRoutes(fastify: FastifyInstance) {
     
@@ -1686,6 +1687,196 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     has_more: skip + limit < total
                 }
             }));
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+    
+    // GET /shop/promotions/active
+    fastify.get('/shop/promotions/active', {
+        schema: {
+            description: 'Get all active promotions for the storefront',
+            tags: ['Promotions'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    segment: { type: 'string', enum: ['ALL', 'B2B_ONLY', 'RETAIL_ONLY'] }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        try {
+            const { segment = 'ALL' } = request.query;
+            const promotions = await PromotionService.getActivePromotions(fastify.prisma as any, {
+                customerSegment: segment
+            });
+            return createResponse(promotions, "Active promotions retrieved");
+        } catch (err: any) {
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+
+    // GET /shop/promotions/storefront
+    fastify.get('/shop/promotions/storefront', {
+        schema: {
+            description: 'Get all active promotions for storefront grouping',
+            tags: ['Public Shop'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    segment: { type: 'string', default: 'ALL' }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        try {
+            const { segment } = request.query;
+            const cacheKey = `shop:promotions:storefront:v3:${segment}`; 
+          
+            const promotions = await fastify.cache.wrap(cacheKey, async () => {
+                const now = new Date();
+                const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); 
+
+                const segmentIn = ['ALL'];
+                if (segment === 'B2B') {
+                    segmentIn.push('B2B_ONLY');
+                } else {
+                    segmentIn.push('RETAIL_ONLY');
+                }
+
+                const results = await (fastify.prisma as any).promotion.findMany({
+                    where: {
+                        isActive: true,
+                        deletedAt: null,
+                        startDate: { lte: bufferDate },
+                        endDate: { gte: now },
+                        customerSegment: { in: segmentIn }
+                    },
+                    include: {
+                        tiers: { orderBy: { minQuantity: 'asc' } }
+                    },
+                    orderBy: { priority: 'desc' }
+                });
+
+                return results;
+            }, 300);
+
+            const result: any = {
+                stripPromotions: [],
+                heroPromotions: [],
+                carouselPromotions: [],
+                popupPromotion: null
+            };
+
+            for (const promo of promotions) {
+                const locations = promo.displayLocations || [];
+                
+                if (locations.includes('STRIP')) {
+                    result.stripPromotions.push({
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink,
+                        backgroundColor: promo.backgroundColor,
+                        textColor: promo.textColor
+                    });
+                }
+
+                if (locations.includes('HERO')) {
+                    result.heroPromotions.push({
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        displaySubtitle: promo.displaySubtitle,
+                        bannerImageDesktop: promo.bannerImageDesktop || promo.bannerImage,
+                        bannerImageMobile: promo.bannerImageMobile || promo.bannerImage,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink,
+                        showCountdown: promo.showCountdown,
+                        endDate: promo.endDate,
+                        campaignType: promo.campaignType,
+                        slug: promo.slug
+                    });
+                }
+
+                if (locations.includes('CAROUSEL')) {
+                    let targetFilter: any = {};
+                    
+                    if (promo.targetType === 'ALL') {
+                        targetFilter = {};
+                    } else {
+                        const orArray: any[] = [];
+                        
+                        if (promo.targetType === 'PRODUCT') {
+                            if (promo.targetProductId) orArray.push({ id: promo.targetProductId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ id: { in: promo.targetIds } });
+                        } else if (promo.targetType === 'CATEGORY') {
+                            if (promo.targetCategoryId) orArray.push({ categoryId: promo.targetCategoryId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ categoryId: { in: promo.targetIds } });
+                        } else if (promo.targetType === 'BRAND') {
+                            if (promo.targetBrandId) orArray.push({ brandId: promo.targetBrandId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ brandId: { in: promo.targetIds } });
+                        }
+
+                        if (orArray.length > 0) {
+                            targetFilter = { OR: orArray };
+                        } else {
+                            targetFilter = { id: 'NONE' };
+                        }
+                    }
+
+                    const products = await (fastify.prisma as any).product.findMany({
+                        where: {
+                            ...targetFilter,
+                            isActive: true
+                        },
+                        take: 8,
+                        select: { id: true, name: true, sku: true, imageUrl: true, price: true, slug: true }
+                    });
+
+                    if (products.length > 0) {
+                        const pricedProducts = await Promise.all(products.map(async (p: any) => {
+                            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, Number(p.price), undefined, p.sku);
+                            return {
+                                id: p.id,
+                                name: p.name,
+                                sku: p.sku,
+                                imageUrl: p.imageUrl,
+                                price: p.price,
+                                slug: p.slug,
+                                finalPrice: typeof pricing === 'object' ? (pricing as any).finalPrice : pricing,
+                                badgeText: typeof pricing === 'object' ? (pricing as any).badgeText || promo.badgeText : promo.badgeText
+                            };
+                        }));
+
+                        result.carouselPromotions.push({
+                            promotionId: promo.id,
+                            campaignType: promo.campaignType === 'FLASH_SALE' ? 'FLASH' : promo.campaignType,
+                            displayTitle: promo.displayTitle,
+                            badgeText: promo.badgeText,
+                            slug: promo.slug,
+                            showCountdown: promo.showCountdown,
+                            endDate: promo.endDate,
+                            products: pricedProducts
+                        });
+                    }
+                }
+
+                if (locations.includes('POPUP') && !result.popupPromotion) {
+                    result.popupPromotion = {
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        displaySubtitle: promo.displaySubtitle,
+                        bannerImage: promo.bannerImageMobile || promo.bannerImageDesktop || promo.bannerImage,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink || `/campaign/${promo.id}`,
+                        showCountdown: promo.showCountdown,
+                        endDate: promo.endDate
+                    };
+                }
+            }
+
+            return createResponse(result, "Storefront promotions retrieved");
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send(createErrorResponse(err.message));
