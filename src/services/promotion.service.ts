@@ -19,6 +19,7 @@ export class PromotionService {
     const promotions = await (prisma as any).promotion.findMany({
       where: {
         isActive: true,
+        deletedAt: null,
         startDate: { lte: now },
         endDate: { gte: now },
         // No location targeting for PaperLand

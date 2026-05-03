@@ -44,17 +44,28 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }, async (request: any, reply) => {
         try {
             const { segment } = request.query;
-            const cacheKey = `shop:promotions:storefront:v2:${segment}`;
+            const cacheKey = `shop:promotions:storefront:v3:${segment}`; // Incremented version for cache bust
           
             const promotions = await fastify.cache.wrap(cacheKey, async () => {
         const now = new Date();
         const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h buffer for safety
+
+        // Logic: 'ALL' segment requests should see both 'ALL' and 'RETAIL_ONLY' promotions.
+        // 'B2B' segment requests should see both 'ALL' and 'B2B_ONLY' promotions.
+        const segmentIn = ['ALL'];
+        if (segment === 'B2B') {
+          segmentIn.push('B2B_ONLY');
+        } else {
+          segmentIn.push('RETAIL_ONLY');
+        }
+
         const results = await (fastify.prisma as any).promotion.findMany({
           where: {
             isActive: true,
+            deletedAt: null,
             startDate: { lte: bufferDate },
             endDate: { gte: now },
-            customerSegment: { in: ['ALL', segment] }
+            customerSegment: { in: segmentIn }
           },
           include: {
             tiers: { orderBy: { minQuantity: 'asc' } }
@@ -257,6 +268,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const promotions = await (fastify.prisma as any).promotion.findMany({
+        where: { deletedAt: null },
         include: {
           tiers: { orderBy: { minQuantity: 'asc' } },
           product: { select: { id: true, name: true, sku: true } },
@@ -287,7 +299,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           brand: { select: { id: true, name: true } }
         }
       });
-      if (!promotion) return reply.status(404).send(createErrorResponse("Promotion not found"));
+      if (!promotion || promotion.deletedAt) return reply.status(404).send(createErrorResponse("Promotion not found"));
       return createResponse(promotion, "Promotion retrieved");
     } catch (err: any) {
       return reply.status(500).send(createErrorResponse(err.message));
@@ -451,11 +463,85 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
       const { isActive } = request.body as any;
       
       const updated = await (fastify.prisma as any).promotion.update({
-        where: { id },
+        where: { id, deletedAt: null },
         data: { isActive }
       });
       
       return createResponse(updated, `Promotion ${isActive ? 'activated' : 'deactivated'}`);
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // GET /v1/admin/promotions/trash — List soft-deleted
+  fastify.get('/v1/admin/promotions/trash', {
+    preHandler: [fastify.authenticate],
+    schema: { description: 'List soft-deleted promotions', tags: ['Admin', 'Promotions'] }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const promotions = await (fastify.prisma as any).promotion.findMany({
+        where: { deletedAt: { not: null } },
+        include: {
+          tiers: { orderBy: { minQuantity: 'asc' } },
+          product: { select: { id: true, name: true, sku: true } }
+        },
+        orderBy: { deletedAt: 'desc' }
+      });
+      return createResponse(promotions, "Trash promotions retrieved");
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // DELETE /v1/admin/promotions/:id — Soft Delete
+  fastify.delete('/v1/admin/promotions/:id', {
+    preHandler: [fastify.authenticate],
+    schema: { description: 'Soft delete a promotion', tags: ['Admin', 'Promotions'] }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as any;
+      const updated = await (fastify.prisma as any).promotion.update({
+        where: { id },
+        data: { deletedAt: new Date(), isActive: false }
+      });
+      return createResponse(updated, "Promotion moved to trash");
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // POST /v1/admin/promotions/:id/restore — Restore
+  fastify.post('/v1/admin/promotions/:id/restore', {
+    preHandler: [fastify.authenticate],
+    schema: { description: 'Restore a soft-deleted promotion', tags: ['Admin', 'Promotions'] }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as any;
+      const updated = await (fastify.prisma as any).promotion.update({
+        where: { id },
+        data: { deletedAt: null, isActive: true }
+      });
+      return createResponse(updated, "Promotion restored successfully");
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // DELETE /v1/admin/promotions/:id/permanent — Permanent Delete
+  fastify.delete('/v1/admin/promotions/:id/permanent', {
+    preHandler: [fastify.authenticate],
+    schema: { description: 'Permanently delete a promotion', tags: ['Admin', 'Promotions'] }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { id } = request.params as any;
+      
+      // Delete tiers first (Prisma should handle if onDelete: Cascade but let's be sure)
+      await (fastify.prisma as any).promotionTier.deleteMany({ where: { promotionId: id } });
+      
+      const deleted = await (fastify.prisma as any).promotion.delete({
+        where: { id }
+      });
+      return createResponse(deleted, "Promotion permanently deleted");
     } catch (err: any) {
       return reply.status(500).send(createErrorResponse(err.message));
     }

@@ -1735,6 +1735,7 @@ model Promotion {
   textColor                String?         @map("text_color")
   urgencyMessage           String?         @map("urgency_message")
   targetType               TargetType      @default(ALL) @map("target_type")
+  deletedAt                DateTime?       @map("deleted_at")
   campaign_hero_image      String?
   campaign_page_title      String?
   campaign_primary_color   String?
