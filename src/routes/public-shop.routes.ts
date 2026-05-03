@@ -281,22 +281,22 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
 
                     if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
-                        const [popularProducts, latestProducts, premiumProducts] = await Promise.all([
+                        const [popularProducts, featuredProducts, premiumProducts] = await Promise.all([
                             (fastify.prisma as any).product.findMany({
                                 where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                                take: 10,
+                                orderBy: { orderItems: { _count: 'desc' } }, // Actual Best Sellers
+                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            }),
+                            (fastify.prisma as any).product.findMany({
+                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null, isFeatured: true },
                                 take: 10,
                                 include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                             }),
                             (fastify.prisma as any).product.findMany({
                                 where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                                 take: 10,
-                                orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
-                            }),
-                            (fastify.prisma as any).product.findMany({
-                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
-                                take: 10,
-                                orderBy: { updatedAt: 'desc' },
+                                orderBy: { createdAt: 'desc' },
                                 include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                             })
                         ]);
@@ -321,8 +321,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 });
                             }
                         }
-                        if (!hasFeatured && latestProducts.length > 0) {
-                            s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: latestProducts.map((p: any) => ({ id: p.id, product: p })) });
+                        if (!hasFeatured && featuredProducts.length > 0) {
+                            s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: featuredProducts.map((p: any) => ({ id: p.id, product: p })) });
                         }
                         if (!hasPremium && premiumProducts.length > 0) {
                             s.push({ id: 'premium-auto', type: 'special_offers', sortOrder: 1, displayTitle: 'Our Premium Collection', subtitle: 'Our COLLECTIONS', items: premiumProducts.map((p: any) => ({ id: p.id, product: p })) });
@@ -621,6 +621,14 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     where.AND.push({
                         specifications: { path: ['status'], equals: 'Out of Stock' }
                     });
+                }
+
+                if (sort === 'featured') {
+                    where.AND.push({ isFeatured: true });
+                }
+                
+                if (sort === 'best_seller') {
+                    where.AND.push({ orderItems: { some: {} } });
                 }
 
                 if (q) {
@@ -1532,23 +1540,35 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 parentId: null
             };
 
-            if (promotion.targetType === 'PRODUCT') {
+            if (promotion.targetType !== 'ALL') {
                 const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
-                campaignProductFilter.id = { in: [promotion.targetProductId, ...targetIds].filter(Boolean) };
-            } else if (promotion.targetType === 'CATEGORY') {
-                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
-                const categoryIds = [promotion.targetCategoryId, ...targetIds].filter(Boolean);
-                
-                // Fetch subcategories to include them in the filter
+                const allPotentialIds = [...targetIds, promotion.targetProductId, promotion.targetCategoryId, promotion.targetBrandId].filter(Boolean);
+
+                const orConditions: any[] = [];
+
+                // 1. Specific Products
+                orConditions.push({ id: { in: allPotentialIds } });
+
+                // 2. Categories (including subcategories)
+                // Fetch subcategories for all potential IDs that might be categories
                 const subCats = await (fastify.prisma as any).category.findMany({
-                    where: { parentId: { in: categoryIds } },
+                    where: { 
+                        OR: [
+                            { id: { in: allPotentialIds } },
+                            { parentId: { in: allPotentialIds } }
+                        ]
+                    },
                     select: { id: true }
                 });
-                const allCategoryIds = [...categoryIds, ...subCats.map((c: any) => c.id)];
-                campaignProductFilter.categoryId = { in: allCategoryIds };
-            } else if (promotion.targetType === 'BRAND') {
-                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
-                campaignProductFilter.brandId = { in: [promotion.targetBrandId, ...targetIds].filter(Boolean) };
+                const categoryIds = subCats.map((c: any) => c.id);
+                if (categoryIds.length > 0) {
+                    orConditions.push({ categoryId: { in: categoryIds } });
+                }
+
+                // 3. Brands
+                orConditions.push({ brandId: { in: allPotentialIds } });
+
+                campaignProductFilter.OR = orConditions;
             }
 
             // 3. User applied filters

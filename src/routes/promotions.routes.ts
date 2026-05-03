@@ -172,6 +172,8 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
               displayTitle: promo.displayTitle,
               badgeText: promo.badgeText,
               slug: promo.slug,
+              showCountdown: promo.showCountdown,
+              endDate: promo.endDate,
               products: pricedProducts
             });
           }
@@ -181,9 +183,12 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           result.popupPromotion = {
             id: promo.id,
             displayTitle: promo.displayTitle,
+            displaySubtitle: promo.displaySubtitle,
             bannerImage: promo.bannerImageMobile || promo.bannerImageDesktop || promo.bannerImage,
             ctaText: promo.ctaText,
-            ctaLink: promo.ctaLink
+            ctaLink: promo.ctaLink || `/campaign/${promo.id}`,
+            showCountdown: promo.showCountdown,
+            endDate: promo.endDate
           };
         }
       }

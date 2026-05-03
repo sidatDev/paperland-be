@@ -153,6 +153,7 @@ export default fp(async (fastify: FastifyInstance) => {
     const isDiscoveryPath = 
       normalizedPath.startsWith('/shop') || 
       normalizedPath.startsWith('/public') || 
+      normalizedPath.startsWith('/api/shop') || 
       path.startsWith('/api/shop') || 
       path.startsWith('/api/v1/shop') || 
       path.startsWith('/api/public') || 

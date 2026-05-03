@@ -119,7 +119,7 @@ const start = async () => {
     await fastify.register(import('./routes/coupons.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/returns.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/whatsapp.routes'), { prefix: '/api/v1' });
-    await fastify.register(import('./routes/promotions.routes'), { prefix: '/api' });
+    await fastify.register(import('./routes/promotions.routes'), { prefix: '/api/v1' });
     
     // New Admin Module Routes
     await fastify.register(import('./routes/flash-sales.routes'), { prefix: '/api/v1' });
