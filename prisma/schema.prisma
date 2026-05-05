@@ -1727,6 +1727,8 @@ model Promotion {
   backgroundColor          String?         @map("background_color")
   bannerImageDesktop       String?         @map("banner_image_desktop")
   bannerImageMobile        String?         @map("banner_image_mobile")
+  popupImageDesktop        String?         @map("popup_image_desktop")
+  popupImageMobile         String?         @map("popup_image_mobile")
   campaignType             CampaignType    @default(GENERAL) @map("campaign_type")
   ctaLink                  String?         @map("cta_link")
   ctaText                  String?         @map("cta_text")
@@ -1745,6 +1747,7 @@ model Promotion {
   campaign_secondary_color String?
   max_discount             Decimal?        @db.Decimal(10, 2)
   popup_scope              String?
+  popupYoutubeLink         String?         @map("popup_youtube_link")
   show_view_all_button     Boolean         @default(false)
   layoutType               String?         @default("DEFAULT") @map("layout_type")
   slug                     String?         @unique @map("slug")
