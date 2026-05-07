@@ -156,7 +156,7 @@ export class PricingEngine {
         productIds: [productId],
         categoryIds: [product.categoryId],
         brandIds: [product.brandId],
-        customerSegment: user?.b2bProfile ? 'B2B_ONLY' : 'RETAIL_ONLY'
+        customerSegment: user?.b2bProfile ? 'B2B_ONLY' : (user ? 'RETAIL_ONLY' : 'GUEST_ONLY')
       });
 
       const currentStock = product.stocks.reduce((sum, s) => sum + s.qty, 0);
@@ -317,7 +317,7 @@ export class PricingEngine {
         productIds,
         categoryIds,
         brandIds,
-        customerSegment: user?.b2bProfile ? 'B2B_ONLY' : 'RETAIL_ONLY'
+        customerSegment: user?.b2bProfile ? 'B2B_ONLY' : (user ? 'RETAIL_ONLY' : 'GUEST_ONLY')
       });
 
       const overridesMap = new Map();

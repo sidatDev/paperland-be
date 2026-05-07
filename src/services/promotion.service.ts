@@ -10,7 +10,7 @@ export class PromotionService {
       productIds?: string[];
       categoryIds?: string[];
       brandIds?: string[];
-      customerSegment?: 'ALL' | 'B2B_ONLY' | 'RETAIL_ONLY';
+      customerSegment?: 'ALL' | 'B2B_ONLY' | 'RETAIL_ONLY' | 'GUEST_ONLY';
     }
   ) {
     const now = new Date();

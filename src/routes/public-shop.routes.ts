@@ -1507,7 +1507,20 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h buffer for safety
             const isUuid = id.length === 36;
             
-            fastify.log.info(`[Campaign] Fetching campaign with identifier: ${id} (isUuid: ${isUuid})`);
+            const userId = (request.user as any)?.id;
+            let currentSegment = 'GUEST';
+            if (userId) {
+                const user = await (fastify.prisma as any).user.findUnique({
+                    where: { id: userId },
+                    include: { b2bProfile: true }
+                });
+                currentSegment = user?.b2bProfile ? 'B2B' : 'RETAIL';
+            }
+
+            const segmentIn = ['ALL'];
+            if (currentSegment === 'B2B') segmentIn.push('B2B_ONLY');
+            else if (currentSegment === 'RETAIL') segmentIn.push('RETAIL_ONLY');
+            else segmentIn.push('GUEST_ONLY');
 
             const promotion = await (fastify.prisma as any).promotion.findFirst({
                 where: {
@@ -1520,7 +1533,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         },
                         { isActive: true },
                         { startDate: { lte: bufferDate } },
-                        { endDate: { gte: now } }
+                        { endDate: { gte: now } },
+                        { customerSegment: { in: segmentIn } }
                     ]
                 },
                 include: { tiers: true }
@@ -1637,7 +1651,6 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             ]);
 
             // 6. Apply pricing and map
-            const userId = (request.user as any)?.id;
             const pricedProducts = await Promise.all(products.map(async (p: any) => {
                 const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR') || p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
                 const basePrice = sar ? Number(sar.priceRetail) : Number(p.price || 0);
@@ -1741,6 +1754,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 const segmentIn = ['ALL'];
                 if (segment === 'B2B') {
                     segmentIn.push('B2B_ONLY');
+                } else if (segment === 'GUEST') {
+                    segmentIn.push('GUEST_ONLY');
                 } else {
                     segmentIn.push('RETAIL_ONLY');
                 }
