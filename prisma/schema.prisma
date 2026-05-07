@@ -1748,6 +1748,7 @@ model Promotion {
   max_discount             Decimal?        @db.Decimal(10, 2)
   popup_scope              String?
   popupYoutubeLink         String?         @map("popup_youtube_link")
+  popupFrequencyHours      Int?            @default(0) @map("popup_frequency_hours")
   show_view_all_button     Boolean         @default(false)
   layoutType               String?         @default("DEFAULT") @map("layout_type")
   slug                     String?         @unique @map("slug")

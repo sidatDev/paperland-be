@@ -196,6 +196,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           stockThreshold: body.stockThreshold ?? null,
           ageThresholdDays: body.ageThresholdDays ?? null,
           popupYoutubeLink: body.popupYoutubeLink || null,
+          popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
           layoutType: body.layoutType || 'DEFAULT',
           createdBy: userId,
@@ -271,6 +272,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           stockThreshold: body.stockThreshold ?? null,
           ageThresholdDays: body.ageThresholdDays ?? null,
           popupYoutubeLink: body.popupYoutubeLink || null,
+          popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
           layoutType: body.layoutType || 'DEFAULT',
           tiers: {
