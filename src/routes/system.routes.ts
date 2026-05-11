@@ -52,7 +52,7 @@ export default async function systemRoutes(fastify: FastifyInstance) {
             smtpEncryption: "TLS",
             senderName: "Paperland Support",
             senderEmail: "noreply@paperland.com",
-            logoUrl: "/images/logo/Paperland logo.png",
+            logoUrl: "/images/Paperland logo.png",
             themeColor: "#059669",
             supportPhone: "+92 300 1234567",
             address: "Karachi, Pakistan"

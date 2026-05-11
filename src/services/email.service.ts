@@ -193,7 +193,7 @@ export class EmailService {
       const brandingAttachments: any[] = [];
       
       const assets = [
-        { cid: 'paperland-logo', url: 'https://paperland.com.pk/images/logo/Paperland%20logo.png', filename: 'logo.png' },
+        { cid: 'paperland-logo', url: 'https://paperland.com.pk/images/Paperland%20logo.png', filename: 'logo.png' },
         { cid: 'social-fb', url: 'https://img.icons8.com/color/48/facebook-new.png', filename: 'fb.png' },
         { cid: 'social-ig', url: 'https://img.icons8.com/color/48/instagram-new.png', filename: 'ig.png' },
         { cid: 'social-wa', url: 'https://img.icons8.com/color/48/whatsapp.png', filename: 'wa.png' },
