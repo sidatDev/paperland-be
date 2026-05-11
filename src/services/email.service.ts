@@ -189,43 +189,8 @@ export class EmailService {
       const config = await this.getSmtpSettings(); // Fetch config
       const transporter = await this.createTransporter(); // This now logs connection details
       
-      // Attachments for branding (Logo & Socials)
+      // Attachments for branding (Removed fetching to avoid separate file attachments in Gmail)
       const brandingAttachments: any[] = [];
-      
-      const assets = [
-        { cid: 'paperland-logo', url: 'https://paperland.com.pk/images/Paperland%20logo.png', filename: 'logo.png' },
-        { cid: 'social-fb', url: 'https://img.icons8.com/color/48/facebook-new.png', filename: 'fb.png' },
-        { cid: 'social-ig', url: 'https://img.icons8.com/color/48/instagram-new.png', filename: 'ig.png' },
-        { cid: 'social-wa', url: 'https://img.icons8.com/color/48/whatsapp.png', filename: 'wa.png' },
-        { cid: 'social-li', url: 'https://img.icons8.com/color/48/linkedin.png', filename: 'li.png' }
-      ];
-
-      for (const asset of assets) {
-        try {
-          const response = await axios.get(asset.url, { 
-            responseType: 'arraybuffer',
-            timeout: 5000,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-          });
-          
-          if (response.status === 200) {
-            brandingAttachments.push({
-              filename: asset.filename,
-              content: Buffer.from(response.data),
-              cid: asset.cid,
-              contentType: 'image/png',
-              contentDisposition: 'inline'
-            });
-            console.log(`✅ Attached ${asset.cid} from ${asset.url}`);
-          } else {
-            console.warn(`⚠️ Asset ${asset.cid} returned status ${response.status}`);
-          }
-        } catch (err: any) {
-          console.error(`❌ Failed to fetch ${asset.cid}: ${err.message}`);
-        }
-      }
 
       await transporter.sendMail({
         from: `"${config.senderName}" <${config.senderEmail}>`,

@@ -3,11 +3,11 @@
  * Optimized for Paperland brand guidelines (Red #E31E24, Yellow #FDB714)
  */
 
-const LOGO_URL = 'cid:paperland-logo';
-const SOCIAL_FB = 'cid:social-fb';
-const SOCIAL_IG = 'cid:social-ig';
-const SOCIAL_WA = 'cid:social-wa';
-const SOCIAL_LI = 'cid:social-li';
+const LOGO_URL = 'https://paperland.com.pk/images/Paperland%20logo.png';
+const SOCIAL_FB = 'https://img.icons8.com/color/48/facebook-new.png';
+const SOCIAL_IG = 'https://img.icons8.com/color/48/instagram-new.png';
+const SOCIAL_WA = 'https://img.icons8.com/color/48/whatsapp.png';
+const SOCIAL_LI = 'https://img.icons8.com/color/48/linkedin.png';
 const WEBSITE_URL = process.env.FRONTEND_URL || 'https://paperland.com.pk';
 const PHONE = '+92 321 1234567';
 const EMAIL = 'info@paperland.com.pk';
