@@ -26,7 +26,8 @@ export default fp(async (fastify: FastifyInstance) => {
     const queues = {
         import: new Queue('product-import', { connection }),
         search: new Queue('search-sync', { connection }),
-        image: new Queue('image-optimization', { connection })
+        image: new Queue('image-optimization', { connection }),
+        orders: new Queue('order-tasks', { connection })
     };
 
     // 2. Register Decorated Queues
@@ -54,12 +55,29 @@ export default fp(async (fastify: FastifyInstance) => {
         concurrency: 2 
     });
 
-    // 4. Logging & Error Handling
-    [importWorker, searchWorker, imageWorker].forEach((worker, idx) => {
-        const name = ['Import', 'Search', 'Image'][idx];
+    // Order Tasks Worker (New)
+    const { processOrderCancellationTask } = await import('../services/order-task.service');
+    const orderWorker = new Worker('order-tasks', async (job) => {
+        if (job.name === 'auto-cancel-expired') {
+            await processOrderCancellationTask(fastify);
+        }
+    }, { 
+        connection,
+        concurrency: 1 
+    });
+
+    // 4. Schedule Repeatable Jobs
+    // Run every hour to check for expired orders
+    await queues.orders.add('auto-cancel-expired', {}, {
+        repeat: { pattern: '0 * * * *' } // Every hour at minute 0
+    });
+
+    // 5. Logging & Error Handling
+    [importWorker, searchWorker, imageWorker, orderWorker].forEach((worker, idx) => {
+        const name = ['Import', 'Search', 'Image', 'Order'][idx];
         
         worker.on('completed', (job) => {
-            fastify.log.info(`✅ ${name} Job ${job.id} completed`);
+            fastify.log.info(`✅ ${name} Job ${job?.id} completed`);
         });
 
         worker.on('failed', (job, err) => {
@@ -67,17 +85,18 @@ export default fp(async (fastify: FastifyInstance) => {
         });
     });
 
-    // 5. Cleanup
+    // 6. Cleanup
     fastify.addHook('onClose', async (instance) => {
         await Promise.all([
             ...Object.values(instance.queues).map(q => q.close()),
             importWorker.close(),
             searchWorker.close(),
-            imageWorker.close()
+            imageWorker.close(),
+            orderWorker.close()
         ]);
     });
 
-    fastify.log.info('🚀 BullMQ (Import, Search, Image) initialized');
+    fastify.log.info('🚀 BullMQ (Import, Search, Image, Order) initialized');
 });
 
 declare module 'fastify' {
@@ -86,6 +105,7 @@ declare module 'fastify' {
             import: Queue;
             search: Queue;
             image: Queue;
+            orders: Queue;
         };
     }
 }

@@ -1834,4 +1834,67 @@ export default async function orderRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // PATCH /orders/:id/payment-proof (Update payment proof by customer)
+  fastify.patch('/orders/:id/payment-proof', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Update Payment Proof for Bank Transfer Order',
+        tags: ['Orders'],
+        params: { type: 'object', properties: { id: { type: 'string' } } },
+        body: {
+            type: 'object',
+            required: ['proofUrl'],
+            properties: {
+                proofUrl: { type: 'string' },
+                referenceNumber: { type: 'string' }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    const { proofUrl, referenceNumber } = request.body;
+    const userId = (request.user as any).id;
+
+    try {
+        const order = await (fastify.prisma as any).order.findFirst({
+            where: { id, userId, deletedAt: null }
+        });
+
+        if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+        
+        // Only allow updating proof for Bank Transfer orders
+        if (order.paymentMethod !== 'BANK_TRANSFER') {
+            return reply.status(400).send(createErrorResponse("Payment proof can only be uploaded for Bank Transfer orders"));
+        }
+
+        const currentDetails = (order.paymentDetails as any) || {};
+        const updatedDetails = {
+            ...currentDetails,
+            proofUrl,
+            referenceNumber: referenceNumber || currentDetails.referenceNumber
+        };
+
+        const updatedOrder = await (fastify.prisma as any).order.update({
+            where: { id: order.id },
+            data: { 
+                paymentDetails: updatedDetails,
+                paymentStatus: 'AWAITING_CONFIRMATION' // Ensure it reflects the upload
+            }
+        });
+
+        await logActivity(fastify, {
+            entityType: 'ORDER',
+            entityId: id,
+            action: 'UPDATE_PAYMENT_PROOF',
+            performedBy: userId,
+            details: { proofUrl, referenceNumber }
+        });
+
+        return createResponse(updatedOrder, "Payment proof updated successfully");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
 }

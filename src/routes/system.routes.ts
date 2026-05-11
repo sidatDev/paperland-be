@@ -592,4 +592,23 @@ export default async function systemRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET all Currencies
+  fastify.get('/admin/system/currencies', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Get all currencies',
+        tags: ['System'],
+    }
+  }, async (request, reply) => {
+    try {
+        const currencies = await (fastify.prisma as any).currency.findMany({
+            orderBy: { name: 'asc' }
+        });
+        return createResponse(currencies, 'Currencies retrieved successfully');
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Internal Server Error'));
+    }
+  });
+
 }

@@ -25,6 +25,7 @@ model Currency {
   orders            Order[]
   prices            Price[]
   transactions      Transaction[]
+  bankAccounts      BankAccount[]
 
   @@map("currencies")
 }
@@ -1086,16 +1087,29 @@ model PaymentRule {
 }
 
 model BankAccount {
-  id            String   @id @default(uuid())
-  bankName      String   @map("bank_name")
-  accountTitle  String   @map("account_title")
-  accountNumber String   @map("account_number")
-  iban          String?
-  branch        String?
-  isActive      Boolean  @default(true) @map("is_active")
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  bankName           String    @map("bank_name")
+  accountTitle       String    @map("account_title")
+  accountNumber      String    @map("account_number")
+  iban               String?
+  swiftCode          String?   @map("swift_code")
+  bankAddress        String?   @map("bank_address")
+  beneficiaryAddress String?   @map("beneficiary_address")
+  country            String?
+  routingNumber      String?   @map("routing_number")
+  sortCode           String?   @map("sort_code")
+  ifscCode           String?   @map("ifsc_code")
+  branch             String?
+  branchCode         String?   @map("branch_code")
+  cnic               String?
+  minAmount          Decimal?  @map("min_amount") @db.Decimal(12, 2)
+  maxAmount          Decimal?  @map("max_amount") @db.Decimal(12, 2)
+  isActive           Boolean   @default(true) @map("is_active")
+  sortOrder          Int       @default(0) @map("sort_order")
+  currencyId         String?   @map("currency_id")
+  currency           Currency? @relation(fields: [currencyId], references: [id])
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   @@map("bank_accounts")
 }

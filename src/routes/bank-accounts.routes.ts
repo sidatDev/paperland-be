@@ -14,6 +14,7 @@ export default async function bankAccountRoutes(fastify: FastifyInstance) {
   }, async (request, reply) => {
     try {
         const accounts = await (fastify.prisma as any).bankAccount.findMany({
+            include: { currency: true },
             orderBy: { sortOrder: 'asc' }
         });
         return createResponse(accounts, 'Bank accounts retrieved successfully');
@@ -37,6 +38,14 @@ export default async function bankAccountRoutes(fastify: FastifyInstance) {
                 accountTitle: { type: 'string' },
                 accountNumber: { type: 'string' },
                 iban: { type: 'string', nullable: true },
+                swiftCode: { type: 'string', nullable: true },
+                bankAddress: { type: 'string', nullable: true },
+                beneficiaryAddress: { type: 'string', nullable: true },
+                country: { type: 'string', nullable: true },
+                routingNumber: { type: 'string', nullable: true },
+                sortCode: { type: 'string', nullable: true },
+                ifscCode: { type: 'string', nullable: true },
+                currencyId: { type: 'string', nullable: true },
                 branch: { type: 'string', nullable: true },
                 isActive: { type: 'boolean' },
                 sortOrder: { type: 'integer' }
@@ -46,7 +55,11 @@ export default async function bankAccountRoutes(fastify: FastifyInstance) {
   }, async (request: any, reply) => {
     try {
         const account = await (fastify.prisma as any).bankAccount.create({
-            data: request.body
+            data: {
+                ...request.body,
+                isActive: request.body.isActive ?? true,
+                sortOrder: request.body.sortOrder ?? 0
+            }
         });
         
         await logActivity(fastify, {
