@@ -184,4 +184,64 @@ export default async function financeRoutes(fastify: FastifyInstance) {
           return reply.status(500).send(createErrorResponse(err.message));
       }
   });
+
+  // GET /admin/finance/price-logs
+  fastify.get('/admin/finance/price-logs', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    schema: {
+        description: 'Get Product Price Change Logs',
+        tags: ['Finance'],
+        querystring: {
+            type: 'object',
+            properties: {
+                page: { type: 'integer', default: 1 },
+                limit: { type: 'integer', default: 10 },
+                search: { type: 'string' },
+                startDate: { type: 'string', format: 'date' },
+                endDate: { type: 'string', format: 'date' }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+      try {
+          const { page = 1, limit = 10, search, startDate, endDate } = request.query;
+          const skip = (Number(page) - 1) * Number(limit);
+          const prisma = fastify.prisma as any;
+
+          const where: any = {};
+
+          if (search) {
+              where.OR = [
+                  { sku: { contains: search, mode: 'insensitive' } },
+                  { productName: { contains: search, mode: 'insensitive' } },
+                  { userName: { contains: search, mode: 'insensitive' } }
+              ];
+          }
+
+          if (startDate || endDate) {
+              where.createdAt = {};
+              if (startDate) where.createdAt.gte = new Date(startDate);
+              if (endDate) where.createdAt.lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+          }
+
+          const [logs, total] = await Promise.all([
+              prisma.priceUpdateLog.findMany({
+                  where,
+                  skip,
+                  take: Number(limit),
+                  orderBy: { createdAt: 'desc' }
+              }),
+              prisma.priceUpdateLog.count({ where })
+          ]);
+
+          return createResponse(logs, "Price logs retrieved", {
+              total,
+              page: Number(page),
+              limit: Number(limit)
+          });
+      } catch (err: any) {
+          fastify.log.error(err);
+          return reply.status(500).send(createErrorResponse(err.message));
+      }
+  });
 }

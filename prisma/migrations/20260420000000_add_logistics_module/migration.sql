@@ -1,29 +1,29 @@
 -- DropForeignKey
-ALTER TABLE "addresses" DROP CONSTRAINT "addresses_user_id_fkey";
+ALTER TABLE "addresses" DROP CONSTRAINT IF EXISTS "addresses_user_id_fkey";
 
 -- DropForeignKey
-ALTER TABLE "flash_sale_items" DROP CONSTRAINT "flash_sale_items_product_id_fkey";
+ALTER TABLE "flash_sale_items" DROP CONSTRAINT IF EXISTS "flash_sale_items_product_id_fkey";
 
 -- DropForeignKey
-ALTER TABLE "orders" DROP CONSTRAINT "orders_user_id_fkey";
+ALTER TABLE "orders" DROP CONSTRAINT IF EXISTS "orders_user_id_fkey";
 
 -- DropForeignKey
-ALTER TABLE "rfq_items" DROP CONSTRAINT "rfq_items_rfq_id_fkey";
+ALTER TABLE "rfq_items" DROP CONSTRAINT IF EXISTS "rfq_items_rfq_id_fkey";
 
 -- DropForeignKey
-ALTER TABLE "rfqs" DROP CONSTRAINT "rfqs_shipping_address_id_fkey";
+ALTER TABLE "rfqs" DROP CONSTRAINT IF EXISTS "rfqs_shipping_address_id_fkey";
 
 -- DropForeignKey
-ALTER TABLE "transactions" DROP CONSTRAINT "transactions_user_id_fkey";
+ALTER TABLE "transactions" DROP CONSTRAINT IF EXISTS "transactions_user_id_fkey";
 
 -- DropIndex
-DROP INDEX "idx_orders_guest_token";
+DROP INDEX IF EXISTS "idx_orders_guest_token";
 
 -- DropIndex
-DROP INDEX "idx_orders_is_guest";
+DROP INDEX IF EXISTS "idx_orders_is_guest";
 
 -- AlterTable
-ALTER TABLE "orders" DROP COLUMN "shipper_label_url",
+ALTER TABLE "orders" DROP COLUMN IF EXISTS "shipper_label_url",
 ADD COLUMN     "courier_provider_id" TEXT,
 ADD COLUMN     "delivery_status" TEXT,
 ADD COLUMN     "fulfillment_warehouse_id" TEXT,
@@ -37,18 +37,18 @@ ALTER COLUMN "is_guest_order" SET NOT NULL,
 ALTER COLUMN "guest_token" SET DATA TYPE TEXT;
 
 -- AlterTable
-ALTER TABLE "rfq_items" DROP COLUMN "specifications",
-DROP COLUMN "target_price";
+ALTER TABLE "rfq_items" DROP COLUMN IF EXISTS "specifications",
+DROP COLUMN IF EXISTS "target_price";
 
 -- AlterTable
-ALTER TABLE "rfqs" DROP COLUMN "attachments",
-DROP COLUMN "description",
-DROP COLUMN "expected_delivery_date",
-DROP COLUMN "preferred_payment_method",
-DROP COLUMN "shipping_address_id",
-DROP COLUMN "title",
-DROP COLUMN "urgency",
-DROP COLUMN "valid_until";
+ALTER TABLE "rfqs" DROP COLUMN IF EXISTS "attachments",
+DROP COLUMN IF EXISTS "description",
+DROP COLUMN IF EXISTS "expected_delivery_date",
+DROP COLUMN IF EXISTS "preferred_payment_method",
+DROP COLUMN IF EXISTS "shipping_address_id",
+DROP COLUMN IF EXISTS "title",
+DROP COLUMN IF EXISTS "urgency",
+DROP COLUMN IF EXISTS "valid_until";
 
 -- CreateTable
 CREATE TABLE "courier_providers" (

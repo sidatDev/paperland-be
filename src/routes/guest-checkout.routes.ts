@@ -5,6 +5,7 @@ import { PricingEngine } from '../utils/pricing.engine';
 import { LogisticsEngine } from '../services/logistics-engine.service';
 import * as bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { createErrorResponse } from '../utils/response-wrapper';
 
 /**
  * Guest Checkout Routes
@@ -943,6 +944,121 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
         } catch (err: any) {
             fastify.log.error(err);
             return reply.code(500).send({ message: 'Failed to validate coupon' });
+        }
+    });
+
+    /**
+     * POST /auth/activate-guest
+     * Triggers account activation for a guest user
+     */
+    fastify.post('/auth/activate-guest', {
+        schema: {
+            description: 'Activate guest account',
+            tags: ['Guest Checkout'],
+            body: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                    email: { type: 'string', format: 'email' }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const { email } = request.body as any;
+
+            // Find guest user
+            const user = await fastify.prisma.user.findUnique({
+                where: { email: email.toLowerCase() }
+            });
+
+            if (!user) {
+                return reply.code(404).send({ message: 'Guest account not found' });
+            }
+
+            const prefs = user.preferences as any;
+            if (prefs && !prefs.isGuestAccount) {
+                return reply.code(400).send({ message: 'Account is already active' });
+            }
+
+            const frontendUrl = process.env.FRONTEND_URL || 'https://paperland.com.pk';
+            // Link to Step 1 (Email) with pre-filled email
+            const activationLink = `${frontendUrl}/en/signup?email=${encodeURIComponent(user.email)}`;
+
+            // Send activation email
+            await emailService.sendGuestActivationEmail(user.email, user.firstName || 'Customer', activationLink);
+
+            return { 
+                success: true, 
+                message: 'Activation email sent successfully' 
+            };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.code(500).send({ message: 'Failed to trigger activation' });
+        }
+    });
+
+    /**
+     * POST /auth/activate-finalize
+     * Finalizes account activation by setting password and clearing guest flags
+     */
+    fastify.post('/auth/activate-finalize', {
+        schema: {
+            description: 'Finalize guest activation',
+            tags: ['Guest Checkout'],
+            body: {
+                type: 'object',
+                required: ['token', 'newPassword'],
+                properties: {
+                    token: { type: 'string' },
+                    newPassword: { 
+                        type: 'string', 
+                        minLength: 8,
+                        pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+])[A-Za-z\\d!@#$%^&*()_+]{8,}$'
+                    }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const { token, newPassword } = request.body as any;
+
+            // Verify token
+            const decoded = fastify.jwt.verify(token) as any;
+            if (!decoded || decoded.action !== 'activate_account') {
+                return reply.code(400).send({ message: 'Invalid or expired activation link' });
+            }
+
+            const user = await fastify.prisma.user.findUnique({
+                where: { id: decoded.id }
+            });
+
+            if (!user) {
+                return reply.code(404).send({ message: 'User not found' });
+            }
+
+            // Update password and clear guest flags
+            const passwordHash = await bcrypt.hash(newPassword, 10);
+            const prefs = (user.preferences as any) || {};
+            
+            await fastify.prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    passwordHash,
+                    isActive: true,
+                    accountStatus: 'ACTIVE',
+                    preferences: {
+                        ...prefs,
+                        isGuestAccount: false,
+                        activatedAt: new Date()
+                    }
+                }
+            });
+
+            return { success: true, message: 'Account activated successfully! You can now log in.' };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.code(400).send({ message: 'Invalid or expired activation link' });
         }
     });
 }

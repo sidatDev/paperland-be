@@ -9,6 +9,7 @@ import {
   getOrderStatusUpdateTemplate,
   getIndividualWelcomeTemplate,
   getB2BReviewConfirmationTemplate,
+  getGuestActivationTemplate,
   getEmailLayout
 } from '../templates/email-templates';
 
@@ -593,6 +594,18 @@ export class EmailService {
 
     await this.sendEmail({ to, subject, html, text });
     console.log(`📧 Individual Welcome Email sent to: ${to}`);
+  }
+
+  /**
+   * Send Guest Activation email
+   */
+  async sendGuestActivationEmail(to: string, userName: string, activationLink: string): Promise<void> {
+    const subject = 'Activate your Paperland account';
+    const html = getGuestActivationTemplate(userName, activationLink);
+    const text = `Hello ${userName}, thank you for your recent order! Activate your account here: ${activationLink}`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 Guest Activation Email sent to: ${to}`);
   }
 
   /**

@@ -512,3 +512,29 @@ export function getB2BReviewConfirmationTemplate(name: string, companyName: stri
     `;
     return getEmailLayout(content, "B2B Application Received - Paperland Business");
 }
+/**
+ * Guest Account Activation Template
+ */
+export function getGuestActivationTemplate(name: string, activationLink: string): string {
+    const content = `
+        <h1>Activate Your Paperland Account!</h1>
+        <p>Hello <strong>${name}</strong>,</p>
+        <p>Thank you for your recent order! To help you track your order easily and enjoy faster checkouts in the future, we've created a guest account for you.</p>
+        
+        <p>Click the button below to set your password and activate your full account:</p>
+        
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 35px 0;">
+            <tr>
+                <td align="center">
+                    <a href="${activationLink}" style="display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Activate My Account</a>
+                </td>
+            </tr>
+        </table>
+
+        <p>If the button above doesn't work, copy and paste this link into your browser:</p>
+        <p style="font-size: 13px; color: #6b7280; word-break: break-all;">${activationLink}</p>
+        
+        <p>Welcome to the Paperland family!</p>
+    `;
+    return getEmailLayout(content, "Activate your Paperland account");
+}

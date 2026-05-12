@@ -127,6 +127,8 @@ export default fp(async (fastify: FastifyInstance) => {
       '/auth/forgot-password-reset',
       '/auth/forgot-password',
       '/auth/verify-code',
+      '/auth/activate-guest',
+      '/auth/activate-finalize',
       '/health',
       '/orders/track',
       '/public/newsletter/subscribe',

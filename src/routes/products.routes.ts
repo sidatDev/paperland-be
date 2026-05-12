@@ -982,8 +982,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (weight !== undefined) updateData.weight = weight?.toString();
         if (volume !== undefined) updateData.volume = volume?.toString();
         
-        if (salesPrice !== undefined || promotionalPrice !== undefined || tierPricing !== undefined) {
+        if (salesPrice !== undefined || costPrice !== undefined || promotionalPrice !== undefined || tierPricing !== undefined) {
             const numericPrice = salesPrice !== undefined ? Number(salesPrice) : undefined;
+            const numericCostPrice = costPrice !== undefined ? Number(costPrice) : undefined;
             const priceUpdateData: any = {};
             
             if (numericPrice !== undefined) priceUpdateData.priceRetail = numericPrice;
@@ -996,6 +997,42 @@ export default async function productRoutes(fastify: FastifyInstance) {
             const existingPrice = await (fastify.prisma as any).price.findFirst({
                 where: { productId: id, isActive: true }
             });
+
+            // Capture price changes for logging
+            const priceLogs: any[] = [];
+            const user = (request.user as any);
+            let cachedUserName: string | null = null;
+
+            const logPriceChange = async (type: string, oldVal: number, newVal: number) => {
+                if (oldVal !== newVal) {
+                    if (!cachedUserName && user?.id) {
+                        const dbUser = await (fastify.prisma as any).user.findUnique({
+                            where: { id: user.id },
+                            select: { firstName: true, lastName: true, email: true }
+                        });
+                        if (dbUser) {
+                            cachedUserName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+                        }
+                    }
+
+                    priceLogs.push({
+                        productId: id,
+                        productName: existing.name,
+                        sku: existing.sku,
+                        priceType: type,
+                        oldPrice: oldVal,
+                        newPrice: newVal,
+                        performedBy: user?.id || 'unknown',
+                        userName: cachedUserName || 'Unknown',
+                        reason: 'Manual Update'
+                    });
+                }
+            };
+
+            if (numericPrice !== undefined) await logPriceChange('RETAIL', Number(existing.price || 0), numericPrice);
+            if (numericCostPrice !== undefined) await logPriceChange('COST', Number(existing.costPrice || 0), numericCostPrice);
+            if (promotionalPrice !== undefined) await logPriceChange('SPECIAL', Number(existingPrice?.priceSpecial || 0), Number(promotionalPrice));
+            if (tierPricing?.wholesale !== undefined) await logPriceChange('WHOLESALE', Number(existingPrice?.priceWholesale || 0), Number(tierPricing.wholesale));
 
             if (existingPrice) {
                 updateData.prices = {
@@ -1017,6 +1054,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         isActive: true
                     }
                 };
+            }
+
+            // Save price logs if any
+            if (priceLogs.length > 0) {
+                await (fastify.prisma as any).priceUpdateLog.createMany({
+                    data: priceLogs
+                });
             }
         }
         const resolvedIsActive = bodyIsActive !== undefined 

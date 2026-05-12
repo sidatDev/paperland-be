@@ -174,6 +174,7 @@ model User {
   company               Company?             @relation(fields: [companyId], references: [id])
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
+  priceUpdateLogs       PriceUpdateLog[]
 
   @@map("users")
 }
@@ -406,6 +407,7 @@ model Product {
   stocks               Stock[]
   wishlistItems        WishlistItem[]
   Promotion            Promotion[]
+  priceUpdateLogs      PriceUpdateLog[]
 
   @@map("products")
 }
@@ -1142,6 +1144,27 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([performedBy])
   @@map("audit_logs")
+}
+
+model PriceUpdateLog {
+  id                String   @id @default(uuid())
+  productId         String   @map("product_id")
+  productName       String   @map("product_name")
+  sku               String
+  priceType         String   @default("RETAIL") @map("price_type") // RETAIL, WHOLESALE, SPECIAL
+  oldPrice          Decimal  @db.Decimal(10, 2)
+  newPrice          Decimal  @db.Decimal(10, 2)
+  performedBy       String?  @map("performed_by")
+  userName          String?  @map("user_name")
+  reason            String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  performer         User?    @relation(fields: [performedBy], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("price_update_logs")
 }
 
 model HomepageSection {
