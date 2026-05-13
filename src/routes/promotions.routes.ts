@@ -97,6 +97,36 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
     }
   });
 
+  // GET /admin/promotions/occupied-targets — Check for already assigned targets
+  fastify.get('/admin/promotions/occupied-targets', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      description: 'Get target IDs already assigned to active promotions in a date range',
+      tags: ['Admin', 'Promotions'],
+      querystring: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string' },
+          endDate: { type: 'string' },
+          excludeId: { type: 'string' }
+        },
+        required: ['startDate', 'endDate']
+      }
+    }
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { startDate, endDate, excludeId } = request.query as any;
+      const occupied = await PromotionService.getOccupiedTargets(fastify.prisma, {
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        excludeId
+      });
+      return createResponse(occupied, "Occupied targets retrieved");
+    } catch (err: any) {
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
   // ============================================================
   // ADMIN ROUTES (Require Auth)
   // ============================================================
@@ -199,6 +229,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
           layoutType: body.layoutType || 'DEFAULT',
+          timezone: body.timezone || null,
           createdBy: userId,
           tiers: {
             create: (body.tiers || []).map((t: any) => ({
@@ -275,6 +306,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
           layoutType: body.layoutType || 'DEFAULT',
+          timezone: body.timezone || null,
           tiers: {
             create: (body.tiers || []).map((t: any) => ({
               minQuantity: Number(t.minQuantity),

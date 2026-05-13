@@ -160,4 +160,63 @@ export class PromotionService {
       stackable: selectedPromo.stackable || false
     };
   }
+
+  /**
+   * Returns a list of target IDs (products, categories, brands) that are already
+   * assigned to active promotions overlapping with the given date range.
+   */
+  static async getOccupiedTargets(
+    prisma: PrismaClient,
+    params: {
+      startDate: Date;
+      endDate: Date;
+      excludeId?: string;
+    }
+  ) {
+    const { startDate, endDate, excludeId } = params;
+
+    const overlappingPromotions = await (prisma as any).promotion.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        id: excludeId ? { not: excludeId } : undefined,
+        AND: [
+          { startDate: { lte: endDate } },
+          { endDate: { gte: startDate } }
+        ]
+      },
+      select: {
+        targetType: true,
+        targetProductId: true,
+        targetCategoryId: true,
+        targetBrandId: true,
+        targetIds: true
+      }
+    });
+
+    const occupied = {
+      products: new Set<string>(),
+      categories: new Set<string>(),
+      brands: new Set<string>()
+    };
+
+    overlappingPromotions.forEach((p: any) => {
+      if (p.targetType === 'PRODUCT') {
+        if (p.targetProductId) occupied.products.add(p.targetProductId);
+        if (p.targetIds) p.targetIds.forEach((id: string) => occupied.products.add(id));
+      } else if (p.targetType === 'CATEGORY') {
+        if (p.targetCategoryId) occupied.categories.add(p.targetCategoryId);
+        if (p.targetIds) p.targetIds.forEach((id: string) => occupied.categories.add(id));
+      } else if (p.targetType === 'BRAND') {
+        if (p.targetBrandId) occupied.brands.add(p.targetBrandId);
+        if (p.targetIds) p.targetIds.forEach((id: string) => occupied.brands.add(id));
+      }
+    });
+
+    return {
+      products: Array.from(occupied.products),
+      categories: Array.from(occupied.categories),
+      brands: Array.from(occupied.brands)
+    };
+  }
 }

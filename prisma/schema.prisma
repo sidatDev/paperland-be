@@ -1807,6 +1807,7 @@ model Promotion {
   show_view_all_button     Boolean         @default(false)
   layoutType               String?         @default("DEFAULT") @map("layout_type")
   slug                     String?         @unique @map("slug")
+  timezone                 String?         @map("timezone")
   tiers                    PromotionTier[]
   brand                    Brand?          @relation(fields: [targetBrandId], references: [id])
   category                 Category?       @relation(fields: [targetCategoryId], references: [id])
