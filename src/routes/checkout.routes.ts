@@ -818,7 +818,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             for (const item of order.items) {
                 // Increment Promotion Usage if applicable
                 if (item.pricingSnapshot && (item.pricingSnapshot as any).promotionId) {
-                    const success = await PromotionService.incrementPromotionUsage(tx, (item.pricingSnapshot as any).promotionId);
+                    const success = await PromotionService.incrementPromotionUsage(tx, (item.pricingSnapshot as any).promotionId, Number(item.quantity));
                     if (!success) {
                         throw new Error(`Promotion limit reached for item: ${item.product?.name || item.productId}`);
                     }
