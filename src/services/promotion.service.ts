@@ -62,12 +62,11 @@ export class PromotionService {
   static async incrementPromotionUsage(prisma: any, promoId: string, amount: number = 1) {
     try {
       // Use Raw SQL for 100% atomic 'compare-and-swap' logic
-      // This is the only way to be 100% sure in high traffic
       const result = await prisma.$executeRawUnsafe(`
-        UPDATE "Promotion" 
-        SET "currentUses" = "currentUses" + ${amount}
+        UPDATE "promotions" 
+        SET "current_uses" = "current_uses" + ${amount}
         WHERE "id" = '${promoId}' 
-        AND ("maxUsesTotal" IS NULL OR "currentUses" < "maxUsesTotal")
+        AND ("max_uses_total" IS NULL OR "current_uses" < "max_uses_total")
       `);
 
       return result > 0;

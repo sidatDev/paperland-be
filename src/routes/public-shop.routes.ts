@@ -1534,32 +1534,21 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         { isActive: true },
                         { startDate: { lte: bufferDate } },
                         { endDate: { gte: now } },
-                        { customerSegment: { in: segmentIn } },
-                        // Usage Limit Check
-                        {
-                            OR: [
-                                { maxUsesTotal: null },
-                                { 
-                                    // Use a simpler check for findFirst, 
-                                    // though exact comparison is hard in Prisma where,
-                                    // we'll handle it in memory if needed or use a safe buffer
-                                }
-                            ]
-                        }
+                        { customerSegment: { in: segmentIn } }
                     ]
                 },
                 include: { tiers: true }
             });
 
-            // In-memory final validation for maxUses
-            if (promotion && promotion.maxUsesTotal !== null && promotion.currentUses >= promotion.maxUsesTotal) {
-                fastify.log.warn(`[Campaign] Campaign EXHAUSTED for id: ${id}`);
-                return reply.status(404).send(createErrorResponse('Campaign has reached its maximum usage limit'));
-            }
-
             if (!promotion) {
                 fastify.log.warn(`[Campaign] Campaign NOT FOUND or EXPIRED for id: ${id}`);
                 return reply.status(404).send(createErrorResponse('Campaign not found or expired'));
+            }
+
+            // Check if exhausted and send a flag instead of 404
+            const isExhausted = promotion.maxUsesTotal !== null && promotion.currentUses >= promotion.maxUsesTotal;
+            if (isExhausted) {
+                fastify.log.info(`[Campaign] Campaign EXHAUSTED for id: ${id}, but showing page without discounts`);
             }
 
             fastify.log.info(`[Campaign] Successfully found campaign: ${promotion.name}`);
@@ -1702,7 +1691,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     textColor: promotion.textColor,
                     endDate: promotion.endDate,
                     showCountdown: promotion.showCountdown,
-                    layoutType: promotion.layoutType
+                    layoutType: promotion.layoutType,
+                    isExhausted: isExhausted
                 },
                 metadata: {
                     total_results: total,
