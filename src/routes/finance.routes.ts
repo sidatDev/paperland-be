@@ -1,7 +1,87 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
+import { stringify } from 'csv-stringify';
 
 export default async function financeRoutes(fastify: FastifyInstance) {
+  // GET /admin/finance/sales/export (CSV Export)
+  fastify.get('/admin/finance/sales/export', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    schema: {
+      description: 'Export Order Profitability Report as CSV',
+      tags: ['Finance'],
+      querystring: {
+        type: 'object',
+        properties: {
+          startDate: { type: 'string', format: 'date' },
+          endDate: { type: 'string', format: 'date' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    try {
+      const { startDate, endDate } = request.query;
+      const prisma = fastify.prisma as any;
+
+      const where: any = {
+        status: { not: 'DRAFT' }
+      };
+
+      if (startDate || endDate) {
+        where.createdAt = {};
+        if (startDate) where.createdAt.gte = new Date(startDate);
+        if (endDate) where.createdAt.lte = new Date(new Date(endDate).setHours(23, 59, 59, 999));
+      }
+
+      const orders = await prisma.order.findMany({
+        where,
+        include: { user: true },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const csvData = orders.map((o: any) => {
+        const revenue = Number(o.totalAmount);
+        const tax = Number(o.taxAmount);
+        const purchaseCost = Number(o.totalCost || 0);
+        const expenses = Number(o.totalExpenses || 0);
+        
+        const grossProfit = (revenue - tax) - purchaseCost;
+        const finalProfit = grossProfit - expenses;
+
+        return {
+          'Order Number': o.orderNumber,
+          'Customer': o.user ? `${o.user.firstName} ${o.user.lastName}` : (o.billingSnapshot?.name || 'Guest'),
+          'Date': o.createdAt.toISOString().split('T')[0],
+          'Revenue': revenue.toFixed(2),
+          'Cost (COGS)': purchaseCost.toFixed(2),
+          'Tax': tax.toFixed(2),
+          'Expenses': expenses.toFixed(2),
+          'Net Profit': finalProfit.toFixed(2),
+          'Status': o.status
+        };
+      });
+
+      const fileName = `sales-profitability-${new Date().toISOString().split('T')[0]}`;
+      
+      reply.header('Content-Type', 'text/csv; charset=utf-8');
+      reply.header('Content-Disposition', `attachment; filename=${fileName}.csv`);
+
+      // Add BOM for Excel UTF-8 support
+      const BOM = '\uFEFF';
+      
+      const csvString = await new Promise<string>((resolve, reject) => {
+        stringify(csvData, { header: true }, (err, output) => {
+          if (err) reject(err);
+          else resolve(output);
+        });
+      });
+
+      return reply.send(BOM + csvString);
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
   // GET /admin/finance/sales (Finance Summary)
   fastify.get('/admin/finance/sales', {
     preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],

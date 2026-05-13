@@ -1534,11 +1534,28 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         { isActive: true },
                         { startDate: { lte: bufferDate } },
                         { endDate: { gte: now } },
-                        { customerSegment: { in: segmentIn } }
+                        { customerSegment: { in: segmentIn } },
+                        // Usage Limit Check
+                        {
+                            OR: [
+                                { maxUsesTotal: null },
+                                { 
+                                    // Use a simpler check for findFirst, 
+                                    // though exact comparison is hard in Prisma where,
+                                    // we'll handle it in memory if needed or use a safe buffer
+                                }
+                            ]
+                        }
                     ]
                 },
                 include: { tiers: true }
             });
+
+            // In-memory final validation for maxUses
+            if (promotion && promotion.maxUsesTotal !== null && promotion.currentUses >= promotion.maxUsesTotal) {
+                fastify.log.warn(`[Campaign] Campaign EXHAUSTED for id: ${id}`);
+                return reply.status(404).send(createErrorResponse('Campaign has reached its maximum usage limit'));
+            }
 
             if (!promotion) {
                 fastify.log.warn(`[Campaign] Campaign NOT FOUND or EXPIRED for id: ${id}`);

@@ -893,6 +893,16 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 fastify.log.error(logErr, 'Logistics assignment failed');
             }
 
+            // Invalidate Promotion Caches (Crucial for high traffic stability)
+            try {
+                const segments = ['ALL', 'B2B', 'RETAIL', 'GUEST'];
+                for (const segment of segments) {
+                    await (fastify as any).cache.del(`shop:promotions:storefront:v3:${segment}`);
+                }
+            } catch (cacheErr) {
+                fastify.log.error(cacheErr, 'Cache invalidation failed');
+            }
+
             // Sync product status label with inventory
             for (const item of order.items) {
                 try {

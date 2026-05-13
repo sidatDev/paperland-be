@@ -918,6 +918,10 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         try {
             await (fastify.cache as any).del('shop:home');
             await (fastify.cache as any).clearPattern('shop:products:*');
+            const segments = ['ALL', 'B2B', 'RETAIL', 'GUEST'];
+            for (const segment of segments) {
+                await (fastify as any).cache.del(`shop:promotions:storefront:v3:${segment}`);
+            }
             for (const item of order.items) {
                 if (item.productId) {
                     const p = await (fastify.prisma as any).product.findUnique({ where: { id: item.productId }, select: { slug: true } });
