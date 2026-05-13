@@ -5,6 +5,8 @@ import { emailService } from '../services/email.service';
 import { PricingEngine } from '../utils/pricing.engine';
 import { LogisticsEngine } from '../services/logistics-engine.service';
 import { PaymentResolver } from '../services/payment-resolver.service';
+import { generateOrderNumber } from '../utils/order-utils';
+import { PromotionService } from '../services/promotion.service';
 
 export default async function checkoutRoutes(fastify: FastifyInstance) {
     const formatOrder = (order: any) => {
@@ -754,14 +756,24 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             return reply.code(400).send({ message: 'Order ID is required' });
         }
 
-        // 1. Find Draft Order
+        // 1. Find Draft Order (Prevent double-submission by checking status)
         const order = await fastify.prisma.order.findUnique({
-            where: { id: orderId, userId, status: 'DRAFT' },
-            include: { items: true }
+            where: { id: orderId, userId },
+            include: { items: { include: { product: true } } }
         });
 
         if (!order) {
-            return reply.code(400).send({ message: 'Draft order not found or already processed' });
+            return reply.code(404).send({ message: 'Order not found' });
+        }
+
+        if (order.status !== 'DRAFT') {
+            // If already processed, return existing order instead of erroring (Idempotency)
+            return {
+                orderId: order.id, 
+                orderNumber: order.orderNumber,
+                total: order.totalAmount,
+                message: 'Order already processed'
+            };
         }
 
         // 1.5 Stripe: Verify PaymentIntent server-side before accepting
@@ -801,23 +813,49 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }
 
         // 2. Finalize Order (Move from DRAFT to PENDING)
-        const finalOrder = await fastify.prisma.order.update({
-            where: { id: orderId },
-            data: {
-                status: 'PENDING',
-                orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
-                paymentMethod: paymentMethod || 'COD',
-                paymentDetails: {
-                    ...(paymentMetadata || {}),
-                    ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
-                },
-                // STRIPE: Mark as PAID immediately after server-side verification
-                // BANK_TRANSFER: Mark as AWAITING_CONFIRMATION
-                // Other methods: UNPAID until manually approved
-                paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
-                ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
-                updatedAt: new Date()
+        const finalOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
+            // Atomic Stock Reservation and Promotion Usage Check
+            for (const item of order.items) {
+                // Increment Promotion Usage if applicable
+                if (item.pricingSnapshot && (item.pricingSnapshot as any).promotionId) {
+                    const success = await PromotionService.incrementPromotionUsage(tx, (item.pricingSnapshot as any).promotionId);
+                    if (!success) {
+                        throw new Error(`Promotion limit reached for item: ${item.product?.name || item.productId}`);
+                    }
+                }
+
+                // Atomic Stock check and reservation
+                // We try to decrement available stock and increment reserved
+                const stock = await tx.stock.findFirst({
+                   where: { productId: item.productId },
+                   orderBy: { qty: 'desc' }
+                });
+
+                if (!stock || (stock.qty - stock.reservedQty) < Number(item.quantity)) {
+                    throw new Error(`Insufficient stock for item: ${item.product?.name || item.productId}`);
+                }
+
+                await tx.stock.update({
+                    where: { id: stock.id },
+                    data: { reservedQty: { increment: Number(item.quantity) } }
+                });
             }
+
+            return await tx.order.update({
+                where: { id: orderId },
+                data: {
+                    status: 'PENDING',
+                    orderNumber: generateOrderNumber(),
+                    paymentMethod: paymentMethod || 'COD',
+                    paymentDetails: {
+                        ...(paymentMetadata || {}),
+                        ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
+                    },
+                    paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
+                    ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
+                    updatedAt: new Date()
+                }
+            });
         });
 
         // Update Coupon Usage Tracking
@@ -860,31 +898,19 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }
 
         // 4. Auto-Assign Logistics
-        await LogisticsEngine.autoAssignLogistics(finalOrder.id, fastify.prisma as any);
-        
-        // Reserve Stock for the ordered items
-        for (const item of order.items) {
-            const stock = await (fastify.prisma as any).stock.findFirst({ 
-                where: { 
-                    productId: item.productId,
-                    qty: { gte: Number(item.quantity) }
-                },
-                orderBy: { qty: 'desc' }
-            });
-            
-            const targetStock = stock || await (fastify.prisma as any).stock.findFirst({
-                where: { productId: item.productId },
-                orderBy: { qty: 'desc' }
-            });
+        try {
+            await LogisticsEngine.autoAssignLogistics(finalOrder.id, fastify.prisma as any);
+        } catch (logErr) {
+            fastify.log.error(logErr, 'Logistics assignment failed');
+        }
 
-            if (targetStock) {
-                await (fastify.prisma as any).stock.update({
-                    where: { id: targetStock.id },
-                    data: { reservedQty: { increment: Number(item.quantity) } }
-                });
-                // Sync product status label with inventory
+        // Sync product status label with inventory (since reservedQty changed)
+        for (const item of order.items) {
+            try {
                 const { syncProductStockStatus } = require('../utils/product-status-sync');
                 await syncProductStockStatus(fastify.prisma, item.productId);
+            } catch (syncErr) {
+                fastify.log.error(syncErr, 'Stock status sync failed');
             }
         }
 

@@ -4,6 +4,7 @@ import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 import { syncProductStockStatus } from '../utils/product-status-sync';
 import { emailService } from '../services/email.service';
+import { generateOrderNumber } from '../utils/order-utils';
 import { z } from 'zod';
 
 // Order Validation Schema
@@ -153,7 +154,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
           // 5. Create Order
           const newOrder = await prisma.order.create({
               data: {
-                  orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
+                  orderNumber: generateOrderNumber(),
                   user: { connect: { id: user.id } },
                   address: { connect: { id: address.id } },
                   currency: { connect: { id: country.currencyId } },
@@ -193,16 +194,20 @@ export default async function orderRoutes(fastify: FastifyInstance) {
               } as any
           });
 
-          // 3. Update Inventory
+          // 3. Update Inventory Atomically
           for (const item of items) {
               if (item.productId) {
-                  // Find main stock
-                  const stock = await prisma.stock.findFirst({ where: { productId: item.productId } });
-                  if (stock) {
+                  const stock = await prisma.stock.findFirst({ 
+                      where: { productId: item.productId },
+                      orderBy: { qty: 'desc' }
+                  });
+                  
+                  if (stock && stock.qty >= Number(item.quantity)) {
                       await prisma.stock.update({
                           where: { id: stock.id },
                           data: { qty: { decrement: Number(item.quantity) } }
                       });
+                      await syncProductStockStatus(fastify.prisma, item.productId);
                   }
               }
           }
