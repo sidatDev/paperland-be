@@ -8,6 +8,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Knowledge Base Enums ────────────────────────────────────────────
+
+enum KbArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KbVisibility {
+  PUBLIC
+  PRIVATE
+  ADMIN
+  VENDOR
+  CUSTOMER
+}
+
 model Currency {
   id                String         @id @default(uuid())
   code              String         @unique
@@ -175,6 +191,8 @@ model User {
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
   priceUpdateLogs       PriceUpdateLog[]
+  kbArticles            KbArticle[]          @relation("KbArticleAuthor")
+  kbRevisions           KbArticleRevision[]  @relation("KbRevisionCreator")
 
   @@map("users")
 }
@@ -1816,4 +1834,125 @@ model PromotionTier {
   @@unique([promotionId, minQuantity])
   @@index([promotionId])
   @@map("promotion_tiers")
+}
+
+// ─── Knowledge Base Models ───────────────────────────────────────────
+
+model KbCategory {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  description String?
+  icon        String?
+  parentId    String?      @map("parent_id")
+  position    Int          @default(0)
+  path        String?
+  depth       Int          @default(0)
+  isActive    Boolean      @default(true) @map("is_active")
+  visibility  KbVisibility @default(PUBLIC)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+
+  parent      KbCategory?  @relation("KbCategoryHierarchy", fields: [parentId], references: [id])
+  children    KbCategory[] @relation("KbCategoryHierarchy")
+  articles    KbArticle[]
+  faqs        KbFaq[]
+
+  @@index([parentId])
+  @@map("kb_categories")
+}
+
+model KbArticle {
+  id              String            @id @default(uuid())
+  title           String
+  slug            String            @unique
+  excerpt         String?
+  coverImageUrl   String?           @map("cover_image_url")
+  contentJson     Json?             @map("content_json") @db.JsonB
+  contentText     String?           @map("content_text")
+  renderedHtml    String?           @map("rendered_html")
+  metaTitle       String?           @map("meta_title")
+  metaDescription String?           @map("meta_description")
+  canonicalUrl    String?           @map("canonical_url")
+  ogImageUrl      String?           @map("og_image_url")
+  ogTitle         String?           @map("og_title")
+  ogDescription   String?           @map("og_description")
+  ogUrl           String?           @map("og_url")
+  slogan          String?
+  metaKeywords    String?           @map("meta_keywords")
+  status          KbArticleStatus   @default(DRAFT)
+  visibility      KbVisibility      @default(PUBLIC)
+  isFeatured      Boolean           @default(false) @map("is_featured")
+  tags            String[]
+  categoryId      String?           @map("category_id")
+  authorId        String            @map("author_id")
+  publishedAt     DateTime?         @map("published_at")
+  viewCount       Int               @default(0) @map("view_count")
+  readingTime     Int?              @map("reading_time")
+  position        Int               @default(0)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  category        KbCategory?       @relation(fields: [categoryId], references: [id])
+  author          User              @relation("KbArticleAuthor", fields: [authorId], references: [id])
+  revisions       KbArticleRevision[]
+
+  @@index([categoryId])
+  @@index([status, publishedAt])
+  @@index([slug])
+  @@map("kb_articles")
+}
+
+model KbArticleRevision {
+  id           String    @id @default(uuid())
+  articleId    String    @map("article_id")
+  contentJson  Json?     @map("content_json") @db.JsonB
+  contentText  String?   @map("content_text")
+  renderedHtml String?   @map("rendered_html")
+  title        String
+  version      Int
+  changeNote   String?   @map("change_note")
+  createdById  String    @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  article      KbArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy    User      @relation("KbRevisionCreator", fields: [createdById], references: [id])
+
+  @@index([articleId])
+  @@map("kb_article_revisions")
+}
+
+model KbFaq {
+  id          String       @id @default(uuid())
+  question    String
+  answerJson  Json?        @map("answer_json") @db.JsonB
+  answerText  String?      @map("answer_text")
+  position    Int          @default(0)
+  isActive    Boolean      @default(true) @map("is_active")
+  categoryId  String?      @map("category_id")
+  tags        String[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+
+  category    KbCategory?  @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@map("kb_faqs")
+}
+
+model KbMedia {
+  id        String   @id @default(uuid())
+  filename  String
+  url       String   @unique
+  mimetype  String
+  size      Int
+  key       String   @unique
+  folder    String   @default("knowledge-base")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("kb_media_assets")
 }

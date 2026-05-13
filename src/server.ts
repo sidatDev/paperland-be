@@ -136,6 +136,7 @@ const start = async () => {
     // CMS Routes
     await fastify.register(import('./routes/cms.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/blog.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/knowledge-base.routes'), { prefix: '/api/v1' });
 
     // Import Routes (NEW)
     await fastify.register(import('./routes/import.routes'), { prefix: '/api/v1' });
