@@ -4,6 +4,27 @@ import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { PricingEngine } from '../utils/pricing.engine';
 import { PromotionService } from '../services/promotion.service';
 
+async function getAllCategoryIdsRecursive(prisma: any, categoryIds: string[]): Promise<string[]> {
+    if (!categoryIds || categoryIds.length === 0) return [];
+    
+    let allIds = [...categoryIds];
+    let currentLevelIds = [...categoryIds];
+    
+    while (currentLevelIds.length > 0) {
+        const nextLevel = await prisma.category.findMany({
+            where: { parentId: { in: currentLevelIds } },
+            select: { id: true }
+        });
+        
+        currentLevelIds = nextLevel.map((c: any) => c.id);
+        if (currentLevelIds.length > 0) {
+            allIds = [...allIds, ...currentLevelIds];
+        }
+    }
+    
+    return Array.from(new Set(allIds));
+}
+
 export default async function publicShopRoutes(fastify: FastifyInstance) {
     
     // 0. GET /api/redis-health
@@ -1570,18 +1591,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 // 1. Specific Products
                 orConditions.push({ id: { in: allPotentialIds } });
 
-                // 2. Categories (including subcategories)
-                // Fetch subcategories for all potential IDs that might be categories
-                const subCats = await (fastify.prisma as any).category.findMany({
-                    where: { 
-                        OR: [
-                            { id: { in: allPotentialIds } },
-                            { parentId: { in: allPotentialIds } }
-                        ]
-                    },
-                    select: { id: true }
-                });
-                const categoryIds = subCats.map((c: any) => c.id);
+                // 2. Categories (including ALL subcategories recursively)
+                const categoryIds = await getAllCategoryIdsRecursive(fastify.prisma, allPotentialIds);
                 if (categoryIds.length > 0) {
                     orConditions.push({ categoryId: { in: categoryIds } });
                 }
@@ -1692,7 +1703,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     endDate: promotion.endDate,
                     showCountdown: promotion.showCountdown,
                     layoutType: promotion.layoutType,
-                    isExhausted: isExhausted
+                    isExhausted: isExhausted,
+                    tiers: (promotion.tiers || []).map((t: any) => ({
+                        minQuantity: t.minQuantity,
+                        discountValue: Number(t.discountValue),
+                        label: t.label
+                    }))
                 },
                 metadata: {
                     total_results: total,
@@ -1867,7 +1883,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 price: p.price,
                                 slug: p.slug,
                                 finalPrice: typeof pricing === 'object' ? (pricing as any).finalPrice : pricing,
-                                badgeText: typeof pricing === 'object' ? (pricing as any).badgeText || promo.badgeText : promo.badgeText
+                                badgeText: typeof pricing === 'object' ? (pricing as any).badgeText || promo.badgeText : promo.badgeText,
+                                campaignTiers: promo.tiers
                             };
                         }));
 

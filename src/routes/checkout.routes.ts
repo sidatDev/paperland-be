@@ -72,7 +72,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             cart.items.map(item => ({
                 productId: item.productId,
                 basePrice: Number(item.product.price),
-                sku: item.product.sku
+                sku: item.product.sku,
+                quantity: item.quantity
             })),
             userId
         );
@@ -88,6 +89,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }));
 
         const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+        const originalSubtotal = cart.items.reduce((acc, item) => acc + (Number(item.product.price) * item.quantity), 0);
+        const campaignSavings = originalSubtotal - subtotal;
 
         // 4. Coupon Validation (NEW)
         let couponDiscount = 0;
@@ -122,6 +125,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         return {
             items,
             subtotal,
+            originalSubtotal,
+            campaignSavings: Number(campaignSavings.toFixed(2)),
             couponDiscount: Number(couponDiscount.toFixed(2)),
             appliedCoupon,
             total: Number((subtotal - couponDiscount).toFixed(2)),
@@ -153,7 +158,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             cart.items.map(item => ({
                 productId: item.productId,
                 basePrice: Number(item.product.price),
-                sku: item.product.sku
+                sku: item.product.sku,
+                quantity: item.quantity
             })),
             userId
         );
@@ -169,6 +175,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         }));
 
         const subtotal = items.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+        const originalSubtotal = cart.items.reduce((acc, item) => acc + (Number(item.product.price) * item.quantity), 0);
+        const campaignSavings = originalSubtotal - subtotal;
 
         // 3. User bound default address
         const user = await fastify.prisma.user.findUnique({
@@ -184,6 +192,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
         return {
             items,
             subtotal,
+            originalSubtotal,
+            campaignSavings: Number(campaignSavings.toFixed(2)),
             currency: 'PKR',
             defaultAddress,
             taxRate: 0.15 // Standard 15% VAT
@@ -207,15 +217,25 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     country: { type: 'string' },
                     phone: { type: 'string', pattern: '^\\+?[0-9\\s-]{7,20}$' }, // Updated pattern for better compatibility
                     zipCode: { type: 'string' },
+                    companyName: { type: 'string' },
                     shippingMethodId: { type: 'string' },
-                    couponCode: { type: 'string' }
+                    couponCode: { type: 'string' },
+                    billingSameAsShipping: { type: 'boolean' },
+                    billingFirstName: { type: 'string' },
+                    billingLastName: { type: 'string' },
+                    billingCompanyName: { type: 'string' },
+                    billingStreetAddress: { type: 'string' },
+                    billingCity: { type: 'string' },
+                    billingProvince: { type: 'string' },
+                    billingZip: { type: 'string' },
+                    billingCountry: { type: 'string' }
                 }
             }
         }
     }, async (request, reply) => {
         const userId = (request.user as any)?.id;
         const payload = request.body as any;
-        const { firstName, lastName, address, city, country, province, phone, zipCode, shippingMethodId, couponCode } = payload;
+        const { firstName, lastName, address, city, country, province, phone, zipCode, companyName, shippingMethodId, couponCode } = payload;
 
         // 1. Get Cart
         const cart = await fastify.prisma.cart.findFirst({
@@ -233,7 +253,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             cart.items.map(item => ({
                 productId: item.productId,
                 basePrice: Number(item.product.price),
-                sku: item.product.sku
+                sku: item.product.sku,
+                quantity: item.quantity
             })),
             userId
         );
@@ -312,6 +333,12 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 }
             }
         }
+
+        const campaignSavings = pricedItems.reduce((acc, item) => {
+            const cartItem = cart.items.find(i => i.productId === item.productId);
+            const qty = cartItem?.quantity || 0;
+            return acc + ((item.basePrice - item.finalPrice) * qty);
+        }, 0);
 
         const tax = (subtotal - couponDiscount) * 0.15;
         const total = (subtotal - couponDiscount) + shippingCost + tax;
@@ -415,12 +442,22 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 paymentMethod: 'PENDING',
 
                 shippingDetails: {
-                    address, city, country, province, zipCode, phone, firstName, lastName, shippingMethodId, couponCode
+                    address, city, country, province, zipCode, phone, firstName, lastName, companyName, shippingMethodId, couponCode,
+                    billingSameAsShipping: payload.billingSameAsShipping,
+                    billingFirstName: payload.billingFirstName,
+                    billingLastName: payload.billingLastName,
+                    billingCompanyName: payload.billingCompanyName,
+                    billingStreetAddress: payload.billingStreetAddress,
+                    billingCity: payload.billingCity,
+                    billingProvince: payload.billingProvince,
+                    billingZip: payload.billingZip,
+                    billingCountry: payload.billingCountry
                 },
                 shippingSnapshot: {
                     firstName,
                     lastName,
                     fullName: `${firstName} ${lastName}`,
+                    companyName,
                     streetAddress: address,
                     city,
                     province,
@@ -428,7 +465,30 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     zipCode,
                     phone
                 },
-                pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
+                billingSnapshot: payload.billingSameAsShipping ? {
+                    firstName,
+                    lastName,
+                    fullName: `${firstName} ${lastName}`,
+                    companyName,
+                    streetAddress: address,
+                    city,
+                    province,
+                    country,
+                    zipCode,
+                    phone
+                } : {
+                    firstName: payload.billingFirstName,
+                    lastName: payload.billingLastName,
+                    fullName: `${payload.billingFirstName} ${payload.billingLastName}`,
+                    companyName: payload.billingCompanyName,
+                    streetAddress: payload.billingStreetAddress,
+                    city: payload.billingCity,
+                    province: payload.billingProvince,
+                    country: payload.billingCountry,
+                    zipCode: payload.billingZip,
+                    phone: phone // Using same phone for billing
+                },
+                pricingSummary: { subtotal, originalSubtotal: subtotal + campaignSavings, campaignSavings, shippingCost, tax, couponDiscount, total },
                 
                 items: {
                     create: pricedItems.map(item => {

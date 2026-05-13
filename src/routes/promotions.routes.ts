@@ -228,6 +228,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           popupYoutubeLink: body.popupYoutubeLink || null,
           popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
+          infoBarText: body.infoBarText || null,
           layoutType: body.layoutType || 'DEFAULT',
           timezone: body.timezone || null,
           createdBy: userId,
@@ -305,6 +306,7 @@ export default async function promotionsRoutes(fastify: FastifyInstance) {
           popupYoutubeLink: body.popupYoutubeLink || null,
           popupFrequencyHours: body.popupFrequencyHours ? Number(body.popupFrequencyHours) : 0,
           slug: body.slug || null,
+          infoBarText: body.infoBarText || null,
           layoutType: body.layoutType || 'DEFAULT',
           timezone: body.timezone || null,
           tiers: {

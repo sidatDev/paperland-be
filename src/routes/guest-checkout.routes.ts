@@ -216,7 +216,8 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 cart.items.map(item => ({
                     productId: item.productId,
                     basePrice: Number(item.product.price),
-                    sku: item.product.sku
+                    sku: item.product.sku,
+                    quantity: item.quantity
                 }))
             );
 
@@ -276,8 +277,18 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     country: { type: 'string' },
                     phone: { type: 'string', pattern: '^\\+?[0-9\\s-]{7,20}$' },
                     zipCode: { type: 'string' },
+                    companyName: { type: 'string' },
                     shippingMethodId: { type: 'string' },
-                    couponCode: { type: 'string' }
+                    couponCode: { type: 'string' },
+                    billingSameAsShipping: { type: 'boolean' },
+                    billingFirstName: { type: 'string' },
+                    billingLastName: { type: 'string' },
+                    billingCompanyName: { type: 'string' },
+                    billingStreetAddress: { type: 'string' },
+                    billingCity: { type: 'string' },
+                    billingProvince: { type: 'string' },
+                    billingZip: { type: 'string' },
+                    billingCountry: { type: 'string' }
                 }
             }
         }
@@ -287,7 +298,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             const { 
                 guestToken, firstName, lastName, email, 
                 address, city, country, province, phone, zipCode, 
-                shippingMethodId, couponCode 
+                companyName, shippingMethodId, couponCode 
             } = payload;
 
             // 1. Get Guest Cart
@@ -306,7 +317,8 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 cart.items.map(item => ({
                     productId: item.productId,
                     basePrice: Number(item.product.price),
-                    sku: item.product.sku
+                    sku: item.product.sku,
+                    quantity: item.quantity
                 }))
             );
 
@@ -350,6 +362,12 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     finalCouponCode = couponResult.couponCode;
                 }
             }
+
+            const campaignSavings = pricedItems.reduce((acc, item) => {
+                const cartItem = cart.items.find(i => i.productId === item.productId);
+                const qty = cartItem?.quantity || 0;
+                return acc + ((item.basePrice - item.finalPrice) * qty);
+            }, 0);
 
             const tax = (subtotal - couponDiscount) * 0.15;
             const total = (subtotal - couponDiscount) + shippingCost + tax;
@@ -433,14 +451,24 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
                     shippingDetails: {
                         address, city, country, province, zipCode, phone, 
-                        firstName, lastName, shippingMethodId, 
+                        firstName, lastName, companyName, shippingMethodId, 
                         couponCode: finalCouponCode,
-                        email
+                        email,
+                        billingSameAsShipping: payload.billingSameAsShipping,
+                        billingFirstName: payload.billingFirstName,
+                        billingLastName: payload.billingLastName,
+                        billingCompanyName: payload.billingCompanyName,
+                        billingStreetAddress: payload.billingStreetAddress,
+                        billingCity: payload.billingCity,
+                        billingProvince: payload.billingProvince,
+                        billingZip: payload.billingZip,
+                        billingCountry: payload.billingCountry
                     },
                     shippingSnapshot: {
                         firstName,
                         lastName,
                         fullName: `${firstName} ${lastName}`,
+                        companyName,
                         streetAddress: address,
                         city,
                         province,
@@ -449,7 +477,32 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                         phone,
                         email
                     },
-                    pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
+                    billingSnapshot: payload.billingSameAsShipping ? {
+                        firstName,
+                        lastName,
+                        fullName: `${firstName} ${lastName}`,
+                        companyName,
+                        streetAddress: address,
+                        city,
+                        province,
+                        country,
+                        zipCode,
+                        phone,
+                        email
+                    } : {
+                        firstName: payload.billingFirstName,
+                        lastName: payload.billingLastName,
+                        fullName: `${payload.billingFirstName} ${payload.billingLastName}`,
+                        companyName: payload.billingCompanyName,
+                        streetAddress: payload.billingStreetAddress,
+                        city: payload.billingCity,
+                        province: payload.billingProvince,
+                        country: payload.billingCountry,
+                        zipCode: payload.billingZip,
+                        phone: phone, // Using same phone for billing
+                        email: email
+                    },
+                    pricingSummary: { subtotal, originalSubtotal: subtotal + campaignSavings, campaignSavings, shippingCost, tax, couponDiscount, total },
 
                     items: {
                         create: items.map((item: any) => {
