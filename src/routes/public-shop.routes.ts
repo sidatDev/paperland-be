@@ -684,7 +684,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { name: { contains: q, mode: 'insensitive' } },
                                 { sku: { contains: q, mode: 'insensitive' } },
                                 { specifications: { path: ['partNo'], string_contains: q } },
-                                { category: { name: { contains: q, mode: 'insensitive' } } }
+                                { category: { name: { contains: q, mode: 'insensitive' } } },
+                                { brand: { name: { contains: q, mode: 'insensitive' } } }
                             ]
                         });
                     }
