@@ -167,6 +167,9 @@ const start = async () => {
     // Public Contact Routes (No Auth)
     await fastify.register(import('./routes/public-contact.routes'), { prefix: '/api/v1' });
 
+    // Public Knowledge Base Routes
+    await fastify.register(import('./routes/public-kb.routes'), { prefix: '/api' });
+
     // Typesense Search Plugin (NEW)
     await fastify.register(import('./plugins/typesense'));
 
