@@ -7,10 +7,7 @@ ENV NODE_OPTIONS="--max-old-space-size=2048"
 # Install build dependencies
 RUN apk add --no-cache \
     libc6-compat \
-    openssl \
-    python3 \
-    make \
-    g++
+    openssl
 
 WORKDIR /app
 
