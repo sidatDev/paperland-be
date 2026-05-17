@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { emailService } from '../services/email.service';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 export default async function supportRoutes(fastify: FastifyInstance) {
   const prisma = fastify.prisma as any;
@@ -81,6 +82,19 @@ export default async function supportRoutes(fastify: FastifyInstance) {
       // Notify Admins
       const userName = `${ticket.user.firstName || ''} ${ticket.user.lastName || ''}`.trim() || ticket.user.email;
       await emailService.sendNewTicketNotification(ticket.id, ticket.subject, ticket.category, userName);
+
+      // Trigger n8n webhook
+      fireN8nEvent('support-ticket-created', {
+          ticketId: ticket.id,
+          subject: ticket.subject,
+          category: ticket.category,
+          priority: ticket.priority,
+          userId: ticket.userId,
+          userEmail: ticket.user.email,
+          userName: userName,
+          message: message,
+          attachments: ticket.attachments
+      });
 
       return createResponse(ticket, 'Ticket created successfully');
     } catch (error: any) {

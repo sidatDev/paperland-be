@@ -1,5 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 export default async function b2bRoutes(fastify: FastifyInstance) {
   
@@ -318,6 +319,16 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
           userAgent: request.headers['user-agent']
         });
 
+        // Trigger n8n webhook
+        fireN8nEvent('b2b-status-updated', {
+            userId: user.id,
+            email: user.email,
+            companyName: user.b2bCompanyDetails.companyName,
+            status: 'APPROVED',
+            creditLimit,
+            companyId: company.id
+        });
+
         return {
           message: 'B2B account approved successfully',
           user: updatedUser
@@ -352,6 +363,15 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
           details: { companyName: user.b2bCompanyDetails.companyName, reason: rejectionReason },
           ip: request.ip,
           userAgent: request.headers['user-agent']
+        });
+
+        // Trigger n8n webhook
+        fireN8nEvent('b2b-status-updated', {
+            userId: user.id,
+            email: user.email,
+            companyName: user.b2bCompanyDetails.companyName,
+            status: 'REJECTED',
+            rejectionReason
         });
 
         return {

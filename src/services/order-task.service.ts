@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { FastifyInstance } from 'fastify';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 const prisma = new PrismaClient();
 
@@ -82,7 +83,18 @@ export async function processOrderCancellationTask(fastify: FastifyInstance) {
             });
 
             fastify.log.info(`[OrderTask] Order ${order.orderNumber} (${order.id}) cancelled automatically.`);
-            
+
+            // Trigger n8n webhook
+            fireN8nEvent('order-auto-cancelled', {
+                orderId: order.id,
+                orderNumber: order.orderNumber,
+                userId: order.userId,
+                paymentMethod: order.paymentMethod,
+                totalAmount: Number(order.totalAmount),
+                cancellationReason: 'Automated cancellation: No payment proof uploaded within 48 hours.',
+                createdAt: order.createdAt
+            });
+
             // Note: We could trigger an email here, but for now we'll stick to the log.
             
         } catch (err: any) {

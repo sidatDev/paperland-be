@@ -18,6 +18,7 @@ import {
   validateFileUpload, 
   processFileUpload 
 } from '../utils/file-upload.utils';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 export default async function authRoutes(fastify: FastifyInstance) {
   
@@ -760,6 +761,18 @@ fastify.post('/auth/verify-otp', {
           ip: request.ip,
           userAgent: request.headers['user-agent']
         });
+
+        // Trigger n8n webhook
+        fireN8nEvent('b2b-application-submitted', {
+            userId: updatedUser.id,
+            email: updatedUser.email,
+            firstName: updatedUser.firstName,
+            lastName: updatedUser.lastName,
+            companyName: formData.companyName || 'Unknown',
+            registrationCountry: formData.registrationCountry,
+            taxId: formData.taxId,
+            companyAddress: formData.companyAddress
+        });
       }
 
       process.stdout.write(`📧 DEBUG: B2B Step 6 completed. Ensuring user data for email...\n`);
@@ -922,6 +935,19 @@ fastify.post('/auth/verify-otp', {
           details: { companyName: companyDetails?.companyName || 'Unknown', step: 5 },
           ip: request.ip,
           userAgent: request.headers['user-agent']
+        });
+
+        // Trigger n8n webhook
+        fireN8nEvent('b2b-application-submitted', {
+            userId: user.id,
+            email: user.email,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            companyName: companyDetails?.companyName || 'Unknown',
+            primaryContactName: primaryContactName,
+            contactPhone: contactPhone,
+            billingEmail: billingEmail,
+            shippingAddress: finalShippingAddress
         });
 
         // Issue dynamic coupons for B2B
