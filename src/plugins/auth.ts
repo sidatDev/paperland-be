@@ -110,6 +110,8 @@ export default fp(async (fastify: FastifyInstance) => {
     const publicPaths = [
       '/admin/auth/login',
       '/api/public/contact',
+      '/public/contact',
+      '/api/v1/public/contact',
       '/api/public/orders/track',
       '/auth/login',
       '/auth/signup',
@@ -125,10 +127,14 @@ export default fp(async (fastify: FastifyInstance) => {
       '/auth/forgot-password-reset',
       '/auth/forgot-password',
       '/auth/verify-code',
+      '/auth/activate-guest',
+      '/auth/activate-finalize',
       '/health',
       '/orders/track',
       '/public/newsletter/subscribe',
+      '/api/public/newsletter/subscribe',
       '/public/newsletter/unsubscribe',
+      '/api/public/newsletter/unsubscribe',
       '/public/upload',
       '/redis-health',
       '/api/redis-health',
@@ -153,6 +159,7 @@ export default fp(async (fastify: FastifyInstance) => {
     const isDiscoveryPath = 
       normalizedPath.startsWith('/shop') || 
       normalizedPath.startsWith('/public') || 
+      normalizedPath.startsWith('/api/shop') || 
       path.startsWith('/api/shop') || 
       path.startsWith('/api/v1/shop') || 
       path.startsWith('/api/public') || 

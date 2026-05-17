@@ -164,7 +164,7 @@ async function syncProducts() {
       category: p.category?.parent ? p.category.parent.name : (p.category?.name || 'Uncategorized'),
       sub_category: p.category?.parent ? p.category.name : '',
       price: Number(p.prices[0]?.priceRetail || 0),
-      currency: p.prices[0]?.currency?.code || 'SAR',
+      currency: p.prices[0]?.currency?.code || 'PKR',
       image_url: p.imageUrl || '',
       industry: p.industries.map((i) => i.industry.name),
       created_at: Math.floor(new Date(p.createdAt).getTime() / 1000),

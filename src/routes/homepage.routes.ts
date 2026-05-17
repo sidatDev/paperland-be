@@ -57,36 +57,41 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
         }
     }, async (request, reply) => {
         try {
-            const sections = await (fastify.prisma as any).homepageSection.findMany({
-                where: { isActive: true },
-                include: {
-                    items: {
-                        include: {
-                            product: {
-                                include: {
-                                    prices: { take: 1 }
+            const cacheKey = 'shop:home:sections';
+            const data = await fastify.cache.wrap(cacheKey, async () => {
+                const sections = await (fastify.prisma as any).homepageSection.findMany({
+                    where: { isActive: true },
+                    include: {
+                        items: {
+                            include: {
+                                product: {
+                                    include: {
+                                        prices: { take: 1 }
+                                    }
                                 }
-                            }
-                        },
-                        orderBy: { sortOrder: 'asc' }
-                    }
-                },
-                orderBy: { sortOrder: 'asc' }
-            });
+                            },
+                            orderBy: { sortOrder: 'asc' }
+                        }
+                    },
+                    orderBy: { sortOrder: 'asc' }
+                });
 
-            // Map to simplify for frontend
-            return sections.map((s: any) => ({
-                ...s,
-                items: s.items.map((i: any) => ({
-                    ...i,
-                    product: i.product ? {
-                        id: i.product.id,
-                        name: i.product.name,
-                        imageUrl: i.product.imageUrl,
-                        price: i.product.prices[0]?.amount
-                    } : null
-                }))
-            }));
+                // Map to simplify for frontend
+                return sections.map((s: any) => ({
+                    ...s,
+                    items: s.items.map((i: any) => ({
+                        ...i,
+                        product: i.product ? {
+                            id: i.product.id,
+                            name: i.product.name,
+                            imageUrl: i.product.imageUrl,
+                            price: i.product.prices[0]?.amount
+                        } : null
+                    }))
+                }));
+            }, 300); // 5 minutes cache
+
+            return data;
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send({ message: 'Internal Server Error' });
@@ -407,6 +412,177 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                 });
             }
             return { success: true };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
+
+    // --- HERO CONFIGURATION ENDPOINTS ---
+
+    // PUBLIC: Get hero configuration
+    fastify.get('/homepage/hero-config', {
+        schema: {
+            description: 'Get hero section configuration',
+            tags: ['Public Homepage'],
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                        slotAssignments: { type: 'object', additionalProperties: true }
+                    }
+                },
+                500: {
+                    type: 'object',
+                    properties: { message: { type: 'string' } }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const config = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+            const styles = (config?.styles || {}) as any;
+            return {
+                layoutType: styles.layoutType || 'CAROUSEL',
+                slotAssignments: styles.slotAssignments || {}
+            };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return { layoutType: 'CAROUSEL' };
+        }
+    });
+
+    // ADMIN: Get hero configuration
+    fastify.get('/admin/homepage/hero-config', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            description: 'Get hero section configuration for admin',
+            tags: ['Admin Homepage Management'],
+            response: {
+                200: {
+                    type: 'object',
+                    properties: {
+                        layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                        slotAssignments: { type: 'object', additionalProperties: true }
+                    }
+                },
+                500: {
+                    type: 'object',
+                    properties: { message: { type: 'string' } }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const config = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+            const styles = (config?.styles || {}) as any;
+            return {
+                layoutType: styles.layoutType || 'CAROUSEL',
+                slotAssignments: styles.slotAssignments || {}
+            };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
+
+    // ADMIN: Update hero configuration
+    fastify.post('/admin/homepage/hero-config', {
+        preHandler: [fastify.authenticate],
+        schema: {
+            description: 'Update hero section configuration',
+            tags: ['Admin Homepage Management'],
+            body: {
+                type: 'object',
+                required: ['layoutType'],
+                properties: {
+                    layoutType: { type: 'string', enum: ['CAROUSEL', 'GRID'] },
+                    slotAssignments: {
+                        type: 'object',
+                        additionalProperties: true
+                    }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        const { layoutType, slotAssignments } = request.body;
+        try {
+            const existing = await (fastify.prisma as any).homepageSection.findFirst({
+                where: { internalName: 'HERO_CONFIG' }
+            });
+
+            const configData = { layoutType, slotAssignments: slotAssignments || {} };
+
+            if (existing) {
+                await (fastify.prisma as any).homepageSection.update({
+                    where: { id: existing.id },
+                    data: { styles: configData }
+                });
+            } else {
+                await (fastify.prisma as any).homepageSection.create({
+                    data: {
+                        internalName: 'HERO_CONFIG',
+                        type: 'CONFIG',
+                        styles: configData,
+                        isActive: true
+                    }
+                });
+            }
+            return { success: true, ...configData };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send({ message: 'Internal Server Error' });
+        }
+    });
+
+    // PUBLIC: Get homepage categories
+    fastify.get('/homepage/categories', {
+        schema: {
+            description: 'Get all categories flagged for homepage display',
+            tags: ['Public Homepage'],
+            response: {
+                200: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string' },
+                            name: { type: 'string' },
+                            slug: { type: 'string' },
+                            homepageImage: { type: 'string', nullable: true },
+                            imageUrl: { type: 'string', nullable: true }
+                        }
+                    }
+                },
+                500: { type: 'object', properties: { message: { type: 'string' } } }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const cacheKey = 'shop:home:categories';
+            const categories = await fastify.cache.wrap(cacheKey, async () => {
+                return await (fastify.prisma as any).category.findMany({
+                    where: { 
+                        isActive: true, 
+                        deletedAt: null,
+                        showOnHomepage: true 
+                    },
+                    orderBy: { homepageOrder: 'asc' },
+                    select: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        homepageImage: true,
+                        imageUrl: true
+                    }
+                });
+            }, 3600); // 1 hour cache
+            return categories;
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send({ message: 'Internal Server Error' });

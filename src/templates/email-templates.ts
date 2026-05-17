@@ -3,9 +3,13 @@
  * Optimized for Paperland brand guidelines (Red #E31E24, Yellow #FDB714)
  */
 
-const LOGO_URL = 'https://paperland.com.pk/images/logo/Company%20Logos.webp.png';
-const WEBSITE_URL = 'https://paperland.com.pk';
-const PHONE = '+92 300 1234567';
+const LOGO_URL = 'https://paperland.com.pk/images/Paperland%20logo.png';
+const SOCIAL_FB = 'https://img.icons8.com/color/48/facebook-new.png';
+const SOCIAL_IG = 'https://img.icons8.com/color/48/instagram-new.png';
+const SOCIAL_WA = 'https://img.icons8.com/color/48/whatsapp.png';
+const SOCIAL_LI = 'https://img.icons8.com/color/48/linkedin.png';
+const WEBSITE_URL = process.env.FRONTEND_URL || 'https://paperland.com.pk';
+const PHONE = '+92 321 1234567';
 const EMAIL = 'info@paperland.com.pk';
 
 // Social Links
@@ -22,72 +26,134 @@ const SOCIALS = {
 export function getEmailLayout(content: string, preheader: string = "Paperland Update"): string {
     return `
     <!DOCTYPE html>
-    <html lang="en">
+    <html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="x-apple-disable-message-reformatting">
         <title>Paperland</title>
+        <!--[if mso]>
+        <noscript>
+            <xml>
+                <o:OfficeDocumentSettings>
+                    <o:PixelsPerInch>96</o:PixelsPerInch>
+                </o:OfficeDocumentSettings>
+            </xml>
+        </noscript>
+        <![endif]-->
         <style>
             body { margin: 0; padding: 0; background-color: #f6f9fc; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; -webkit-font-smoothing: antialiased; }
-            table { border-collapse: collapse; }
-            .content-table { max-width: 600px; width: 100%; margin: 20px auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-            .header { background-color: #E31E24; padding: 30px 20px; text-align: center; }
-            .logo { width: 180px; height: auto; }
-            .body-padding { padding: 40px 30px; }
+            table { border-collapse: collapse; mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+            img { border: 0; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+            .content-table { max-width: 600px !important; width: 100% !important; margin: 20px auto; background-color: #ffffff; border-radius: 12px; }
+            .body-padding { padding: 15px 30px 40px 30px; }
             .footer { background-color: #f1f3f5; padding: 30px 20px; text-align: center; color: #6b7280; font-size: 13px; }
-            .social-icon { display: inline-block; margin: 0 8px; width: 32px; height: 32px; }
-            .btn { display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; transition: transform 0.2s; }
-            h1 { color: #111827; margin-top: 0; font-size: 24px; }
-            p { color: #4b5563; line-height: 1.6; margin: 16px 0; }
+            .btn { display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px; mso-padding-alt: 0; }
+            h1 { color: #111827; margin-top: 0; font-size: 24px; line-height: 1.3; mso-line-height-rule: exactly; }
+            p { color: #4b5563; line-height: 1.6; margin: 16px 0; mso-line-height-rule: exactly; }
             .divider { border-top: 1px solid #e5e7eb; margin: 20px 0; }
             @media screen and (max-width: 480px) {
-                .body-padding { padding: 30px 20px; }
+                .body-padding { padding: 15px 20px 30px 20px !important; }
+                .content-table { border-radius: 0 !important; margin: 0 auto !important; }
             }
         </style>
     </head>
-    <body>
-        <div style="display: none; font-size: 1px; color: #f6f9fc; line-height: 1px; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+    <body style="margin: 0; padding: 0; background-color: #f6f9fc;">
+        <div style="display: none; visibility: hidden; opacity: 0; color: transparent; height: 0; width: 0; line-height: 0; overflow: hidden; mso-hide: all;">
             ${preheader}
         </div>
-        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f6f9fc;">
             <tr>
-                <td align="center">
-                    <table class="content-table" cellpadding="0" cellspacing="0" border="0">
-                        <!-- Red Header with Logo -->
+                <td align="center" style="padding: 20px 10px;">
+                    <!--[if mso]>
+                    <table align="center" border="0" cellspacing="0" cellpadding="0" width="600" style="width:600px;">
+                    <tr>
+                    <td align="center" valign="top" width="600">
+                    <![endif]-->
+                    <table class="content-table" cellpadding="0" cellspacing="0" border="0" align="center" style="width: 100%; max-width: 600px; background-color: #ffffff; border-collapse: separate; border-radius: 12px;">
+                        <!-- Header with Logo -->
                         <tr>
-                            <td class="header" align="center" style="text-align: center; background-color: #ffffff; padding: 25px 20px;">
-                                <a href="${WEBSITE_URL}" style="text-decoration: none;">
-                                    <img src="${LOGO_URL}" alt="Paperland Logo" class="logo" style="width: 180px; height: auto; border:0; outline:none; text-decoration:none; display:inline-block; vertical-align: middle; margin: 0 auto; max-width:100%;">
+                            <td align="center" style="padding: 30px 20px 10px 20px;">
+                                <a href="${WEBSITE_URL}" target="_blank">
+                                    <img src="${LOGO_URL}" alt="Paperland" width="180" border="0" style="width: 180px; height: auto; display: block; margin: 0 auto;">
                                 </a>
                             </td>
                         </tr>
 
                         <!-- Main Content -->
                         <tr>
-                            <td class="body-padding">
-                                ${content}
+                            <td class="body-padding" align="left" style="padding: 20px 30px 40px 30px;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                    <tr>
+                                        <td>
+                                            ${content}
+                                        </td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
 
                         <!-- Footer -->
                         <tr>
-                            <td class="footer">
-                                <div style="margin-bottom: 20px;">
-                                    <a href="${SOCIALS.facebook}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/733/733547.png" width="24" alt="FB" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.instagram}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/2111/2111463.png" width="24" alt="IG" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.twitter}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/3256/3256013.png" width="24" alt="TW" style="margin: 0 5px;"></a>
-                                    <a href="${SOCIALS.linkedin}" style="text-decoration: none;"><img src="https://cdn-icons-png.flaticon.com/32/145/145807.png" width="24" alt="LI" style="margin: 0 5px;"></a>
-                                </div>
-                                <p style="margin-bottom: 5px;"><strong>Paperland E-Commerce Portal</strong></p>
-                                <p style="margin: 5px 0;">Lahore, Pakistan</p>
-                                <p style="margin: 5px 0;">Phone: ${PHONE} | Email: ${EMAIL}</p>
-                                <div class="divider"></div>
-                                <p style="font-size: 11px;">You are receiving this email because you registered on our website or subscribed to our newsletter. If you wish to unsubscribe, please contact us.</p>
-                                <p style="font-size: 11px; margin-top: 10px;">&copy; ${new Date().getFullYear()} • All rights reserved by PaperLand Designed & Developed By Sidat Technologies</p>
+                            <td class="footer" style="background-color: #f1f3f5; padding: 40px 20px; border-top: 1px solid #e5e7eb;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                    <tr>
+                                        <td align="center" style="padding-bottom: 25px;">
+                                            <table cellpadding="0" cellspacing="0" border="0">
+                                                <tr>
+                                                    <td style="padding: 0 10px;">
+                                                        <a href="${SOCIALS.facebook}" target="_blank"><img src="${SOCIAL_FB}" width="28" height="28" alt="Facebook" style="display: block; width: 28px; height: 28px;"></a>
+                                                    </td>
+                                                    <td style="padding: 0 10px;">
+                                                        <a href="${SOCIALS.instagram}" target="_blank"><img src="${SOCIAL_IG}" width="28" height="28" alt="Instagram" style="display: block; width: 28px; height: 28px;"></a>
+                                                    </td>
+                                                    <td style="padding: 0 10px;">
+                                                        <a href="${SOCIALS.twitter}" target="_blank"><img src="${SOCIAL_WA}" width="28" height="28" alt="WhatsApp" style="display: block; width: 28px; height: 28px;"></a>
+                                                    </td>
+                                                    <td style="padding: 0 10px;">
+                                                        <a href="${SOCIALS.linkedin}" target="_blank"><img src="${SOCIAL_LI}" width="28" height="28" alt="LinkedIn" style="display: block; width: 28px; height: 28px;"></a>
+                                                    </td>
+                                                </tr>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="color: #111827; font-weight: bold; font-size: 15px; padding-bottom: 5px;">
+                                            Paperland E-Commerce Portal
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="color: #6b7280; font-size: 13px; padding-bottom: 5px;">
+                                            Lahore, Pakistan
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="color: #6b7280; font-size: 13px; padding-bottom: 20px;">
+                                            Phone: ${PHONE} | Email: ${EMAIL}
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="padding-bottom: 20px;">
+                                            <div style="width: 80%; border-top: 1px solid #d1d5db;"></div>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td align="center" style="color: #9ca3af; font-size: 11px; line-height: 1.4;">
+                                            You are receiving this email because you registered on our website or subscribed to our newsletter.
+                                            <br>
+                                            &copy; ${new Date().getFullYear()} • PaperLand Designed & Developed By Sidat Technologies
+                                        </td>
+                                    </tr>
+                                </table>
                             </td>
                         </tr>
                     </table>
+                    <!--[if mso]>
+                    </td>
+                    </tr>
+                    </table>
+                    <![endif]-->
                 </td>
             </tr>
         </table>
@@ -106,12 +172,20 @@ export function getOTPEmailTemplate(otpCode: string, userName?: string): string 
         <p>Hello <strong>${name}</strong>,</p>
         <p>Thank you for choosing Paperland! To complete your registration and secure your account, please use the following one-time password (OTP):</p>
         
-        <div style="text-align: center; margin: 35px 0;">
-            <div style="display: inline-block; background-color: #f3f4f6; padding: 20px 40px; border: 2px dashed #E31E24; border-radius: 8px; font-size: 32px; font-weight: bold; color: #E31E24; letter-spacing: 6px;">
-                ${otpCode}
-            </div>
-            <p style="font-size: 13px; color: #9ca3af; margin-top: 10px;">This code will expire in 10 minutes.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 35px 0;">
+            <tr>
+                <td align="center">
+                    <table cellpadding="0" cellspacing="0" border="0" style="background-color: #f3f4f6; border: 2px dashed #E31E24; border-radius: 8px;">
+                        <tr>
+                            <td style="padding: 20px 40px; font-size: 32px; font-weight: bold; color: #E31E24; letter-spacing: 6px; font-family: monospace;">
+                                ${otpCode}
+                            </td>
+                        </tr>
+                    </table>
+                    <p style="font-size: 13px; color: #9ca3af; margin-top: 10px;">This code will expire in 10 minutes.</p>
+                </td>
+            </tr>
+        </table>
 
         <p>If you did not request this verification, please ignore this email or contact our support if you have concerns.</p>
         <p>Welcome to the Paperland family!</p>
@@ -133,9 +207,13 @@ export function getNewsletterWelcomeTemplate(): string {
             <li>Stationery trends and creative tips</li>
         </ul>
         
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="${WEBSITE_URL}/en/products" class="btn">Explore Our Catalog</a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 30px 0;">
+            <tr>
+                <td align="center">
+                    <a href="${WEBSITE_URL}/en/products" style="display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Explore Our Catalog</a>
+                </td>
+            </tr>
+        </table>
 
         <p>Welcome to the world of premium stationery!</p>
     `;
@@ -151,10 +229,14 @@ export function getContactUsConfirmationTemplate(name: string, subject: string):
         <p>Hello <strong>${name}</strong>,</p>
         <p>Thank you for contacting Paperland. This is a confirmation that we've successfully received your inquiry regarding <strong>"${subject}"</strong>.</p>
         
-        <div style="background-color: #f9fafb; padding: 20px; border-radius: 8px; border-left: 4px solid #FDB714; margin: 25px 0;">
-            <p style="margin: 0; font-weight: bold; color: #1f2937;">What Happens Next?</p>
-            <p style="margin: 10px 0 0 0; font-size: 14px;">Our support team is reviewing your message and will get back to you within <strong>24 business hours</strong>.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 8px; border-left: 4px solid #FDB714; margin: 25px 0;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin: 0; font-weight: bold; color: #1f2937;">What Happens Next?</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #4b5563; line-height: 1.5;">Our support team is reviewing your message and will get back to you within <strong>24 business hours</strong>.</p>
+                </td>
+            </tr>
+        </table>
 
         <p>In the meantime, feel free to browse our <a href="${WEBSITE_URL}/en/products" style="color: #E31E24; font-weight: bold;">latest products</a> or check out our <a href="${WEBSITE_URL}/en/faq" style="color: #E31E24; font-weight: bold;">FAQs</a> for quick answers.</p>
         
@@ -168,84 +250,109 @@ export function getContactUsConfirmationTemplate(name: string, subject: string):
  */
 export function getOrderConfirmationTemplate(order: any): string {
     const itemsHtml = order.items.map((item: any) => {
-        // Ensure absolute URL for product image
-        let imgUrl = item.product.imageUrl || item.product.image_url || 'https://via.placeholder.com/100';
+        let imgUrl = item.product?.imageUrl || item.product?.image_url || 'https://via.placeholder.com/100';
         if (imgUrl && !imgUrl.startsWith('http')) {
-            imgUrl = `https://data-fe.sidattech.com/public-bucket/${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
+            imgUrl = `https://pl-s3.sidattech.com/paperland-bucket/${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
         }
 
         return `
-        <tr style="border-bottom: 1px solid #f3f4f6;">
-            <td style="padding: 15px 0; vertical-align: top;">
-                <img src="${imgUrl}" alt="${item.product.name}" style="width: 80px; height: 80px; object-fit: contain; border-radius: 8px; border: 1px solid #eee;">
+        <tr>
+            <td style="padding: 15px 0; border-bottom: 1px solid #f3f4f6;" width="90" valign="top">
+                <img src="${imgUrl}" alt="${item.product?.name || 'Product'}" width="80" height="80" style="width: 80px; height: 80px; border-radius: 8px; border: 1px solid #eeeeee; display: block;">
             </td>
-            <td style="padding: 15px 10px; vertical-align: top;">
-                <p style="margin: 0; font-weight: bold; color: #111827; font-size: 14px;">${item.product.name}</p>
+            <td style="padding: 15px 10px; border-bottom: 1px solid #f3f4f6;" valign="top">
+                <p style="margin: 0; font-weight: bold; color: #111827; font-size: 14px;">${item.product?.name || 'Item'}</p>
                 <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">Qty: ${item.quantity}</p>
             </td>
-            <td style="padding: 15px 0; text-align: right; vertical-align: top; font-weight: bold; color: #111827;">
+            <td style="padding: 15px 0; border-bottom: 1px solid #f3f4f6; text-align: right; valign: top; font-weight: bold; color: #111827;" width="100">
                 Rs. ${(item.price * item.quantity).toLocaleString()}
             </td>
         </tr>
     `}).join('');
 
     const content = `
-        <div style="text-align: center; margin-bottom: 30px;">
-            <h1 style="color: #059669; font-size: 28px; margin-bottom: 10px;">Your order is placed!</h1>
-            <p style="font-size: 16px;">Order #${order.orderNumber}</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 30px;">
+            <tr>
+                <td align="center">
+                    <h1 style="color: #059669; font-size: 28px; margin-bottom: 10px; margin-top: 0;">Your order is placed!</h1>
+                    <p style="font-size: 16px; color: #6b7280; margin: 0;">Order #${order.orderNumber}</p>
+                </td>
+            </tr>
+        </table>
 
         <p>Hi <strong>${order.user?.firstName || 'Customer'}</strong>,</p>
         <p>Thank you for shopping with Paperland! We've received your order and are getting it ready for shipment. We'll notify you as soon as it's on its way.</p>
 
-        <div style="text-align: center; margin: 30px 0;">
-            <a href="${WEBSITE_URL}/en/order-tracking?orderId=${order.orderNumber}" class="btn">Track Order Status</a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 30px 0;">
+            <tr>
+                <td align="center">
+                    <a href="${WEBSITE_URL}/en/order-tracking?orderId=${order.orderNumber}" style="display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Track Order Status</a>
+                </td>
+            </tr>
+        </table>
 
-        <div style="background-color: #f9fafb; padding: 25px; border-radius: 12px; margin: 30px 0;">
-            <h3 style="margin-top: 0; color: #111827; font-size: 18px; border-bottom: 2px solid #E31E24; padding-bottom: 8px; display: inline-block;">Delivery Details</h3>
-            <div style="margin-top: 15px; font-size: 14px; line-height: 1.6;">
-                <p style="margin: 3px 0;"><strong>Name:</strong> ${order.user?.firstName} ${order.user?.lastName}</p>
-                <p style="margin: 3px 0;"><strong>Address:</strong> ${order.shippingAddress || 'N/A'}</p>
-                <p style="margin: 3px 0;"><strong>Phone:</strong> ${order.user?.phoneNumber || 'N/A'}</p>
-                <p style="margin: 3px 0;"><strong>Email:</strong> ${order.user?.email}</p>
-            </div>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 12px; margin: 30px 0;">
+            <tr>
+                <td style="padding: 25px;">
+                    <h3 style="margin-top: 0; color: #111827; font-size: 18px; border-bottom: 2px solid #E31E24; padding-bottom: 8px; display: inline-block;">Delivery Details</h3>
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 15px; font-size: 14px; line-height: 1.6; color: #4b5563;">
+                        <tr><td><strong>Name:</strong> ${order.user?.firstName} ${order.user?.lastName}</td></tr>
+                        <tr><td><strong>Address:</strong> ${order.shippingAddress || 'N/A'}</td></tr>
+                        <tr><td><strong>Phone:</strong> ${order.user?.phoneNumber || 'N/A'}</td></tr>
+                        <tr><td><strong>Email:</strong> ${order.user?.email}</td></tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
 
         <div style="margin: 30px 0;">
             <h3 style="margin-top: 0; color: #111827; font-size: 18px; border-bottom: 2px solid #E31E24; padding-bottom: 8px; display: inline-block;">Order Items</h3>
-            <table width="100%" style="margin-top: 10px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 10px;">
                 ${itemsHtml}
             </table>
         </div>
 
-        <div style="background-color: #f9fafb; padding: 20px; border-radius: 12px; margin-top: 30px;">
-            <table width="100%" style="font-size: 14px; line-height: 2;">
-                <tr>
-                    <td style="color: #6b7280;">Subtotal</td>
-                    <td style="text-align: right; font-weight: bold;">Rs. ${Number(order.subtotal || 0).toLocaleString()}</td>
-                </tr>
-                <tr>
-                    <td style="color: #6b7280;">Delivery Fee</td>
-                    <td style="text-align: right; font-weight: bold;">Rs. ${Number(order.shippingFee || 0).toLocaleString()}</td>
-                </tr>
-                ${order.discountAmount > 0 ? `
-                <tr>
-                    <td style="color: #6b7280;">Discount</td>
-                    <td style="text-align: right; font-weight: bold; color: #dc2626;">-Rs. ${Number(order.discountAmount).toLocaleString()}</td>
-                </tr>` : ''}
-                <tr style="font-size: 18px; border-top: 1px solid #e5e7eb;">
-                    <td style="padding-top: 10px; font-weight: bold; color: #111827;">Total</td>
-                    <td style="padding-top: 10px; text-align: right; font-weight: 900; color: #E31E24;">Rs. ${Number(order.totalAmount).toLocaleString()}</td>
-                </tr>
-            </table>
-            <p style="margin-top: 15px; font-size: 12px; color: #6b7280; text-align: right;">Paid via: <strong>${order.paymentMethod || 'Credit/Debit Card'}</strong></p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 12px; margin-top: 30px;">
+            <tr>
+                <td style="padding: 20px;">
+                    <table width="100%" cellpadding="0" cellspacing="0" border="0" style="font-size: 14px; line-height: 2;">
+                        <tr>
+                            <td style="color: #6b7280;">Subtotal</td>
+                            <td style="text-align: right; font-weight: bold; color: #111827;">Rs. ${Number(order.subtotal || 0).toLocaleString()}</td>
+                        </tr>
+                        <tr>
+                            <td style="color: #6b7280;">Delivery Fee</td>
+                            <td style="text-align: right; font-weight: bold; color: #111827;">Rs. ${Number(order.shippingFee || 0).toLocaleString()}</td>
+                        </tr>
+                        ${order.discountAmount > 0 ? `
+                        <tr>
+                            <td style="color: #6b7280;">Discount</td>
+                            <td style="text-align: right; font-weight: bold; color: #dc2626;">-Rs. ${Number(order.discountAmount).toLocaleString()}</td>
+                        </tr>` : ''}
+                        <tr>
+                            <td colspan="2" style="padding-top: 10px; border-top: 1px solid #e5e7eb;">
+                                <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                                    <tr>
+                                        <td style="font-weight: bold; color: #111827; font-size: 18px;">Total</td>
+                                        <td style="text-align: right; font-weight: 900; color: #E31E24; font-size: 20px;">Rs. ${Number(order.totalAmount).toLocaleString()}</td>
+                                    </tr>
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                    <p style="margin-top: 15px; font-size: 12px; color: #6b7280; text-align: right;">Paid via: <strong>${order.paymentMethod || 'Credit/Debit Card'}</strong></p>
+                </td>
+            </tr>
+        </table>
 
-        <div style="margin-top: 40px; text-align: center; border-top: 1px solid #eee; padding-top: 20px;">
-            <p style="font-weight: bold; margin-bottom: 5px;">Need Help?</p>
-            <p style="font-size: 13px; margin-top: 0;">If you have any questions, visit our <a href="${WEBSITE_URL}/en/contact-us" style="color: #E31E24;">Help Center</a> or call us at ${PHONE}.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 40px; border-top: 1px solid #eee; padding-top: 20px;">
+            <tr>
+                <td align="center">
+                    <p style="font-weight: bold; margin-bottom: 5px; color: #111827;">Need Help?</p>
+                    <p style="font-size: 13px; margin-top: 0; color: #6b7280; line-height: 1.5;">If you have any questions, visit our <a href="${WEBSITE_URL}/en/contact-us" style="color: #E31E24; text-decoration: none; font-weight: bold;">Help Center</a> or call us at ${PHONE}.</p>
+                </td>
+            </tr>
+        </table>
     `;
     return getEmailLayout(content, `Order Placed! #${order.orderNumber} - Paperland`);
 }
@@ -283,15 +390,17 @@ export function getOrderStatusUpdateTemplate(order: any, newStatus: string): str
     const bannerColor = statusColors[newStatus.toUpperCase()] || '#E31E24';
     const statusLabel = statusLabels[newStatus.toUpperCase()] || newStatus;
     const statusMessage = statusMessages[newStatus.toUpperCase()] || `Your order status has been updated to ${statusLabel}.`;
-    
-    // Determine if it's a "positive" update or neutral (avoiding "Great news" for cancellations)
     const isCancelled = newStatus.toUpperCase() === 'CANCELLED';
 
     const content = `
         <div style="text-align: center; margin-bottom: 30px;">
-            <div style="display: inline-block; background-color: ${bannerColor}; color: #ffffff; padding: 10px 25px; border-radius: 50px; font-weight: bold; font-size: 14px; margin-bottom: 15px;">
-                ORDER STATUS UPDATE
-            </div>
+            <table cellpadding="0" cellspacing="0" border="0" align="center" style="margin-bottom: 15px;">
+                <tr>
+                    <td style="background-color: ${bannerColor}; color: #ffffff; padding: 8px 25px; border-radius: 50px; font-weight: bold; font-size: 13px; text-transform: uppercase;">
+                        ORDER STATUS UPDATE
+                    </td>
+                </tr>
+            </table>
             <h1 style="color: #111827; margin-bottom: 5px;">Your order is now ${statusLabel.toLowerCase()}</h1>
             <p style="font-size: 16px;">Order #${order.orderNumber}</p>
         </div>
@@ -300,33 +409,45 @@ export function getOrderStatusUpdateTemplate(order: any, newStatus: string): str
         <p>${statusMessage}</p>
 
         ${(newStatus.toUpperCase() === 'SHIPPED' && order.trackingNumber) ? `
-        <div style="background-color: #f0f7ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 12px; border-left: 5px solid #2563eb; margin: 25px 0;">
-            <p style="margin-top: 0; font-weight: bold; color: #1e40af;">Tracking Details</p>
-            <p style="margin-bottom: 15px; font-size: 14px;">Carrier: <strong>${order.courierPartner || 'TCS'}</strong><br/>
-               Tracking Number: <strong>${order.trackingNumber}</strong></p>
-            <a href="${WEBSITE_URL}/en/order-tracking?orderId=${order.orderNumber}" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">
-                Track Your Order
-            </a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f0f7ff; border: 1px solid #bfdbfe; border-radius: 12px; border-left: 5px solid #2563eb; margin: 25px 0;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin-top: 0; font-weight: bold; color: #1e40af;">Tracking Details</p>
+                    <p style="margin-bottom: 20px; font-size: 14px; color: #1e40af;">Carrier: <strong>${order.courierPartner || 'TCS'}</strong><br/>
+                       Tracking Number: <strong>${order.trackingNumber}</strong></p>
+                    <a href="${WEBSITE_URL}/en/order-tracking?orderId=${order.orderNumber}" style="display: inline-block; background-color: #2563eb; color: #ffffff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px;">
+                        Track Your Order
+                    </a>
+                </td>
+            </tr>
+        </table>
         ` : ''}
 
         ${(newStatus.toUpperCase() === 'DELIVERED') ? `
-        <div style="text-align: center; margin: 40px 0; background-color: #f0fdf4; border: 1px solid #dcfce7; padding: 30px; border-radius: 16px;">
-            <p style="margin-top: 0; font-weight: bold; color: #166534; font-size: 18px;">How was your experience?</p>
-            <p style="margin-bottom: 25px; color: #15803d; font-size: 14px;">Your feedback helps us grow and assists other customers in making informed choices!</p>
-            <a href="${WEBSITE_URL}/en/dashboard/orders/${order.id}" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 16px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(227, 30, 36, 0.2);">
-                Add a Review & Feedback
-            </a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 40px 0; background-color: #f0fdf4; border: 1px solid #dcfce7; border-radius: 16px;">
+            <tr>
+                <td align="center" style="padding: 35px 25px;">
+                    <p style="margin-top: 0; font-weight: bold; color: #166534; font-size: 18px;">How was your experience?</p>
+                    <p style="margin-bottom: 25px; color: #15803d; font-size: 14px;">Your feedback helps us grow and assists other customers in making informed choices!</p>
+                    <a href="${WEBSITE_URL}/en/dashboard/orders/${order.id}" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 16px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                        Add a Review & Feedback
+                    </a>
+                </td>
+            </tr>
+        </table>
         ` : ''}
 
         ${isCancelled ? `
-        <div style="text-align: center; margin: 30px 0;">
-            <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">If you'd like to browse our latest products, feel free to visit our shop again.</p>
-            <a href="${WEBSITE_URL}/en/products" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 15px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px; box-shadow: 0 4px 6px rgba(227, 30, 36, 0.2);">
-                Continue Shopping
-            </a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 30px 0;">
+            <tr>
+                <td align="center">
+                    <p style="color: #6b7280; font-size: 14px; margin-bottom: 20px;">If you'd like to browse our latest products, feel free to visit our shop again.</p>
+                    <a href="${WEBSITE_URL}/en/products" style="display: inline-block; background-color: #E31E24; color: #ffffff !important; padding: 15px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                        Continue Shopping
+                    </a>
+                </td>
+            </tr>
+        </table>
         ` : ''}
 
         <p>If you have any questions regarding this update, please don't hesitate to reach out to our team.</p>
@@ -344,14 +465,22 @@ export function getIndividualWelcomeTemplate(name: string): string {
         
         <p>At Paperland, we believe that the right tools can inspire great things. Whether you're looking for premium notebooks, elegant pens, or essential office supplies, we've got you covered.</p>
         
-        <div style="text-align: center; margin: 35px 0;">
-            <a href="${WEBSITE_URL}/en/products" class="btn">Start Shopping Now</a>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 35px 0;">
+            <tr>
+                <td align="center">
+                    <a href="${WEBSITE_URL}/en/products" style="display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Start Shopping Now</a>
+                </td>
+            </tr>
+        </table>
 
-        <div style="background-color: #fffbeb; border: 1px solid #fef3c7; padding: 20px; border-radius: 12px; margin: 25px 0;">
-            <p style="margin: 0; font-weight: bold; color: #92400e;">Quick Tip</p>
-            <p style="margin: 10px 0 0 0; font-size: 14px; color: #b45309;">You can track your orders, manage your addresses, and view your purchase history directly from your <a href="${WEBSITE_URL}/en/dashboard" style="color: #E31E24; font-weight: bold;">Account Dashboard</a>.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; margin: 25px 0;">
+            <tr>
+                <td style="padding: 20px;">
+                    <p style="margin: 0; font-weight: bold; color: #92400e; font-size: 16px;">Quick Tip</p>
+                    <p style="margin: 10px 0 0 0; font-size: 14px; color: #b45309; line-height: 1.5;">You can track your orders, manage your addresses, and view your purchase history directly from your <a href="${WEBSITE_URL}/en/dashboard" style="color: #E31E24; font-weight: bold; text-decoration: none;">Account Dashboard</a>.</p>
+                </td>
+            </tr>
+        </table>
 
         <p>Happy writing!</p>
     `;
@@ -367,15 +496,45 @@ export function getB2BReviewConfirmationTemplate(name: string, companyName: stri
         <p>Hello <strong>${name}</strong>,</p>
         <p>Thank you for choosing Paperland as your business partner. We've successfully received your B2B account application and company details for <strong>${companyName}</strong>.</p>
         
-        <div style="background-color: #f9fafb; padding: 25px; border-radius: 12px; border-left: 5px solid #FDB714; margin: 30px 0;">
-            <h3 style="margin-top: 0; color: #111827; font-size: 18px;">What's Next?</h3>
-            <p style="margin: 10px 0; font-size: 15px;">Our dedicated B2B team is currently reviewing your documentation. This process usually takes <strong>24 to 48 business hours</strong>.</p>
-            <p style="margin: 10px 0 0 0; font-size: 15px;">Once your account is approved, you will receive another email and gain access to our <strong>exclusive B2B pricing</strong> and bulk ordering features.</p>
-        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 12px; border-left: 5px solid #FDB714; margin: 30px 0;">
+            <tr>
+                <td style="padding: 25px;">
+                    <h3 style="margin-top: 0; color: #111827; font-size: 18px;">What's Next?</h3>
+                    <p style="margin: 10px 0; font-size: 15px; color: #4b5563; line-height: 1.6;">Our dedicated B2B team is currently reviewing your documentation. This process usually takes <strong>24 to 48 business hours</strong>.</p>
+                    <p style="margin: 10px 0 0 0; font-size: 15px; color: #4b5563; line-height: 1.6;">Once your account is approved, you will receive another email and gain access to our <strong>exclusive B2B pricing</strong> and bulk ordering features.</p>
+                </td>
+            </tr>
+        </table>
 
         <p>If we require any additional information, one of our account managers will reach out to you directly.</p>
         
         <p>We look forward to a successful partnership!</p>
     `;
     return getEmailLayout(content, "B2B Application Received - Paperland Business");
+}
+/**
+ * Guest Account Activation Template
+ */
+export function getGuestActivationTemplate(name: string, activationLink: string): string {
+    const content = `
+        <h1>Activate Your Paperland Account!</h1>
+        <p>Hello <strong>${name}</strong>,</p>
+        <p>Thank you for your recent order! To help you track your order easily and enjoy faster checkouts in the future, we've created a guest account for you.</p>
+        
+        <p>Click the button below to set your password and activate your full account:</p>
+        
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 35px 0;">
+            <tr>
+                <td align="center">
+                    <a href="${activationLink}" style="display: inline-block; padding: 14px 28px; background-color: #FDB714; color: #000000 !important; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Activate My Account</a>
+                </td>
+            </tr>
+        </table>
+
+        <p>If the button above doesn't work, copy and paste this link into your browser:</p>
+        <p style="font-size: 13px; color: #6b7280; word-break: break-all;">${activationLink}</p>
+        
+        <p>Welcome to the Paperland family!</p>
+    `;
+    return getEmailLayout(content, "Activate your Paperland account");
 }

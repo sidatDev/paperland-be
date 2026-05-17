@@ -83,12 +83,30 @@ export default async function productRoutes(fastify: FastifyInstance) {
       id: p.id,
       name: p.name,
       isActive: p.isActive,
-      status: p.status, 
       isFeatured: p.isFeatured || false,
       sku: p.sku,
       slug: p.slug, 
       groupNumber: p.groupNumber,
       groupId: p.groupId,
+      status: (() => {
+        // Dynamic Status Logic
+        const baseStock = p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
+        const variantsStock = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.qty || 0), 0) || 0), 0) || 0;
+        const totalStock = p.variants?.length > 0 ? variantsStock : baseStock;
+
+        const baseThreshold = p.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 0;
+        const variantsThreshold = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
+        const effectiveThreshold = p.variants?.length > 0 ? variantsThreshold : baseThreshold;
+
+        // If manual status is already 'Out of Stock', keep it.
+        // Otherwise, if stock <= threshold, mark as 'Out of Stock'
+        if (p.status === 'Out of Stock') return 'Out of Stock';
+        if (totalStock <= effectiveThreshold) return 'Out of Stock';
+        
+        return p.status || (p.isActive ? 'Active' : 'Draft');
+      })(),
       price: Number(p.price || 0),
       relatedProductsCount: 0, 
 
@@ -111,6 +129,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
         { key: "fullDescription", title: "Full Description", value: p.fullDescription, order: 10 },
         { key: "status", title: "Status", value: p.status, order: 11 }
       ],
+
+      // Stock & Availability Calculations
+      hasOutOfStockVariants: p.variants?.some((v: any) => {
+          const vStock = v.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
+          return vStock <= 0;
+      }) || false,
+
+      effectiveThreshold: (() => {
+        const base = p.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 0;
+        const variants = p.variants?.reduce((acc: number, v: any) => 
+            acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
+        return p.variants?.length > 0 ? variants : base;
+      })(),
 
       technicalSpecifications: [
         { key: "width", title: "Width", value: p.width, unit: "mm", order: 1 },
@@ -182,8 +213,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
         ? p.variants.reduce((acc: number, v: any) => acc + Math.max(0, v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty - (s.reservedQty || 0)), 0) || 0), 0)
         : Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
       
-      wholesalePrice: Number(p.prices?.[0]?.priceWholesale || 0),
-      promotionalPrice: Number(p.prices?.[0]?.priceSpecial || 0),
+      wholesalePrice: Number(p.prices?.find((pr: any) => pr.isActive)?.priceWholesale || p.prices?.[0]?.priceWholesale || 0),
+      promotionalPrice: Number(p.prices?.find((pr: any) => pr.isActive)?.priceSpecial || p.prices?.[0]?.priceSpecial || 0),
 
       media: (p.images && p.images.length > 0)
         ? p.images.map((url: string, index: number) => ({ type: 'image', url, label: index === 0 ? 'Main' : `Image ${index + 1}` }))
@@ -193,6 +224,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isVisibleOnEcommerce: p.isVisibleOnEcommerce,
       fullDescription: p.fullDescription, // Return fullDescription
       specifications: p.specifications || {}, // Return specifications for raw access
+      costPrice: p.costPrice ? Number(p.costPrice) : 0,
 
       // Variants
       parentId: p.parentId,
@@ -457,6 +489,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isVisibleOnEcommerce: { type: 'boolean' },
       industries: { type: 'array', items: { type: 'object', additionalProperties: true } },
       specifications: { type: 'object', additionalProperties: true },
+      costPrice: { type: 'number' },
       
       // Variants
       parentId: { type: 'string', nullable: true },
@@ -486,6 +519,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         salesPrice: { type: 'number' },
         currency: { type: 'string' },
         stock: { type: 'number' },
+        costPrice: { type: 'number' },
         
         // Tech Specs (Dimensions/Weight now in model)
         weight: { type: 'string' },
@@ -514,6 +548,16 @@ export default async function productRoutes(fastify: FastifyInstance) {
         seo: { type: 'object', additionalProperties: true },
 
         // Variants
+        promotionalPrice: { type: 'number' },
+        tierPricing: {
+            type: 'object',
+            properties: {
+                retail: { type: 'number' },
+                wholesale: { type: 'number' },
+                special: { type: 'number' }
+            },
+            additionalProperties: true
+        },
         parentId: { type: 'string' },
         variantOptions: { type: 'array', items: { type: 'object', additionalProperties: true } },
         variantAttributes: { type: 'object', additionalProperties: true },
@@ -631,7 +675,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status = "Draft",
-            salesPrice = 0, currency = "PKR", stock = 0, specifications = {}, specs = [],
+            salesPrice = 0, currency = "PKR", stock = 0, costPrice = 0, specifications = {}, specs = [],
             promotionalPrice = 0, tierPricing = {},
             weight, width, length, volume,
             media, seo, 
@@ -696,6 +740,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 slug: vSlug,
                 sku: v.sku,
                 price: Number(v.price || v.salesPrice || 0),
+                costPrice: Number(v.costPrice || 0),
                 isActive: v.isActive !== undefined ? v.isActive : true,
                 variantAttributes: v.variantAttributes,
                 specifications: variantHash ? { variantHash } : {},
@@ -721,6 +766,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 slug,
                 sku: resolvedSku,
                 price: Number(salesPrice || 0),
+                costPrice: Number(costPrice || 0),
                 description,
                 fullDescription,
                 status,
@@ -868,7 +914,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status,
-            salesPrice, stock, specifications, specs,
+            salesPrice, stock, costPrice, specifications, specs,
             promotionalPrice, tierPricing,
             weight, width, length, volume,
             media, seo, 
@@ -924,6 +970,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
         if (groupId !== undefined) updateData.groupId = groupId;
         if (status !== undefined) updateData.status = status;
+        if (costPrice !== undefined) updateData.costPrice = Number(costPrice);
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (mediaUrls !== undefined) updateData.images = mediaUrls;
         
@@ -935,8 +982,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (weight !== undefined) updateData.weight = weight?.toString();
         if (volume !== undefined) updateData.volume = volume?.toString();
         
-        if (salesPrice !== undefined || promotionalPrice !== undefined || tierPricing !== undefined) {
+        if (salesPrice !== undefined || costPrice !== undefined || promotionalPrice !== undefined || tierPricing !== undefined) {
             const numericPrice = salesPrice !== undefined ? Number(salesPrice) : undefined;
+            const numericCostPrice = costPrice !== undefined ? Number(costPrice) : undefined;
             const priceUpdateData: any = {};
             
             if (numericPrice !== undefined) priceUpdateData.priceRetail = numericPrice;
@@ -945,12 +993,75 @@ export default async function productRoutes(fastify: FastifyInstance) {
             
             if (numericPrice !== undefined) updateData.price = numericPrice;
             
-            updateData.prices = {
-                updateMany: {
-                    where: { isActive: true },
-                    data: priceUpdateData
+            // Check if an active price record exists
+            const existingPrice = await (fastify.prisma as any).price.findFirst({
+                where: { productId: id, isActive: true }
+            });
+
+            // Capture price changes for logging
+            const priceLogs: any[] = [];
+            const user = (request.user as any);
+            let cachedUserName: string | null = null;
+
+            const logPriceChange = async (type: string, oldVal: number, newVal: number) => {
+                if (oldVal !== newVal) {
+                    if (!cachedUserName && user?.id) {
+                        const dbUser = await (fastify.prisma as any).user.findUnique({
+                            where: { id: user.id },
+                            select: { firstName: true, lastName: true, email: true }
+                        });
+                        if (dbUser) {
+                            cachedUserName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+                        }
+                    }
+
+                    priceLogs.push({
+                        productId: id,
+                        productName: existing.name,
+                        sku: existing.sku,
+                        priceType: type,
+                        oldPrice: oldVal,
+                        newPrice: newVal,
+                        performedBy: user?.id || 'unknown',
+                        userName: cachedUserName || 'Unknown',
+                        reason: 'Manual Update'
+                    });
                 }
             };
+
+            if (numericPrice !== undefined) await logPriceChange('RETAIL', Number(existing.price || 0), numericPrice);
+            if (numericCostPrice !== undefined) await logPriceChange('COST', Number(existing.costPrice || 0), numericCostPrice);
+            if (promotionalPrice !== undefined) await logPriceChange('SPECIAL', Number(existingPrice?.priceSpecial || 0), Number(promotionalPrice));
+            if (tierPricing?.wholesale !== undefined) await logPriceChange('WHOLESALE', Number(existingPrice?.priceWholesale || 0), Number(tierPricing.wholesale));
+
+            if (existingPrice) {
+                updateData.prices = {
+                    update: [
+                        {
+                            where: { id: existingPrice.id },
+                            data: priceUpdateData
+                        }
+                    ]
+                };
+            } else {
+                let currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
+                updateData.prices = {
+                    create: {
+                        currencyId: currencyRec?.id || 'PKR', // Fallback
+                        priceRetail: numericPrice || Number(existing.price || 0),
+                        priceWholesale: tierPricing?.wholesale !== undefined ? Number(tierPricing.wholesale) : (numericPrice ? Number(numericPrice) * 0.9 : 0),
+                        priceSpecial: promotionalPrice !== undefined ? Number(promotionalPrice) : undefined,
+                        isActive: true
+                    }
+                };
+            }
+
+            // Save price logs if any
+            if (priceLogs.length > 0) {
+                await (fastify.prisma as any).priceUpdateLog.createMany({
+                    data: priceLogs
+                });
+            }
         }
         const resolvedIsActive = bodyIsActive !== undefined 
             ? (bodyIsActive === 'true' || bodyIsActive === true) 
@@ -1031,13 +1142,46 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
                 const variantHash = v.variantAttributes ? crypto.createHash('md5').update(JSON.stringify(Object.entries(v.variantAttributes).sort())).digest('hex') : null;
 
+                const vPriceRetail = Number(v.salesPrice || v.price || 0);
+                const vPriceWholesale = Number(v.wholesalePrice || (vPriceRetail * 0.9));
+                const vPriceSpecial = Number(v.promotionalPrice || 0);
+
+                // Ensure price record exists for variant
+                const vExistingPrice = await (fastify.prisma as any).price.findFirst({
+                    where: { productId: v.id, isActive: true }
+                });
+
+                const variantPriceData: any = {};
+                if (vExistingPrice) {
+                    variantPriceData.update = [
+                        {
+                            where: { id: vExistingPrice.id },
+                            data: {
+                                priceRetail: vPriceRetail,
+                                priceWholesale: vPriceWholesale,
+                                priceSpecial: vPriceSpecial
+                            }
+                        }
+                    ];
+                } else {
+                    let currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
+                    variantPriceData.create = {
+                        currencyId: currencyRec?.id || 'PKR',
+                        priceRetail: vPriceRetail,
+                        priceWholesale: vPriceWholesale,
+                        priceSpecial: vPriceSpecial,
+                        isActive: true
+                    };
+                }
+
                 await (fastify.prisma as any).product.update({
                     where: { id: v.id },
                     data: {
                         name: v.name,
                         sku: v.sku,
                         slug: await generateUniqueSlug(v.name, "", v.sku, v.id),
-                        price: Number(v.salesPrice || v.price || 0),
+                        price: vPriceRetail,
+                        costPrice: Number(v.costPrice || 0),
                         variantAttributes: v.variantAttributes,
                         ...(variantHash ? {
                             specifications: {
@@ -1045,6 +1189,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                                 variantHash
                             }
                         } : {}),
+                        prices: variantPriceData,
                         stocks: {
                             upsert: {
                                 where: { productId_warehouseId: { productId: v.id, warehouseId: defaultWarehouseId || '' } },
@@ -1087,6 +1232,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         slug: vSlug,
                         sku: v.sku,
                         price: Number(v.price || v.salesPrice || 0),
+                        costPrice: Number(v.costPrice || 0),
                         isActive: v.isActive !== undefined ? v.isActive : true,
                         variantAttributes: v.variantAttributes,
                         specifications: variantHash ? { variantHash } : {},
@@ -1097,6 +1243,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                             create: {
                                 currencyId: currencyRec.id,
                                 priceRetail: Number(v.price || v.salesPrice || 0),
+                                priceWholesale: Number(v.wholesalePrice || (Number(v.price || v.salesPrice || 0) * 0.9)),
+                                priceSpecial: Number(v.promotionalPrice || 0),
                                 isActive: true
                             }
                         },

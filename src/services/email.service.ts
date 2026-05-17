@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import axios from 'axios';
 import { PrismaClient } from '@prisma/client';
 import { 
   getOTPEmailTemplate,
@@ -8,6 +9,7 @@ import {
   getOrderStatusUpdateTemplate,
   getIndividualWelcomeTemplate,
   getB2BReviewConfirmationTemplate,
+  getGuestActivationTemplate,
   getEmailLayout
 } from '../templates/email-templates';
 
@@ -16,6 +18,7 @@ interface EmailOptions {
   subject: string;
   html: string;
   text?: string;
+  attachments?: any[];
 }
 
 // Email service using nodemailer with SMTP configuration
@@ -140,53 +143,41 @@ export class EmailService {
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@paperland.com.pk';
     const subject = `New B2B Account Registration - ${companyName}`;
     
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #2563eb; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; }
-          .info-row { margin: 10px 0; }
-          .label { font-weight: bold; display: inline-block; width: 150px; }
-          .button { display: inline-block; padding: 12px 24px; background-color: #ED2823; color: white; text-decoration: none; border-radius: 4px; margin-top: 20px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h1>🔔 New B2B Account Review Required</h1>
-          </div>
-          <div class="content">
-            <p>A new B2B account has been registered and requires admin approval.</p>
-            <div class="info-row">
-              <span class="label">Company Name:</span>
-              <span>${companyName}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Primary Contact:</span>
-              <span>${contactName}</span>
-            </div>
-            <div class="info-row">
-              <span class="label">Email:</span>
-              <span>${email}</span>
-            </div>
-            <p>Please review the application in the admin panel.</p>
-            <a href="${process.env.ADMIN_PANEL_URL || 'http://localhost:3000/admin-dashboard'}/b2b-approvals" class="button">
-              Review Application →
-            </a>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <h1 style="color: #2563eb;">🔔 New B2B Account Review</h1>
+      <p>A new B2B account has been registered and requires admin approval.</p>
+      
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px; margin: 20px 0;">
+        <tr>
+          <td style="padding: 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="140" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Company Name:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${companyName}</td>
+              </tr>
+              <tr>
+                <td width="140" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Primary Contact:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${contactName}</td>
+              </tr>
+              <tr>
+                <td width="140" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Email:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${email}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <p>Please review the application in the admin panel.</p>
+      <div style="text-align: center; margin-top: 30px;">
+        <a href="${process.env.ADMIN_PANEL_URL || 'https://admin.paperland.com.pk'}/dashboard/b2b-approvals" class="btn" style="background-color: #2563eb; color: #ffffff !important;">Review Application</a>
+      </div>
     `;
 
     await this.sendEmail({ 
       to: adminEmail, 
       subject, 
-      html,
+      html: getEmailLayout(content, subject),
       text: `New B2B Account Review Required\n\nCompany: ${companyName}\nContact: ${contactName}\nEmail: ${email}\n\nPlease review in admin panel.`
     });
   }
@@ -199,12 +190,21 @@ export class EmailService {
       const config = await this.getSmtpSettings(); // Fetch config
       const transporter = await this.createTransporter(); // This now logs connection details
       
+      // Attachments for branding (Removed fetching to avoid separate file attachments in Gmail)
+      const brandingAttachments: any[] = [];
+
       await transporter.sendMail({
         from: `"${config.senderName}" <${config.senderEmail}>`,
         to: options.to,
         subject: options.subject,
         html: options.html,
-        text: options.text,
+        text: options.text || options.html.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim(),
+        attachments: [...brandingAttachments, ...(options.attachments || [])],
+        headers: {
+          'X-Entity-Ref-ID': Date.now().toString(),
+          'X-Auto-Response-Suppress': 'OOF, AutoReply',
+          'Precedence': 'bulk'
+        }
       });
       process.stdout.write(`✅ [EMAIL SUCCESS] Sent to: ${options.to} | Subject: ${options.subject}\n`);
       console.log(`✅ Email sent successfully to ${options.to} | Subject: ${options.subject}`);
@@ -347,39 +347,44 @@ export class EmailService {
    */
   async sendNewTicketNotification(ticketId: string, subject: string, category: string, userName: string): Promise<void> {
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@paperland.com.pk';
-    const emailSubject = `New Support Ticket: ${subject} (${category})`;
+    const emailSubject = `New Support Ticket: ${subject}`;
     
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #ED2823; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; }
-          .info-row { margin: 10px 0; }
-          .label { font-weight: bold; display: inline-block; width: 120px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>New Support Ticket</h2>
-          </div>
-          <div class="content">
-            <div class="info-row"><span class="label">Ticket ID:</span><span>${ticketId}</span></div>
-            <div class="info-row"><span class="label">User:</span><span>${userName}</span></div>
-            <div class="info-row"><span class="label">Category:</span><span>${category}</span></div>
-            <div class="info-row"><span class="label">Subject:</span><span>${subject}</span></div>
-            <p>Please log in to the admin panel to respond.</p>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <h1 style="color: #E31E24;">New Support Ticket</h1>
+      <p>A user has submitted a new support ticket.</p>
+      
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9f9f9; border: 1px solid #eeeeee; border-radius: 8px; margin: 20px 0;">
+        <tr>
+          <td style="padding: 20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="120" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Ticket ID:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${ticketId}</td>
+              </tr>
+              <tr>
+                <td width="120" style="padding-bottom: 10px; font-weight: bold; color: #666666;">User:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${userName}</td>
+              </tr>
+              <tr>
+                <td width="120" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Category:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${category}</td>
+              </tr>
+              <tr>
+                <td width="120" style="padding-bottom: 10px; font-weight: bold; color: #666666;">Subject:</td>
+                <td style="padding-bottom: 10px; color: #111827;">${subject}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+
+      <p>Please log in to the admin panel to respond.</p>
+      <div style="text-align: center; margin-top: 30px;">
+        <a href="${process.env.ADMIN_PANEL_URL || 'https://admin.paperland.com.pk'}/dashboard/support" class="btn">View Support Portal</a>
+      </div>
     `;
 
-    await this.sendEmail({ to: adminEmail, subject: emailSubject, html });
+    await this.sendEmail({ to: adminEmail, subject: emailSubject, html: getEmailLayout(content, emailSubject) });
   }
 
   /**
@@ -388,33 +393,24 @@ export class EmailService {
   async sendTicketReplyNotification(to: string, userName: string, ticketId: string, subject: string): Promise<void> {
     const emailSubject = `Reply to Ticket: ${subject}`;
     
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #ED2823; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>New Reply on Your Ticket</h2>
-          </div>
-          <div class="content">
-            <p>Hello ${userName},</p>
-            <p>There is a new reply on your support ticket <strong>${ticketId}</strong>: "${subject}".</p>
-            <p>Please log in to your dashboard to view and respond.</p>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <h1>New Reply on Your Ticket</h1>
+      <p>Hello <strong>${userName}</strong>,</p>
+      <p>There is a new reply on your support ticket <strong>${ticketId}</strong> regarding <strong>"${subject}"</strong>.</p>
+      
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9f9f9; border-radius: 12px; margin: 25px 0;">
+        <tr>
+          <td style="padding: 25px; text-align: center;">
+            <p style="margin-top: 0; color: #4b5563;">Our support team has responded to your inquiry. Please log in to your dashboard to view the reply.</p>
+            <a href="${process.env.FRONTEND_URL || 'https://paperland.com.pk'}/en/dashboard/support" class="btn">View My Ticket</a>
+          </td>
+        </tr>
+      </table>
+
+      <p>Thank you for your patience!</p>
     `;
 
-    await this.sendEmail({ to, subject: emailSubject, html });
+    await this.sendEmail({ to, subject: emailSubject, html: getEmailLayout(content, emailSubject) });
   }
 
   /**
@@ -423,38 +419,24 @@ export class EmailService {
   async sendTicketResolvedNotification(to: string, userName: string, ticketId: string, subject: string): Promise<void> {
     const emailSubject = `Support Ticket Resolved: ${subject}`;
     
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-          .header { background-color: #22c55e; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
-          .content { background-color: #f9f9f9; padding: 30px; border: 1px solid #ddd; border-top: none; }
-          .button { display: inline-block; padding: 12px 24px; background-color: #22c55e; color: white; text-decoration: none; border-radius: 4px; margin-top: 20px; font-weight: bold; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>Ticket Resolved</h2>
-          </div>
-          <div class="content">
-            <p>Hello ${userName},</p>
-            <p>Your support ticket <strong>${ticketId}</strong>: "${subject}" has been marked as <strong>Resolved</strong> by our support team.</p>
-            <p>If you have any further questions or if the issue persists, please feel free to reopen the ticket or create a new one.</p>
-            <p>Thank you for your patience!</p>
-            <div style="text-align: center;">
-              <a href="${process.env.FRONTEND_URL || 'http://localhost:3002'}/en/dashboard/support" class="button">View Ticket Status</a>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
+    const content = `
+      <h1 style="color: #059669;">Ticket Resolved!</h1>
+      <p>Hello <strong>${userName}</strong>,</p>
+      <p>Your support ticket <strong>${ticketId}</strong>: "${subject}" has been marked as <strong>Resolved</strong> by our support team.</p>
+      
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f0fdf4; border: 1px solid #dcfce7; border-radius: 12px; margin: 25px 0;">
+        <tr>
+          <td style="padding: 25px; text-align: center;">
+            <p style="margin-top: 0; color: #166534;">If you have any further questions or if the issue persists, please feel free to reopen the ticket or create a new one.</p>
+            <a href="${process.env.FRONTEND_URL || 'https://paperland.com.pk'}/en/dashboard/support" class="btn" style="background-color: #059669; color: #ffffff !important;">View Ticket Status</a>
+          </td>
+        </tr>
+      </table>
+
+      <p>Thank you for choosing Paperland!</p>
     `;
 
-    await this.sendEmail({ to, subject: emailSubject, html });
+    await this.sendEmail({ to, subject: emailSubject, html: getEmailLayout(content, emailSubject) });
   }
 
   /**
@@ -615,6 +597,18 @@ export class EmailService {
   }
 
   /**
+   * Send Guest Activation email
+   */
+  async sendGuestActivationEmail(to: string, userName: string, activationLink: string): Promise<void> {
+    const subject = 'Activate your Paperland account';
+    const html = getGuestActivationTemplate(userName, activationLink);
+    const text = `Hello ${userName}, thank you for your recent order! Activate your account here: ${activationLink}`;
+
+    await this.sendEmail({ to, subject, html, text });
+    console.log(`📧 Guest Activation Email sent to: ${to}`);
+  }
+
+  /**
    * Send B2B Review Confirmation email to business applicant
    */
   async sendB2BReviewConfirmationEmail(to: string, userName: string, companyName: string): Promise<void> {
@@ -670,22 +664,33 @@ export class EmailService {
   }
 
   private buildOrderItemsHtml(items: any[], currency: string): string {
-    const portalUrl = (process.env.FRONTEND_URL || 'https://paperland.com.pk').replace(/\/+$/, '');
-    if (!items || items.length === 0) return '<tr><td colspan="4">No items found</td></tr>';
+    const s3BaseUrl = 'https://pl-s3.sidattech.com/paperland-bucket/';
+    if (!items || items.length === 0) return '<tr><td colspan="4" style="padding: 20px; text-align: center; color: #6b7280;">No items found</td></tr>';
     
-    return items.map(item => `
-      <tr style="border-bottom: 1px solid #eee;">
-        <td style="padding: 15px 0; width: 60px;">
-          <img src="${item.product?.imageUrl?.startsWith('http') ? item.product.imageUrl : portalUrl + (item.product?.imageUrl ? (item.product.imageUrl.startsWith('/') ? item.product.imageUrl : '/' + item.product.imageUrl) : '/images/placeholder.png')}" alt="${item.product?.name || 'Item'}" style="width: 50px; height: 50px; object-fit: contain; border-radius: 8px; border: 1px solid #fafafa; display: block;">
+    return items.map(item => {
+      let imgUrl = item.product?.imageUrl || '/images/placeholder.png';
+      
+      if (imgUrl && !imgUrl.startsWith('http')) {
+        imgUrl = `${s3BaseUrl}${imgUrl.startsWith('/') ? imgUrl.slice(1) : imgUrl}`;
+      }
+
+      return `
+      <tr>
+        <td style="padding: 15px 0; border-bottom: 1px solid #f3f4f6;" width="70" valign="top">
+          <img src="${imgUrl}" alt="${item.product?.name || 'Item'}" width="60" height="60" style="width: 60px; height: 60px; border-radius: 8px; border: 1px solid #eeeeee; display: block;">
         </td>
-        <td style="padding: 15px 10px;">
-          <div style="font-weight: bold; color: #111827; font-size: 14px;">${item.product?.name || item.sku || 'Product'}</div>
-          <div style="font-size: 11px; color: #6b7280;">SKU: ${item.sku || 'N/A'}</div>
+        <td style="padding: 15px 10px; border-bottom: 1px solid #f3f4f6;" valign="top">
+          <div style="font-weight: bold; color: #111827; font-size: 14px; margin-bottom: 4px;">${item.product?.name || item.sku || 'Product'}</div>
+          <div style="font-size: 11px; color: #9ca3af;">SKU: ${item.sku || 'N/A'}</div>
         </td>
-        <td style="padding: 15px 10px; color: #4b5563; font-size: 14px; text-align: center;">x${item.quantity}</td>
-        <td style="padding: 15px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(item.price).toLocaleString()}</td>
+        <td style="padding: 15px 10px; border-bottom: 1px solid #f3f4f6; color: #4b5563; font-size: 14px; text-align: center;" width="50" valign="top">
+          x${item.quantity}
+        </td>
+        <td style="padding: 15px 0; border-bottom: 1px solid #f3f4f6; font-weight: bold; color: #111827; text-align: right; font-size: 14px;" width="100" valign="top">
+          ${currency} ${Number(item.price).toLocaleString()}
+        </td>
       </tr>
-    `).join('');
+    `;}).join('');
   }
 
   private buildOrderSummaryHtml(order: any): string {
@@ -693,10 +698,10 @@ export class EmailService {
     const subtotal = (Number(order.totalAmount) - Number(order.taxAmount) - Number(order.shippingAmount)) + Number(order.discountAmount || 0);
     
     return `
-      <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 10px; border-top: 2px solid #f3f4f6; padding-top: 15px;">
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 15px; border-top: 2px solid #f3f4f6;">
         <tr>
-          <td style="padding: 5px 0; color: #6b7280; font-size: 14px;">Subtotal</td>
-          <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${subtotal.toLocaleString()}</td>
+          <td style="padding: 10px 0 5px 0; color: #6b7280; font-size: 14px;">Subtotal</td>
+          <td style="padding: 10px 0 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${subtotal.toLocaleString()}</td>
         </tr>
         ${Number(order.discountAmount) > 0 ? `
         <tr>
@@ -708,18 +713,22 @@ export class EmailService {
           <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(order.shippingAmount).toLocaleString()}</td>
         </tr>
         <tr>
-          <td style="padding: 5px 0; color: #6b7280; font-size: 14px;">Tax (Included)</td>
-          <td style="padding: 5px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px;">${currency} ${Number(order.taxAmount).toLocaleString()}</td>
+          <td style="padding: 5px 0 15px 0; color: #6b7280; font-size: 14px; border-bottom: 1px solid #f3f4f6;">Tax (Included)</td>
+          <td style="padding: 5px 0 15px 0; font-weight: bold; color: #111827; text-align: right; font-size: 14px; border-bottom: 1px solid #f3f4f6;">${currency} ${Number(order.taxAmount).toLocaleString()}</td>
         </tr>
         <tr>
-          <td style="padding: 15px 0 0 0; color: #111827; font-weight: bold; font-size: 18px;">Grand Total</td>
-          <td style="padding: 15px 0 0 0; color: #E31E24; font-weight: 800; text-align: right; font-size: 20px;">${currency} ${Number(order.totalAmount).toLocaleString()}</td>
+          <td style="padding: 20px 0 0 0; color: #111827; font-weight: bold; font-size: 18px;">Grand Total</td>
+          <td style="padding: 20px 0 0 0; color: #E31E24; font-weight: 800; text-align: right; font-size: 22px;">${currency} ${Number(order.totalAmount).toLocaleString()}</td>
         </tr>
         <tr>
-          <td colspan="2" style="padding-top: 20px;">
-            <div style="background-color: #f9fafb; padding: 12px; border-radius: 12px; font-size: 12px; color: #6b7280; text-align: center; border: 1px dashed #e5e7eb;">
-              Payment Method: <strong>${order.paymentMethod || 'COD'}</strong>
-            </div>
+          <td colspan="2" style="padding-top: 25px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="background-color: #f9fafb; padding: 15px; border-radius: 12px; font-size: 13px; color: #4b5563; text-align: center; border: 1px dashed #d1d5db;">
+                  Payment Method: <strong style="color: #111827;">${order.paymentMethod || 'Cash on Delivery'}</strong>
+                </td>
+              </tr>
+            </table>
           </td>
         </tr>
       </table>
@@ -729,13 +738,21 @@ export class EmailService {
   private buildDeliveryDetailsHtml(order: any): string {
     const snapshot = order.shippingSnapshot || {};
     return `
-      <div style="color: #4b5563; font-size: 14px; line-height: 1.5; background-color: #f9fafb; padding: 15px; border-radius: 12px; border: 1px solid #f3f4f6;">
-        <div style="font-weight: bold; color: #111827; margin-bottom: 5px; font-size: 15px;">${snapshot.fullName || (snapshot.firstName ? snapshot.firstName + ' ' + (snapshot.lastName || '') : 'Customer')}</div>
-        <div>${snapshot.streetAddress || order.address?.street1 || 'No address provided'}</div>
-        <div>${snapshot.city || order.address?.city || ''}${snapshot.province || order.address?.state ? ', ' + (snapshot.province || order.address?.state) : ''}</div>
-        <div>${snapshot.country || 'Pakistan'}</div>
-        <div style="margin-top: 10px; font-weight: bold; color: #111827;">Phone: ${snapshot.phone || order.address?.phone || 'N/A'}</div>
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f9fafb; border-radius: 12px; border: 1px solid #f3f4f6;">
+        <tr>
+          <td style="padding: 20px;">
+            <div style="font-weight: bold; color: #111827; margin-bottom: 8px; font-size: 16px;">${snapshot.fullName || (snapshot.firstName ? snapshot.firstName + ' ' + (snapshot.lastName || '') : 'Customer')}</div>
+            <div style="color: #4b5563; font-size: 14px; line-height: 1.5;">
+              ${snapshot.streetAddress || order.address?.street1 || 'No address provided'}<br>
+              ${snapshot.city || order.address?.city || ''}${snapshot.province || order.address?.state ? ', ' + (snapshot.province || order.address?.state) : ''}<br>
+              ${snapshot.country || 'Pakistan'}
+            </div>
+            <div style="margin-top: 12px; font-weight: bold; color: #111827; font-size: 14px;">
+              Phone: ${snapshot.phone || order.address?.phone || 'N/A'}
+            </div>
+          </td>
+        </tr>
+      </table>
     `;
   }
 
@@ -749,38 +766,47 @@ export class EmailService {
     const remainingBalance = grandTotal - downPayment;
 
     return `
-      <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; padding: 25px; margin: 20px 0;">
-        <div style="border-bottom: 1px dashed #e5e7eb; padding-bottom: 15px; margin-bottom: 15px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #6b7280; font-size: 14px;">Sale Price</span>
-            <span style="color: #111827; font-weight: bold; font-size: 14px;">${currency} ${subtotal.toLocaleString()}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #6b7280; font-size: 14px;">Discount</span>
-            <span style="color: #ef4444; font-weight: bold; font-size: 14px;">-${currency} ${discount.toLocaleString()}</span>
-          </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-            <span style="color: #6b7280; font-size: 14px;">Taxes</span>
-            <span style="color: #111827; font-weight: bold; font-size: 14px;">${currency} ${tax.toLocaleString()}</span>
-          </div>
-        </div>
-        
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-          <span style="color: #111827; font-weight: 800; font-size: 16px; text-transform: uppercase;">Total Amount</span>
-          <span style="color: #E31E24; font-weight: 800; font-size: 24px;">${currency} ${grandTotal.toLocaleString()}</span>
-        </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; margin: 25px 0;">
+        <tr>
+          <td style="padding: 25px;">
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-bottom: 1px dashed #e5e7eb; padding-bottom: 15px; margin-bottom: 15px;">
+              <tr>
+                <td style="padding-bottom: 8px; color: #6b7280; font-size: 14px;">Sale Price</td>
+                <td style="padding-bottom: 8px; color: #111827; font-weight: bold; font-size: 14px; text-align: right;">${currency} ${subtotal.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding-bottom: 8px; color: #6b7280; font-size: 14px;">Discount</td>
+                <td style="padding-bottom: 8px; color: #ef4444; font-weight: bold; font-size: 14px; text-align: right;">-${currency} ${discount.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td style="padding-bottom: 15px; color: #6b7280; font-size: 14px;">Taxes</td>
+                <td style="padding-bottom: 15px; color: #111827; font-weight: bold; font-size: 14px; text-align: right;">${currency} ${tax.toLocaleString()}</td>
+              </tr>
+            </table>
+            
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom: 25px;">
+              <tr>
+                <td style="color: #111827; font-weight: 800; font-size: 15px; text-transform: uppercase;">Total Amount</td>
+                <td style="color: #E31E24; font-weight: 800; font-size: 24px; text-align: right;">${currency} ${grandTotal.toLocaleString()}</td>
+              </tr>
+            </table>
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-          <div style="background-color: #f9fafb; padding: 12px; border-radius: 8px; border: 1px solid #f3f4f6;">
-            <p style="margin: 0; font-size: 10px; color: #6b7280; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Down Payment</p>
-            <p style="margin: 4px 0 0 0; font-size: 14px; color: #111827; font-weight: bold;">${currency} ${downPayment.toLocaleString()}</p>
-          </div>
-          <div style="background-color: #fff1f2; padding: 12px; border-radius: 8px; border: 1px solid #ffe4e6;">
-            <p style="margin: 0; font-size: 10px; color: #e11d48; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Remaining Balance</p>
-            <p style="margin: 4px 0 0 0; font-size: 14px; color: #be123c; font-weight: bold;">${currency} ${remainingBalance.toLocaleString()}</p>
-          </div>
-        </div>
-      </div>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="48%" style="background-color: #f9fafb; padding: 15px; border-radius: 8px; border: 1px solid #f3f4f6;">
+                  <div style="font-size: 10px; color: #6b7280; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Down Payment</div>
+                  <div style="font-size: 15px; color: #111827; font-weight: bold;">${currency} ${downPayment.toLocaleString()}</div>
+                </td>
+                <td width="4%">&nbsp;</td>
+                <td width="48%" style="background-color: #fff1f2; padding: 15px; border-radius: 8px; border: 1px solid #ffe4e6;">
+                  <div style="font-size: 10px; color: #e11d48; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">Remaining</div>
+                  <div style="font-size: 15px; color: #be123c; font-weight: bold;">${currency} ${remainingBalance.toLocaleString()}</div>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
     `;
   }
 }

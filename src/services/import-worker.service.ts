@@ -201,6 +201,25 @@ export async function processImportJob(job: Job) {
 
                 if (existing) {
                     if (mode === 'UPSERT') {
+                        // Log price change if any
+                        const oldPrice = Number(existing.price || 0);
+                        const newPrice = Number(row.price || 0);
+                        if (row.price !== undefined && oldPrice !== newPrice) {
+                            await prisma.priceUpdateLog.create({
+                                data: {
+                                    productId: existing.id,
+                                    productName: existing.name,
+                                    sku: existing.sku,
+                                    priceType: 'RETAIL',
+                                    oldPrice,
+                                    newPrice,
+                                    performedBy: job.data.userId || 'system',
+                                    userName: 'System Import',
+                                    reason: 'Bulk Import'
+                                }
+                            });
+                        }
+
                         await prisma.product.update({
                             where: { id: existing.id },
                             data: productData

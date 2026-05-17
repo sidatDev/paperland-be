@@ -4,6 +4,7 @@ import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 import { syncProductStockStatus } from '../utils/product-status-sync';
 import { emailService } from '../services/email.service';
+import { generateOrderNumber } from '../utils/order-utils';
 import { z } from 'zod';
 
 // Order Validation Schema
@@ -138,15 +139,28 @@ export default async function orderRoutes(fastify: FastifyInstance) {
               });
           }
 
-          // 4. Create Order
+          // 4. Fetch Product details to get cost prices
+          const productIds = items.map((i: any) => i.productId);
+          const products = await prisma.product.findMany({
+              where: { id: { in: productIds } },
+              select: { id: true, costPrice: true }
+          });
+
+          const totalCost = items.reduce((sum: number, item: any) => {
+              const product = products.find((p: any) => p.id === item.productId);
+              return sum + (Number(item.quantity) * Number(product?.costPrice || 0));
+          }, 0);
+
+          // 5. Create Order
           const newOrder = await prisma.order.create({
               data: {
-                  orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
+                  orderNumber: generateOrderNumber(),
                   user: { connect: { id: user.id } },
                   address: { connect: { id: address.id } },
                   currency: { connect: { id: country.currencyId } },
                   status: 'PENDING',
                   totalAmount,
+                  totalCost,
                   taxAmount: 0,
                   shippingAmount: 0,
                   paymentMethod: data.paymentMethod || 'Direct',
@@ -154,12 +168,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   deliveryMethod: 'Standard Delivery',
                   estimatedDeliveryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
                   items: {
-                      create: items.map((item: any) => ({
-                          productId: item.productId,
-                          sku: item.sku || 'N/A',
-                          quantity: Number(item.quantity),
-                          price: Number(item.unitPrice),
-                      }))
+                      create: items.map((item: any) => {
+                          const product = products.find((p: any) => p.id === item.productId);
+                          return {
+                              productId: item.productId,
+                              sku: item.sku || 'N/A',
+                              quantity: Number(item.quantity),
+                              price: Number(item.unitPrice),
+                              unitCost: product?.costPrice || 0
+                          };
+                      })
                   },
                   billingSnapshot: {
                       name: data.customer.name,
@@ -176,16 +194,20 @@ export default async function orderRoutes(fastify: FastifyInstance) {
               } as any
           });
 
-          // 3. Update Inventory
+          // 3. Update Inventory Atomically
           for (const item of items) {
               if (item.productId) {
-                  // Find main stock
-                  const stock = await prisma.stock.findFirst({ where: { productId: item.productId } });
-                  if (stock) {
+                  const stock = await prisma.stock.findFirst({ 
+                      where: { productId: item.productId },
+                      orderBy: { qty: 'desc' }
+                  });
+                  
+                  if (stock && stock.qty >= Number(item.quantity)) {
                       await prisma.stock.update({
                           where: { id: stock.id },
                           data: { qty: { decrement: Number(item.quantity) } }
                       });
+                      await syncProductStockStatus(fastify.prisma, item.productId);
                   }
               }
           }
@@ -1811,6 +1833,69 @@ export default async function orderRoutes(fastify: FastifyInstance) {
         }
 
         return createResponse(updatedOrder, "Order Cancellation Approved Successfully");
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // PATCH /orders/:id/payment-proof (Update payment proof by customer)
+  fastify.patch('/orders/:id/payment-proof', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Update Payment Proof for Bank Transfer Order',
+        tags: ['Orders'],
+        params: { type: 'object', properties: { id: { type: 'string' } } },
+        body: {
+            type: 'object',
+            required: ['proofUrl'],
+            properties: {
+                proofUrl: { type: 'string' },
+                referenceNumber: { type: 'string' }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { id } = request.params;
+    const { proofUrl, referenceNumber } = request.body;
+    const userId = (request.user as any).id;
+
+    try {
+        const order = await (fastify.prisma as any).order.findFirst({
+            where: { id, userId, deletedAt: null }
+        });
+
+        if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
+        
+        // Only allow updating proof for Bank Transfer orders
+        if (order.paymentMethod !== 'BANK_TRANSFER') {
+            return reply.status(400).send(createErrorResponse("Payment proof can only be uploaded for Bank Transfer orders"));
+        }
+
+        const currentDetails = (order.paymentDetails as any) || {};
+        const updatedDetails = {
+            ...currentDetails,
+            proofUrl,
+            referenceNumber: referenceNumber || currentDetails.referenceNumber
+        };
+
+        const updatedOrder = await (fastify.prisma as any).order.update({
+            where: { id: order.id },
+            data: { 
+                paymentDetails: updatedDetails,
+                paymentStatus: 'AWAITING_CONFIRMATION' // Ensure it reflects the upload
+            }
+        });
+
+        await logActivity(fastify, {
+            entityType: 'ORDER',
+            entityId: id,
+            action: 'UPDATE_PAYMENT_PROOF',
+            performedBy: userId,
+            details: { proofUrl, referenceNumber }
+        });
+
+        return createResponse(updatedOrder, "Payment proof updated successfully");
     } catch (err: any) {
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse(err.message));

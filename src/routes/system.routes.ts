@@ -52,7 +52,7 @@ export default async function systemRoutes(fastify: FastifyInstance) {
             smtpEncryption: "TLS",
             senderName: "Paperland Support",
             senderEmail: "noreply@paperland.com",
-            logoUrl: "/images/logo/Paperland logo.png",
+            logoUrl: "/images/Paperland logo.png",
             themeColor: "#059669",
             supportPhone: "+92 300 1234567",
             address: "Karachi, Pakistan"
@@ -589,6 +589,25 @@ export default async function systemRoutes(fastify: FastifyInstance) {
       return createResponse(updated, 'Payment gateway updated successfully');
     } catch (err: any) {
       return reply.status(500).send(createErrorResponse('Failed to update gateway'));
+    }
+  });
+
+  // GET all Currencies
+  fastify.get('/admin/system/currencies', {
+    preHandler: [fastify.authenticate],
+    schema: {
+        description: 'Get all currencies',
+        tags: ['System'],
+    }
+  }, async (request, reply) => {
+    try {
+        const currencies = await (fastify.prisma as any).currency.findMany({
+            orderBy: { name: 'asc' }
+        });
+        return createResponse(currencies, 'Currencies retrieved successfully');
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Internal Server Error'));
     }
   });
 

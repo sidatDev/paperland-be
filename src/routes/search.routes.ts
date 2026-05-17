@@ -97,7 +97,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
 
       const searchParameters: any = {
         q: q || '*',
-        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,description',
+        query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,description,brand',
         filter_by: filters.join(' && '),
         sort_by: sortBy,
         page: page,

@@ -510,13 +510,15 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
     try {
       const prisma = (fastify.prisma as any);
 
-      // 1. Low Stock Products (stock quantity <= 10)
-      const lowStockProducts = await prisma.stock.findMany({
-        where: { qty: { lte: 10 } },
-        include: { product: { select: { id: true, name: true, sku: true } } },
-        take: 10,
-        orderBy: { qty: 'asc' },
-      });
+      // 1. Low Stock Products (stock quantity <= reorder_level)
+      const lowStockItems: any[] = await prisma.$queryRaw`
+        SELECT s.*, p.name as "productName", p.sku as "productSku"
+        FROM stocks s
+        JOIN products p ON s.product_id = p.id
+        WHERE s.qty <= s.reorder_level
+        ORDER BY s.qty ASC
+        LIMIT 10
+      `;
 
       // 2. Pending B2B Approvals
       const pendingB2B = await prisma.user.count({
@@ -537,11 +539,11 @@ export default async function dashboardRoutes(fastify: FastifyInstance) {
 
       return createResponse({
         lowStock: {
-          count: lowStockProducts.length,
-          items: lowStockProducts.map((s: any) => ({
-            productId: s.product?.id,
-            productName: s.product?.name,
-            sku: s.product?.sku,
+          count: lowStockItems.length,
+          items: lowStockItems.map((s: any) => ({
+            productId: s.product_id,
+            productName: s.productName,
+            sku: s.productSku,
             quantity: s.qty,
           })),
         },

@@ -8,6 +8,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Knowledge Base Enums ────────────────────────────────────────────
+
+enum KbArticleStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum KbVisibility {
+  PUBLIC
+  PRIVATE
+  ADMIN
+  VENDOR
+  CUSTOMER
+}
+
 model Currency {
   id                String         @id @default(uuid())
   code              String         @unique
@@ -25,6 +41,7 @@ model Currency {
   orders            Order[]
   prices            Price[]
   transactions      Transaction[]
+  bankAccounts      BankAccount[]
 
   @@map("currencies")
 }
@@ -173,6 +190,9 @@ model User {
   company               Company?             @relation(fields: [companyId], references: [id])
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
+  priceUpdateLogs       PriceUpdateLog[]
+  kbArticles            KbArticle[]          @relation("KbArticleAuthor")
+  kbRevisions           KbArticleRevision[]  @relation("KbRevisionCreator")
 
   @@map("users")
 }
@@ -276,27 +296,32 @@ model Category {
   imageUrl         String?          @map("image_url")
   parentId         String?          @map("parent_id")
   position         Int              @default(0)
+  normalizedName   String?          @unique @map("normalized_name")
+  showOnHomepage   Boolean          @default(false) @map("show_on_homepage")
+  homepageOrder    Int              @default(0) @map("homepage_order")
+  homepageImage    String?          @map("homepage_image")
   parent           Category?        @relation("CategoryHierarchy", fields: [parentId], references: [id])
   subCategories    Category[]       @relation("CategoryHierarchy")
   couponCategories CouponCategory[]
   products         Product[]
-  normalizedName   String?          @unique @map("normalized_name")
+  Promotion        Promotion[]
 
   @@map("categories")
 }
 
 model Brand {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  logoUrl     String?   @map("logo_url")
-  isActive    Boolean   @default(true) @map("is_active")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-  deletedAt   DateTime? @map("deleted_at")
-  slug        String?   @unique
-  products    Product[]
-  normalizedName String?   @unique @map("normalized_name")
+  id             String      @id @default(uuid())
+  name           String      @unique
+  description    String?
+  logoUrl        String?     @map("logo_url")
+  isActive       Boolean     @default(true) @map("is_active")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+  deletedAt      DateTime?   @map("deleted_at")
+  slug           String?     @unique
+  normalizedName String?     @unique @map("normalized_name")
+  products       Product[]
+  Promotion      Promotion[]
 
   @@map("brands")
 }
@@ -372,6 +397,7 @@ model Product {
   parentId             String?                   @map("parent_id")
   variantAttributes    Json?                     @map("variant_attributes")
   variantOptions       Json?                     @map("variant_options")
+  costPrice            Decimal?                  @map("cost_price") @db.Decimal(10, 2)
   batches              Batch[]
   cartItems            CartItem[]
   catalogPricing       CatalogPricing[]
@@ -398,6 +424,8 @@ model Product {
   rfqItems             RFQItem[]
   stocks               Stock[]
   wishlistItems        WishlistItem[]
+  Promotion            Promotion[]
+  priceUpdateLogs      PriceUpdateLog[]
 
   @@map("products")
 }
@@ -466,8 +494,8 @@ model Warehouse {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
   type      String    @default("WAREHOUSE")
-  stocks    Stock[]
   orders    Order[]
+  stocks    Stock[]
 
   @@map("warehouses")
 }
@@ -527,22 +555,22 @@ model ReviewHelpfulVote {
 
 model ProductImportLog {
   id          String    @id @default(uuid())
+  triggeredBy String?   @map("triggered_by")
+  status      String    @default("QUEUED")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  added       Int       @default(0)
+  completedAt DateTime? @map("completed_at")
+  duration    Int?
+  errorsJson  Json?     @map("errors_json")
+  failed      Int       @default(0)
   fileName    String?   @map("file_name")
   filePath    String?   @map("file_path")
-  totalRows   Int       @default(0) @map("total_rows")
-  added       Int       @default(0)
-  updated     Int       @default(0)
-  failed      Int       @default(0)
-  skipped     Int       @default(0)
-  progress    Int       @default(0)
-  errorsJson  Json?     @map("errors_json")
-  status      String    @default("QUEUED")
-  duration    Int?
   mode        String    @default("UPSERT")
+  progress    Int       @default(0)
+  skipped     Int       @default(0)
   stockMode   String    @default("OVERWRITE")
-  triggeredBy String?   @map("triggered_by")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  completedAt DateTime? @map("completed_at")
+  totalRows   Int       @default(0) @map("total_rows")
+  updated     Int       @default(0)
 
   @@index([createdAt])
   @@index([status])
@@ -596,18 +624,20 @@ model Order {
   riderId                String?              @map("rider_id")
   trackingResponseJson   Json?                @map("tracking_response_json")
   trackingStatus         String?              @map("tracking_status")
+  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
   cancellationReason     String?              @map("cancellation_reason")
   cancelRequestedAt      DateTime?            @map("cancel_requested_at")
-  isManualLogistics      Boolean              @default(false) @map("is_manual_logistics")
+  totalCost              Decimal?             @map("total_cost") @db.Decimal(12, 2)
+  totalExpenses          Decimal?             @map("total_expenses") @db.Decimal(12, 2)
   items                  OrderItem[]
   history                OrderStatusHistory[]
   address                Address              @relation(fields: [addressId], references: [id])
   coupon                 Coupon?              @relation(fields: [couponId], references: [id])
   courierProvider        CourierProvider?     @relation(fields: [courierProviderId], references: [id])
   currency               Currency             @relation(fields: [currencyId], references: [id])
+  fulfillmentWarehouse   Warehouse?           @relation(fields: [fulfillmentWarehouseId], references: [id])
   rider                  Rider?               @relation(fields: [riderId], references: [id])
   user                   User?                @relation(fields: [userId], references: [id])
-  fulfillmentWarehouse   Warehouse?           @relation(fields: [fulfillmentWarehouseId], references: [id])
   purchase_orders        purchase_orders?
   returnRequests         ReturnRequest[]
   trackingLogs           TrackingLog[]
@@ -618,16 +648,17 @@ model Order {
 }
 
 model OrderItem {
-  id                String  @id @default(uuid())
-  orderId           String  @map("order_id")
-  productId         String  @map("product_id")
+  id                String   @id @default(uuid())
+  orderId           String   @map("order_id")
+  productId         String   @map("product_id")
   quantity          Int
-  price             Decimal @db.Decimal(10, 2)
-  inventorySnapshot Json?   @map("inventory_snapshot")
-  pricingSnapshot   Json?   @map("pricing_snapshot")
+  price             Decimal  @db.Decimal(10, 2)
+  inventorySnapshot Json?    @map("inventory_snapshot")
+  pricingSnapshot   Json?    @map("pricing_snapshot")
   sku               String?
-  order             Order   @relation(fields: [orderId], references: [id])
-  product           Product @relation(fields: [productId], references: [id])
+  unitCost          Decimal? @map("unit_cost") @db.Decimal(10, 2)
+  order             Order    @relation(fields: [orderId], references: [id])
+  product           Product  @relation(fields: [productId], references: [id])
 
   @@map("order_items")
 }
@@ -1026,18 +1057,18 @@ model GlobalSettings {
 }
 
 model PaymentGateway {
-  id            String   @id @default(uuid())
+  id            String        @id @default(uuid())
   name          String
-  identifier    String   @unique
-  type          String   @default("WALLET")
-  isActive      Boolean  @default(true) @map("is_active")
+  identifier    String        @unique
+  type          String        @default("WALLET")
+  isActive      Boolean       @default(true) @map("is_active")
   config        Json?
   instructions  String?
-  feePercentage Decimal  @default(0) @map("fee_percentage") @db.Decimal(5, 2)
-  feeFixed      Decimal  @default(0) @map("fee_fixed") @db.Decimal(10, 2)
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  feePercentage Decimal       @default(0) @map("fee_percentage") @db.Decimal(5, 2)
+  feeFixed      Decimal       @default(0) @map("fee_fixed") @db.Decimal(10, 2)
+  sortOrder     Int           @default(0) @map("sort_order")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
   rules         PaymentRule[]
 
   @@map("payment_gateways")
@@ -1056,19 +1087,19 @@ model PaymentZone {
 }
 
 model PaymentRule {
-  id            String         @id @default(uuid())
-  zoneId        String?        @map("zone_id")
+  id            String          @id @default(uuid())
+  zoneId        String?         @map("zone_id")
+  gatewayId     String?         @map("gateway_id")
+  isEnabled     Boolean         @default(true) @map("is_enabled")
+  minOrderValue Decimal?        @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue Decimal?        @map("max_order_value") @db.Decimal(12, 2)
+  extraCharge   Decimal?        @map("extra_charge") @db.Decimal(10, 2)
+  priority      Int             @default(0)
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
   paymentType   String
-  gatewayId     String?        @map("gateway_id")
-  isEnabled     Boolean        @default(true) @map("is_enabled")
-  minOrderValue Decimal?       @map("min_order_value") @db.Decimal(12, 2)
-  maxOrderValue Decimal?       @map("max_order_value") @db.Decimal(12, 2)
-  extraCharge   Decimal?       @map("extra_charge") @db.Decimal(10, 2)
-  priority      Int            @default(0)
-  createdAt     DateTime       @default(now()) @map("created_at")
-  updatedAt     DateTime       @updatedAt @map("updated_at")
-  zone          PaymentZone?   @relation(fields: [zoneId], references: [id])
   gateway       PaymentGateway? @relation(fields: [gatewayId], references: [id])
+  zone          PaymentZone?    @relation(fields: [zoneId], references: [id])
 
   @@index([zoneId])
   @@index([gatewayId])
@@ -1076,16 +1107,29 @@ model PaymentRule {
 }
 
 model BankAccount {
-  id            String   @id @default(uuid())
-  bankName      String   @map("bank_name")
-  accountTitle  String   @map("account_title")
-  accountNumber String   @map("account_number")
-  iban          String?
-  branch        String?
-  isActive      Boolean  @default(true) @map("is_active")
-  sortOrder     Int      @default(0) @map("sort_order")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+  id                 String    @id @default(uuid())
+  bankName           String    @map("bank_name")
+  accountTitle       String    @map("account_title")
+  accountNumber      String    @map("account_number")
+  iban               String?
+  swiftCode          String?   @map("swift_code")
+  bankAddress        String?   @map("bank_address")
+  beneficiaryAddress String?   @map("beneficiary_address")
+  country            String?
+  routingNumber      String?   @map("routing_number")
+  sortCode           String?   @map("sort_code")
+  ifscCode           String?   @map("ifsc_code")
+  branch             String?
+  branchCode         String?   @map("branch_code")
+  cnic               String?
+  minAmount          Decimal?  @map("min_amount") @db.Decimal(12, 2)
+  maxAmount          Decimal?  @map("max_amount") @db.Decimal(12, 2)
+  isActive           Boolean   @default(true) @map("is_active")
+  sortOrder          Int       @default(0) @map("sort_order")
+  currencyId         String?   @map("currency_id")
+  currency           Currency? @relation(fields: [currencyId], references: [id])
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
 
   @@map("bank_accounts")
 }
@@ -1118,6 +1162,27 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([performedBy])
   @@map("audit_logs")
+}
+
+model PriceUpdateLog {
+  id                String   @id @default(uuid())
+  productId         String   @map("product_id")
+  productName       String   @map("product_name")
+  sku               String
+  priceType         String   @default("RETAIL") @map("price_type") // RETAIL, WHOLESALE, SPECIAL
+  oldPrice          Decimal  @db.Decimal(10, 2)
+  newPrice          Decimal  @db.Decimal(10, 2)
+  performedBy       String?  @map("performed_by")
+  userName          String?  @map("user_name")
+  reason            String?
+  createdAt         DateTime @default(now()) @map("created_at")
+  
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  performer         User?    @relation(fields: [performedBy], references: [id])
+
+  @@index([productId])
+  @@index([createdAt])
+  @@map("price_update_logs")
 }
 
 model HomepageSection {
@@ -1605,15 +1670,15 @@ model CompanyCatalog {
 }
 
 model CourierProvider {
-  id          String   @id @default(uuid())
-  name        String
-  code        String   @unique
-  region      String   @default("PK")
-  trackingUrl String?  @map("tracking_url")
-  apiConfig   Json?    @map("api_config")
-  isActive    Boolean  @default(true) @map("is_active")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  id            String         @id @default(uuid())
+  name          String
+  code          String         @unique
+  region        String         @default("PK")
+  trackingUrl   String?        @map("tracking_url")
+  apiConfig     Json?          @map("api_config")
+  isActive      Boolean        @default(true) @map("is_active")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
   orders        Order[]
   shippingRules ShippingRule[]
 
@@ -1638,20 +1703,20 @@ model Rider {
 }
 
 model ShippingRule {
-  id                String   @id @default(uuid())
-  name              String   @unique
-  region            String   @default("PK")
+  id                String           @id @default(uuid())
+  name              String           @unique
+  region            String           @default("PK")
   city              String?
-  logisticsType     String   @map("logistics_type")
-  minOrderValue     Decimal? @map("min_order_value") @db.Decimal(12, 2)
-  maxOrderValue     Decimal? @map("max_order_value") @db.Decimal(12, 2)
-  courierProviderId String?  @map("courier_provider_id")
-  warehouseId       String?  @map("warehouse_id")
-  priority          Int      @default(0)
-  isActive          Boolean  @default(true) @map("is_active")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  estimatedDays     String?  @map("estimated_days")
+  logisticsType     String           @map("logistics_type")
+  minOrderValue     Decimal?         @map("min_order_value") @db.Decimal(12, 2)
+  maxOrderValue     Decimal?         @map("max_order_value") @db.Decimal(12, 2)
+  courierProviderId String?          @map("courier_provider_id")
+  warehouseId       String?          @map("warehouse_id")
+  priority          Int              @default(0)
+  isActive          Boolean          @default(true) @map("is_active")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  estimatedDays     String?          @map("estimated_days")
   baseShippingCost  Decimal?         @map("base_shipping_cost") @db.Decimal(12, 2)
   courierProvider   CourierProvider? @relation(fields: [courierProviderId], references: [id])
 
@@ -1670,4 +1735,226 @@ model TrackingLog {
 
   @@index([orderId])
   @@map("tracking_logs")
+}
+
+enum CampaignType {
+  GENERAL
+  FLASH_SALE
+  CLEARANCE
+  BULK
+}
+
+enum TargetType {
+  ALL
+  CATEGORY
+  BRAND
+  PRODUCT
+}
+
+model Promotion {
+  id                       String          @id @default(uuid())
+  name                     String
+  displayTitle             String?         @map("display_title")
+  displaySubtitle          String?         @map("display_subtitle")
+  description              String?
+  discountType             String          @map("discount_type")
+  targetProductId          String?         @map("target_product_id")
+  targetCategoryId         String?         @map("target_category_id")
+  targetBrandId            String?         @map("target_brand_id")
+  startDate                DateTime        @map("start_date")
+  endDate                  DateTime        @map("end_date")
+  isActive                 Boolean         @default(true) @map("is_active")
+  priority                 Int             @default(0)
+  maxUsesTotal             Int?            @map("max_uses_total")
+  maxUsesPerUser           Int?            @map("max_uses_per_user")
+  currentUses              Int             @default(0) @map("current_uses")
+  customerSegment          String          @default("ALL") @map("customer_segment")
+  minOrderValue            Decimal?        @map("min_order_value") @db.Decimal(10, 2)
+  stackable                Boolean         @default(false)
+  showOnBanner             Boolean         @default(false) @map("show_on_banner")
+  bannerImage              String?         @map("banner_image")
+  bannerColor              String?         @map("banner_color")
+  badgeText                String?         @map("badge_text")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+  createdBy                String?         @map("created_by")
+  ageThresholdDays         Int?            @map("age_threshold_days")
+  backgroundColor          String?         @map("background_color")
+  bannerImageDesktop       String?         @map("banner_image_desktop")
+  bannerImageMobile        String?         @map("banner_image_mobile")
+  popupImageDesktop        String?         @map("popup_image_desktop")
+  popupImageMobile         String?         @map("popup_image_mobile")
+  campaignType             CampaignType    @default(GENERAL) @map("campaign_type")
+  ctaLink                  String?         @map("cta_link")
+  ctaText                  String?         @map("cta_text")
+  displayLocations         String[]        @default([]) @map("display_locations")
+  isAutoApply              Boolean         @default(false) @map("is_auto_apply")
+  showCountdown            Boolean         @default(false) @map("show_countdown")
+  stockThreshold           Int?            @map("stock_threshold")
+  targetIds                String[]        @default([]) @map("target_ids")
+  textColor                String?         @map("text_color")
+  urgencyMessage           String?         @map("urgency_message")
+  targetType               TargetType      @default(ALL) @map("target_type")
+  deletedAt                DateTime?       @map("deleted_at")
+  campaign_hero_image      String?
+  campaign_page_title      String?
+  campaign_primary_color   String?
+  campaign_secondary_color String?
+  max_discount             Decimal?        @db.Decimal(10, 2)
+  popup_scope              String?
+  popupYoutubeLink         String?         @map("popup_youtube_link")
+  popupFrequencyHours      Int?            @default(0) @map("popup_frequency_hours")
+  show_view_all_button     Boolean         @default(false)
+  layoutType               String?         @default("DEFAULT") @map("layout_type")
+  slug                     String?         @unique @map("slug")
+  infoBarText              String?         @map("info_bar_text")
+  timezone                 String?         @map("timezone")
+  tiers                    PromotionTier[]
+  brand                    Brand?          @relation(fields: [targetBrandId], references: [id])
+  category                 Category?       @relation(fields: [targetCategoryId], references: [id])
+  product                  Product?        @relation(fields: [targetProductId], references: [id])
+
+  @@index([isActive, startDate, endDate])
+  @@index([targetType, targetProductId])
+  @@index([targetType, targetCategoryId])
+  @@index([targetType, targetBrandId])
+  @@index([showOnBanner])
+  @@index([campaignType])
+  @@map("promotions")
+}
+
+model PromotionTier {
+  id            String    @id @default(uuid())
+  promotionId   String    @map("promotion_id")
+  minQuantity   Int       @map("min_quantity")
+  discountValue Decimal   @map("discount_value") @db.Decimal(10, 2)
+  label         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+  promotion     Promotion @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+
+  @@unique([promotionId, minQuantity])
+  @@index([promotionId])
+  @@map("promotion_tiers")
+}
+
+// ─── Knowledge Base Models ───────────────────────────────────────────
+
+model KbCategory {
+  id          String       @id @default(uuid())
+  name        String
+  slug        String       @unique
+  description String?
+  icon        String?
+  parentId    String?      @map("parent_id")
+  position    Int          @default(0)
+  path        String?
+  depth       Int          @default(0)
+  isActive    Boolean      @default(true) @map("is_active")
+  visibility  KbVisibility @default(PUBLIC)
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+
+  parent      KbCategory?  @relation("KbCategoryHierarchy", fields: [parentId], references: [id])
+  children    KbCategory[] @relation("KbCategoryHierarchy")
+  articles    KbArticle[]
+  faqs        KbFaq[]
+
+  @@index([parentId])
+  @@map("kb_categories")
+}
+
+model KbArticle {
+  id              String            @id @default(uuid())
+  title           String
+  slug            String            @unique
+  excerpt         String?
+  coverImageUrl   String?           @map("cover_image_url")
+  contentJson     Json?             @map("content_json") @db.JsonB
+  contentText     String?           @map("content_text")
+  renderedHtml    String?           @map("rendered_html")
+  metaTitle       String?           @map("meta_title")
+  metaDescription String?           @map("meta_description")
+  canonicalUrl    String?           @map("canonical_url")
+  ogImageUrl      String?           @map("og_image_url")
+  ogTitle         String?           @map("og_title")
+  ogDescription   String?           @map("og_description")
+  ogUrl           String?           @map("og_url")
+  slogan          String?
+  metaKeywords    String?           @map("meta_keywords")
+  status          KbArticleStatus   @default(DRAFT)
+  visibility      KbVisibility      @default(PUBLIC)
+  isFeatured      Boolean           @default(false) @map("is_featured")
+  tags            String[]
+  categoryId      String?           @map("category_id")
+  authorId        String            @map("author_id")
+  publishedAt     DateTime?         @map("published_at")
+  viewCount       Int               @default(0) @map("view_count")
+  readingTime     Int?              @map("reading_time")
+  position        Int               @default(0)
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  deletedAt       DateTime?         @map("deleted_at")
+
+  category        KbCategory?       @relation(fields: [categoryId], references: [id])
+  author          User              @relation("KbArticleAuthor", fields: [authorId], references: [id])
+  revisions       KbArticleRevision[]
+
+  @@index([categoryId])
+  @@index([status, publishedAt])
+  @@index([slug])
+  @@map("kb_articles")
+}
+
+model KbArticleRevision {
+  id           String    @id @default(uuid())
+  articleId    String    @map("article_id")
+  contentJson  Json?     @map("content_json") @db.JsonB
+  contentText  String?   @map("content_text")
+  renderedHtml String?   @map("rendered_html")
+  title        String
+  version      Int
+  changeNote   String?   @map("change_note")
+  createdById  String    @map("created_by_id")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  article      KbArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy    User      @relation("KbRevisionCreator", fields: [createdById], references: [id])
+
+  @@index([articleId])
+  @@map("kb_article_revisions")
+}
+
+model KbFaq {
+  id          String       @id @default(uuid())
+  question    String
+  answerJson  Json?        @map("answer_json") @db.JsonB
+  answerText  String?      @map("answer_text")
+  position    Int          @default(0)
+  isActive    Boolean      @default(true) @map("is_active")
+  categoryId  String?      @map("category_id")
+  tags        String[]
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+  deletedAt   DateTime?    @map("deleted_at")
+
+  category    KbCategory?  @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+  @@map("kb_faqs")
+}
+
+model KbMedia {
+  id        String   @id @default(uuid())
+  filename  String
+  url       String   @unique
+  mimetype  String
+  size      Int
+  key       String   @unique
+  folder    String   @default("knowledge-base")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("kb_media_assets")
 }

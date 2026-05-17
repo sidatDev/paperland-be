@@ -2,6 +2,28 @@
 import { FastifyInstance } from 'fastify';
 import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { PricingEngine } from '../utils/pricing.engine';
+import { PromotionService } from '../services/promotion.service';
+
+async function getAllCategoryIdsRecursive(prisma: any, categoryIds: string[]): Promise<string[]> {
+    if (!categoryIds || categoryIds.length === 0) return [];
+    
+    let allIds = [...categoryIds];
+    let currentLevelIds = [...categoryIds];
+    
+    while (currentLevelIds.length > 0) {
+        const nextLevel = await prisma.category.findMany({
+            where: { parentId: { in: currentLevelIds } },
+            select: { id: true }
+        });
+        
+        currentLevelIds = nextLevel.map((c: any) => c.id);
+        if (currentLevelIds.length > 0) {
+            allIds = [...allIds, ...currentLevelIds];
+        }
+    }
+    
+    return Array.from(new Set(allIds));
+}
 
 export default async function publicShopRoutes(fastify: FastifyInstance) {
     
@@ -137,6 +159,27 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
         }
     });
 
+    const getProductPrices = (p: any) => {
+        const pkr = p.prices?.find((pr: any) => pr.isActive && pr.currency?.code === 'PKR') || p.prices?.[0];
+        const retailPrice = pkr ? Number(pkr.priceRetail) : Number(p.price || 0);
+        const specialPrice = pkr ? Number(pkr.priceSpecial || 0) : 0;
+        
+        // Promotional logic: If special exists and is LOWER than retail
+        if (specialPrice > 0 && specialPrice < retailPrice) {
+            return {
+                basePrice: retailPrice,
+                finalPrice: specialPrice,
+                isSale: true
+            };
+        }
+        
+        return {
+            basePrice: retailPrice,
+            finalPrice: retailPrice,
+            isSale: false
+        };
+    };
+
     const calculateAvailability = (p: any) => {
         // 1. Manual override check (Admin status takes precedence)
         const isManualOutOfStock = p.status === 'Out of Stock' || (p.specifications as any)?.status === 'Out of Stock';
@@ -175,8 +218,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
         const prices = p.variants
             .map((v: any) => {
-                const pkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return pkr ? Number(pkr.priceRetail) : Number(v.prices?.[0]?.priceRetail || v.price || 0);
+                const { finalPrice } = getProductPrices(v);
+                return finalPrice;
             })
             .filter((pr: number) => pr > 0);
 
@@ -260,22 +303,22 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
 
                     if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
-                        const [popularProducts, latestProducts, premiumProducts] = await Promise.all([
+                        const [popularProducts, featuredProducts, premiumProducts] = await Promise.all([
                             (fastify.prisma as any).product.findMany({
                                 where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
+                                take: 10,
+                                orderBy: { orderItems: { _count: 'desc' } }, // Actual Best Sellers
+                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
+                            }),
+                            (fastify.prisma as any).product.findMany({
+                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null, isFeatured: true },
                                 take: 10,
                                 include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                             }),
                             (fastify.prisma as any).product.findMany({
                                 where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
                                 take: 10,
-                                orderBy: { createdAt: 'desc' }, // Latest Arrivals
-                                include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
-                            }),
-                            (fastify.prisma as any).product.findMany({
-                                where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
-                                take: 10,
-                                orderBy: { updatedAt: 'desc' },
+                                orderBy: { createdAt: 'desc' },
                                 include: { prices: { include: { currency: true } }, stocks: true, variants: { where: { deletedAt: null }, include: { stocks: true } }, reviews: { where: { status: 'APPROVED' }, select: { rating: true } } }
                             })
                         ]);
@@ -300,8 +343,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 });
                             }
                         }
-                        if (!hasFeatured && latestProducts.length > 0) {
-                            s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: latestProducts.map((p: any) => ({ id: p.id, product: p })) });
+                        if (!hasFeatured && featuredProducts.length > 0) {
+                            s.push({ id: 'featured-auto', type: 'featured_products', sortOrder: 2, displayTitle: 'Featured Products', subtitle: 'TRENDING PRODUCTS', items: featuredProducts.map((p: any) => ({ id: p.id, product: p })) });
                         }
                         if (!hasPremium && premiumProducts.length > 0) {
                             s.push({ id: 'premium-auto', type: 'special_offers', sortOrder: 1, displayTitle: 'Our Premium Collection', subtitle: 'Our COLLECTIONS', items: premiumProducts.map((p: any) => ({ id: p.id, product: p })) });
@@ -319,30 +362,32 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (itemsWithProducts.length === 0 || (!userId || userId === 'guest')) {
                         return {
                             id: s.id, type: s.type, sort_order: s.sortOrder, title: s.displayTitle, subtitle: s.subtitle, cta_label: s.ctaLabel, cta_link: s.ctaLink, styles: s.styles,
-                            items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => ({
-                                id: i.product?.id || i.id, name: i.customTitle || i.product?.name || 'Unnamed', image: i.customImage || i.product?.imageUrl || '',
-                                price: (() => {
-                                    const pkr = i.product?.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                                    return pkr ? Number(pkr.priceRetail) : Number(i.product?.prices?.[0]?.priceRetail || i.product?.price || 0);
-                                })(),
-                                currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
-                                ... (i.product ? calculateAvailability(i.product) : {}),
-                                ... (i.product ? calculateVariantPriceRange(i.product) : {}),
-                                rating: i.product?.reviews?.length > 0 
-                                    ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
-                                    : 0,
-                                reviewsCount: i.product?.reviews?.length || 0
-                            }))
+                            items: (s.items || []).filter((i: any) => i.product || i.customLink || i.customTitle).map((i: any) => {
+                                const { basePrice, finalPrice, isSale } = i.product ? getProductPrices(i.product) : { basePrice: 0, finalPrice: 0, isSale: false };
+                                return {
+                                    id: i.product?.id || i.id, name: i.customTitle || i.product?.name || 'Unnamed', image: i.customImage || i.product?.imageUrl || '',
+                                    price: finalPrice,
+                                    originalPrice: isSale ? basePrice : undefined,
+                                    isSale,
+                                    currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
+                                    ... (i.product ? calculateAvailability(i.product) : {}),
+                                    ... (i.product ? calculateVariantPriceRange(i.product) : {}),
+                                    rating: i.product?.reviews?.length > 0 
+                                        ? (i.product.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / i.product.reviews.length) 
+                                        : 0,
+                                    reviewsCount: i.product?.reviews?.length || 0
+                                };
+                            })
                         };
                     }
 
                     const priced = await PricingEngine.calculateBulkPrices(
                         fastify.prisma as any,
                         itemsWithProducts.map((i: any) => {
-                            const pkr = i.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                            const { finalPrice } = getProductPrices(i.product);
                             return {
                                 productId: i.product.id,
-                                basePrice: pkr ? Number(pkr.priceRetail) : Number(i.product.prices?.[0]?.priceRetail || i.product.price || 0),
+                                basePrice: finalPrice,
                                 sku: i.product.sku
                             };
                         }),
@@ -600,6 +645,14 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     });
                 }
 
+                if (sort === 'featured') {
+                    where.AND.push({ isFeatured: true });
+                }
+                
+                if (sort === 'best_seller') {
+                    where.AND.push({ orderItems: { some: {} } });
+                }
+
                 if (q) {
                     // Check if q matches a category name exactly
                     const matchingCategory = await (fastify.prisma as any).category.findFirst({
@@ -631,7 +684,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { name: { contains: q, mode: 'insensitive' } },
                                 { sku: { contains: q, mode: 'insensitive' } },
                                 { specifications: { path: ['partNo'], string_contains: q } },
-                                { category: { name: { contains: q, mode: 'insensitive' } } }
+                                { category: { name: { contains: q, mode: 'insensitive' } } },
+                                { brand: { name: { contains: q, mode: 'insensitive' } } }
                             ]
                         });
                     }
@@ -798,17 +852,27 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             userId
                         );
 
-                        return prods.map((p: any, idx: number) => ({
-                            ...p,
-                            originalPrice: priced[idx].basePrice !== priced[idx].finalPrice ? priced[idx].basePrice : undefined,
-                            price: priced[idx].finalPrice,
-                            ...calculateAvailability(p),
-                            ...calculateVariantPriceRange(p),
-                            rating: p.reviews?.length > 0 
-                                ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
-                                : 0,
-                            reviewsCount: p.reviews?.length || 0
-                        }));
+                        return prods.map((p: any, idx: number) => {
+                            const { basePrice, finalPrice: promoPrice, isSale: hasPromo } = getProductPrices(p);
+                            const enginePrice = priced[idx].finalPrice;
+                            
+                            // For B2B users, show the best price (lowest of promo vs engine discount)
+                            const displayPrice = hasPromo ? Math.min(promoPrice, enginePrice) : enginePrice;
+                            const original = (displayPrice < basePrice) ? basePrice : undefined;
+
+                            return {
+                                ...p,
+                                originalPrice: original,
+                                price: displayPrice,
+                                isSale: hasPromo || (displayPrice < basePrice),
+                                ...calculateAvailability(p),
+                                ...calculateVariantPriceRange(p),
+                                rating: p.reviews?.length > 0 
+                                    ? (p.reviews.reduce((acc: number, r: any) => acc + r.rating, 0) / p.reviews.length) 
+                                    : 0,
+                                reviewsCount: p.reviews?.length || 0
+                            };
+                        });
                     }),
                     (fastify.prisma as any).product.count({ where }),
                     (fastify.prisma as any).category.findMany({ 
@@ -995,11 +1059,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
 
             const currentUserId = (request.user as any)?.id;
-            const basePrice = (() => {
-                const pkr = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return pkr ? Number(pkr.priceRetail) : Number(product.prices?.[0]?.priceRetail || product.price || 0);
-            })();
-            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, currentUserId, product.sku);
+            const { basePrice, finalPrice: promoPrice, isSale: hasPromo } = getProductPrices(product);
+            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, currentUserId, product.sku);
+            
+            const displayPrice = pricing.finalPrice;
+            const originalPrice = pricing.originalPrice !== pricing.finalPrice ? pricing.originalPrice : undefined;
 
             return reply.send(createResponse({
                 id: product.id,
@@ -1009,8 +1073,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 partNumber: (product.specifications as any)?.partNo || product.sku,
                 sku: product.sku,
                 groupNumber: product.groupNumber,
-                price: finalPrice,
-                originalPrice: basePrice !== finalPrice ? basePrice : undefined,
+                price: displayPrice,
+                originalPrice: originalPrice,
+                isSale: hasPromo || (displayPrice < basePrice),
+                discountType: pricing.discountType,
+                badgeText: pricing.badgeText,
+                campaignType: pricing.campaignType,
                 currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
@@ -1036,9 +1104,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })
                     .map(async (v: any) => {
-                        const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                        const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
-                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, currentUserId, v.sku);
+                        const { basePrice: vBaseRaw, finalPrice: vPromo, isSale: vHasPromo } = getProductPrices(v);
+                        const vPricing = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, currentUserId, v.sku);
+                        
+                        const vDisplayPrice = vPricing.finalPrice;
+                        const vOriginalPrice = (vPricing.originalPrice !== vPricing.finalPrice) ? vPricing.originalPrice : undefined;
                         
                         // Extract MOQ if in catalog
                         let moq = 1;
@@ -1058,8 +1128,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             id: v.id,
                             name: v.name,
                             sku: v.sku,
-                            price: vFinal,
-                            originalPrice: vBase !== vFinal ? vBase : undefined,
+                            price: vDisplayPrice,
+                            originalPrice: vOriginalPrice,
+                            isSale: vHasPromo || (vDisplayPrice < vBaseRaw),
+                            discountType: vPricing.discountType,
+                            badgeText: vPricing.badgeText,
+                            campaignType: vPricing.campaignType,
                             currency: 'PKR',
                             image_url: v.imageUrl,
                             totalStock: Math.max(0, v.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
@@ -1184,11 +1258,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             if (!product) return reply.status(404).send(createErrorResponse('Product not found'));
             
-            const basePrice = (() => {
-                const pkr = product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return pkr ? Number(pkr.priceRetail) : Number(product.prices?.[0]?.priceRetail || product.price || 0);
-            })();
-            const finalPrice = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, basePrice, userId, product.sku);
+            const { basePrice, finalPrice: promoPrice, isSale: hasPromo } = getProductPrices(product);
+            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, product.id, promoPrice, userId, product.sku);
+            
+            const displayPrice = pricing.finalPrice;
+            const originalPrice = pricing.originalPrice !== pricing.finalPrice ? pricing.originalPrice : undefined;
             
             const result = {
                 id: product.id,
@@ -1199,8 +1273,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 partNumber: (product.specifications as any)?.partNo || product.sku,
                 sku: product.sku,
                 groupNumber: product.groupNumber,
-                price: finalPrice,
-                originalPrice: basePrice !== finalPrice ? basePrice : undefined,
+                price: displayPrice,
+                originalPrice: originalPrice,
+                isSale: hasPromo || (displayPrice < basePrice),
+                discountType: pricing.discountType,
+                badgeText: pricing.badgeText,
+                campaignType: pricing.campaignType,
                 currency: 'PKR',
                 image_url: product.imageUrl,
                 images: product.images,
@@ -1225,9 +1303,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })
                     .map(async (v: any) => {
-                        const vPkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                        const vBase = vPkr ? Number(vPkr.priceRetail) : Number(v.price || 0);
-                        const vFinal = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vBase, userId, v.sku);
+                        const { basePrice: vBaseRaw, finalPrice: vPromo, isSale: vHasPromo } = getProductPrices(v);
+                        const vPricing = await PricingEngine.calculatePrice(fastify.prisma as any, v.id, vPromo, userId, v.sku);
+                        
+                        const vDisplayPrice = vPricing.finalPrice;
+                        const vOriginalPrice = (vPricing.originalPrice !== vPricing.finalPrice) ? vPricing.originalPrice : undefined;
                         
                         // Extract MOQ if in catalog
                         let moq = 1;
@@ -1248,8 +1328,12 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             id: v.id,
                             name: v.name,
                             sku: v.sku,
-                            price: vFinal,
-                            originalPrice: vBase !== vFinal ? vBase : undefined,
+                            price: vDisplayPrice,
+                            originalPrice: vOriginalPrice,
+                            isSale: vHasPromo || (vDisplayPrice < vBaseRaw),
+                            discountType: vPricing.discountType,
+                            badgeText: vPricing.badgeText,
+                            campaignType: vPricing.campaignType,
                             currency: 'PKR',
                             image_url: v.imageUrl,
                             totalStock: calculateAvailability(v).totalStock,
@@ -1264,11 +1348,11 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (manualSeo && (manualSeo.title || manualSeo.description)) {
                         return {
                             title: manualSeo.title || `${product.name} | ${product.brand?.name || ''} - Paperland`,
-                        description: manualSeo.description || '',
-                        keywords: manualSeo.keywords || '',
-                        ogImage: manualSeo.ogImage || product.imageUrl || ''
-                    };
-                }
+                            description: manualSeo.description || '',
+                            keywords: manualSeo.keywords || '',
+                            ogImage: manualSeo.ogImage || product.imageUrl || ''
+                        };
+                    }
                 // Auto-generate SEO meta from product data
                 const brandName = product.brand?.name || '';
                 const categoryName = product.category?.name || '';
@@ -1410,6 +1494,432 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     distribution
                 }
             }));
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+
+    // GET /api/shop/promotions/campaign/:id
+    fastify.get('/shop/promotions/campaign/:id', {
+        schema: {
+            description: 'Get campaign details and its targeted products with full listing logic',
+            tags: ['Public Shop'],
+            params: { type: 'object', properties: { id: { type: 'string' } } },
+            querystring: {
+                type: 'object',
+                properties: {
+                    page: { type: 'integer', default: 1 },
+                    limit: { type: 'integer', default: 12 },
+                    sort: { type: 'string', enum: ['price_asc', 'price_desc', 'newest', 'alphabetical', 'featured', 'best_seller'] },
+                    category: { type: 'string' },
+                    brand: { type: 'string' },
+                    price_min: { type: 'number' },
+                    price_max: { type: 'number' }
+                }
+            }
+        }
+    }, async (request: any, reply: any) => {
+        try {
+            const { id } = request.params;
+            const { page, limit, sort, category, brand, price_min, price_max } = request.query;
+            const skip = (page - 1) * limit;
+
+            const now = new Date();
+            const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); // 24h buffer for safety
+            const isUuid = id.length === 36;
+            
+            const userId = (request.user as any)?.id;
+            let currentSegment = 'GUEST';
+            if (userId) {
+                const user = await (fastify.prisma as any).user.findUnique({
+                    where: { id: userId },
+                    include: { b2bProfile: true }
+                });
+                currentSegment = user?.b2bProfile ? 'B2B' : 'RETAIL';
+            }
+
+            const segmentIn = ['ALL'];
+            if (currentSegment === 'B2B') segmentIn.push('B2B_ONLY');
+            else if (currentSegment === 'RETAIL') segmentIn.push('RETAIL_ONLY');
+            else segmentIn.push('GUEST_ONLY');
+
+            const promotion = await (fastify.prisma as any).promotion.findFirst({
+                where: {
+                    AND: [
+                        {
+                            OR: [
+                                isUuid ? { id } : undefined,
+                                { slug: id }
+                            ].filter(Boolean) as any[]
+                        },
+                        { isActive: true },
+                        { startDate: { lte: bufferDate } },
+                        { endDate: { gte: now } },
+                        { customerSegment: { in: segmentIn } }
+                    ]
+                },
+                include: { tiers: true }
+            });
+
+            if (!promotion) {
+                fastify.log.warn(`[Campaign] Campaign NOT FOUND or EXPIRED for id: ${id}`);
+                return reply.status(404).send(createErrorResponse('Campaign not found or expired'));
+            }
+
+            // Check if exhausted and send a flag instead of 404
+            const isExhausted = promotion.maxUsesTotal !== null && promotion.currentUses >= promotion.maxUsesTotal;
+            if (isExhausted) {
+                fastify.log.info(`[Campaign] Campaign EXHAUSTED for id: ${id}, but showing page without discounts`);
+            }
+
+            fastify.log.info(`[Campaign] Successfully found campaign: ${promotion.name}`);
+
+            // 2. Base filter for the campaign
+            let campaignProductFilter: any = {
+                isActive: true,
+                isVisibleOnEcommerce: true,
+                deletedAt: null,
+                parentId: null
+            };
+
+            if (promotion.targetType !== 'ALL') {
+                const targetIds = Array.isArray(promotion.targetIds) ? promotion.targetIds : [];
+                const allPotentialIds = [...targetIds, promotion.targetProductId, promotion.targetCategoryId, promotion.targetBrandId].filter(Boolean);
+
+                const orConditions: any[] = [];
+
+                // 1. Specific Products
+                orConditions.push({ id: { in: allPotentialIds } });
+
+                // 2. Categories (including ALL subcategories recursively)
+                const categoryIds = await getAllCategoryIdsRecursive(fastify.prisma, allPotentialIds);
+                if (categoryIds.length > 0) {
+                    orConditions.push({ categoryId: { in: categoryIds } });
+                }
+
+                // 3. Brands
+                orConditions.push({ brandId: { in: allPotentialIds } });
+
+                campaignProductFilter.OR = orConditions;
+            }
+
+            // 3. User applied filters
+            const userWhere: any = { AND: [campaignProductFilter] };
+            
+            if (category) {
+                const categories = category.split(',');
+                userWhere.AND.push({
+                    category: {
+                        OR: categories.map((c: string) => ({ slug: c }))
+                    }
+                });
+            }
+
+            if (brand) {
+                const brands = brand.split(',');
+                userWhere.AND.push({
+                    brand: {
+                        OR: brands.map((b: string) => ({ slug: b }))
+                    }
+                });
+            }
+
+            if (price_min || price_max) {
+                userWhere.AND.push({
+                    price: {
+                        gte: price_min ? parseFloat(price_min) : undefined,
+                        lte: price_max ? parseFloat(price_max) : undefined
+                    }
+                });
+            }
+
+            // 4. Sort logic
+            let orderBy: any = { createdAt: 'desc' };
+            if (sort === 'price_asc') orderBy = { price: 'asc' };
+            else if (sort === 'price_desc') orderBy = { price: 'desc' };
+            else if (sort === 'alphabetical') orderBy = { name: 'asc' };
+            else if (sort === 'best_seller') orderBy = { orderItems: { _count: 'desc' } };
+
+            // 5. Fetch Products and Metadata
+            const [products, total, categories, brands] = await Promise.all([
+                (fastify.prisma as any).product.findMany({
+                    where: userWhere,
+                    include: {
+                        category: true,
+                        brand: true,
+                        stocks: true,
+                        prices: { include: { currency: true } }
+                    },
+                    skip,
+                    take: limit,
+                    orderBy
+                }),
+                (fastify.prisma as any).product.count({ where: userWhere }),
+                // Fetch categories for sidebar (limited to campaign products)
+                (fastify.prisma as any).category.findMany({
+                    where: { products: { some: campaignProductFilter } },
+                    select: { id: true, name: true, slug: true }
+                }),
+                // Fetch brands for sidebar (limited to campaign products)
+                (fastify.prisma as any).brand.findMany({
+                    where: { products: { some: campaignProductFilter } },
+                    select: { id: true, name: true, slug: true, logoUrl: true }
+                })
+            ]);
+
+            // 6. Apply pricing and map
+            const pricedProducts = await Promise.all(products.map(async (p: any) => {
+                const sar = p.prices?.find((pr: any) => pr.currency?.code === 'PKR') || p.prices?.find((pr: any) => pr.currency?.code === 'SAR');
+                const basePrice = sar ? Number(sar.priceRetail) : Number(p.price || 0);
+                const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, basePrice, userId, p.sku, 1, promotion.id);
+                
+                return {
+                    id: p.id,
+                    name: p.name,
+                    slug: p.slug,
+                    sku: p.sku,
+                    image_url: p.imageUrl,
+                    price: pricing.finalPrice,
+                    originalPrice: basePrice !== pricing.finalPrice ? basePrice : undefined,
+                    discountPercent: pricing.discountPercent,
+                    badgeText: pricing.badgeText || promotion.badgeText,
+                    category: p.category?.name,
+                    brand: p.brand?.name,
+                    totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0)
+                };
+            }));
+
+            return reply.send(createResponse({
+                campaign: {
+                    id: promotion.id,
+                    name: promotion.name,
+                    slug: promotion.slug,
+                    displayTitle: promotion.displayTitle,
+                    displaySubtitle: promotion.displaySubtitle,
+                    campaignType: promotion.campaignType,
+                    bannerImage: promotion.bannerImageDesktop || promotion.bannerImage,
+                    backgroundColor: promotion.backgroundColor,
+                    textColor: promotion.textColor,
+                    endDate: promotion.endDate,
+                    showCountdown: promotion.showCountdown,
+                    layoutType: promotion.layoutType,
+                    isExhausted: isExhausted,
+                    tiers: (promotion.tiers || []).map((t: any) => ({
+                        minQuantity: t.minQuantity,
+                        discountValue: Number(t.discountValue),
+                        label: t.label
+                    }))
+                },
+                metadata: {
+                    total_results: total,
+                    categories: categories.map((c: any) => ({ ...c, subCategories: [] })),
+                    brands: brands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })),
+                    industries: []
+                },
+                products: pricedProducts,
+                pagination: {
+                    total,
+                    current_page: page,
+                    has_more: skip + limit < total
+                }
+            }));
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+    
+    // GET /shop/promotions/active
+    fastify.get('/shop/promotions/active', {
+        schema: {
+            description: 'Get all active promotions for the storefront',
+            tags: ['Promotions'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    segment: { type: 'string', enum: ['ALL', 'B2B_ONLY', 'RETAIL_ONLY'] }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        try {
+            const { segment = 'ALL' } = request.query;
+            const promotions = await PromotionService.getActivePromotions(fastify.prisma as any, {
+                customerSegment: segment
+            });
+            return createResponse(promotions, "Active promotions retrieved");
+        } catch (err: any) {
+            return reply.status(500).send(createErrorResponse(err.message));
+        }
+    });
+
+    // GET /shop/promotions/storefront
+    fastify.get('/shop/promotions/storefront', {
+        schema: {
+            description: 'Get all active promotions for storefront grouping',
+            tags: ['Public Shop'],
+            querystring: {
+                type: 'object',
+                properties: {
+                    segment: { type: 'string', default: 'ALL' }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        try {
+            const { segment } = request.query;
+            const cacheKey = `shop:promotions:storefront:v3:${segment}`; 
+          
+            const promotions = await fastify.cache.wrap(cacheKey, async () => {
+                const now = new Date();
+                const bufferDate = new Date(now.getTime() + 24 * 60 * 60 * 1000); 
+
+                const segmentIn = ['ALL'];
+                if (segment === 'B2B') {
+                    segmentIn.push('B2B_ONLY');
+                } else if (segment === 'GUEST') {
+                    segmentIn.push('GUEST_ONLY');
+                } else {
+                    segmentIn.push('RETAIL_ONLY');
+                }
+
+                const results = await (fastify.prisma as any).promotion.findMany({
+                    where: {
+                        isActive: true,
+                        deletedAt: null,
+                        startDate: { lte: bufferDate },
+                        endDate: { gte: now },
+                        customerSegment: { in: segmentIn }
+                    },
+                    include: {
+                        tiers: { orderBy: { minQuantity: 'asc' } }
+                    },
+                    orderBy: { priority: 'desc' }
+                });
+
+                return results;
+            }, 300);
+
+            const result: any = {
+                stripPromotions: [],
+                heroPromotions: [],
+                carouselPromotions: [],
+                popupPromotion: null
+            };
+
+            for (const promo of promotions) {
+                const locations = promo.displayLocations || [];
+                
+                if (locations.includes('STRIP')) {
+                    result.stripPromotions.push({
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink,
+                        backgroundColor: promo.backgroundColor,
+                        textColor: promo.textColor
+                    });
+                }
+
+                if (locations.includes('HERO')) {
+                    result.heroPromotions.push({
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        displaySubtitle: promo.displaySubtitle,
+                        bannerImageDesktop: promo.bannerImageDesktop || promo.bannerImage,
+                        bannerImageMobile: promo.bannerImageMobile || promo.bannerImage,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink,
+                        showCountdown: promo.showCountdown,
+                        endDate: promo.endDate,
+                        campaignType: promo.campaignType,
+                        slug: promo.slug
+                    });
+                }
+
+                if (locations.includes('CAROUSEL')) {
+                    let targetFilter: any = {};
+                    
+                    if (promo.targetType === 'ALL') {
+                        targetFilter = {};
+                    } else {
+                        const orArray: any[] = [];
+                        
+                        if (promo.targetType === 'PRODUCT') {
+                            if (promo.targetProductId) orArray.push({ id: promo.targetProductId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ id: { in: promo.targetIds } });
+                        } else if (promo.targetType === 'CATEGORY') {
+                            if (promo.targetCategoryId) orArray.push({ categoryId: promo.targetCategoryId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ categoryId: { in: promo.targetIds } });
+                        } else if (promo.targetType === 'BRAND') {
+                            if (promo.targetBrandId) orArray.push({ brandId: promo.targetBrandId });
+                            if (promo.targetIds && promo.targetIds.length > 0) orArray.push({ brandId: { in: promo.targetIds } });
+                        }
+
+                        if (orArray.length > 0) {
+                            targetFilter = { OR: orArray };
+                        } else {
+                            targetFilter = { id: 'NONE' };
+                        }
+                    }
+
+                    const products = await (fastify.prisma as any).product.findMany({
+                        where: {
+                            ...targetFilter,
+                            isActive: true
+                        },
+                        take: 8,
+                        select: { id: true, name: true, sku: true, imageUrl: true, price: true, slug: true }
+                    });
+
+                    if (products.length > 0) {
+                        const pricedProducts = await Promise.all(products.map(async (p: any) => {
+                            const pricing = await PricingEngine.calculatePrice(fastify.prisma as any, p.id, Number(p.price), undefined, p.sku);
+                            return {
+                                id: p.id,
+                                name: p.name,
+                                sku: p.sku,
+                                imageUrl: p.imageUrl,
+                                price: p.price,
+                                slug: p.slug,
+                                finalPrice: typeof pricing === 'object' ? (pricing as any).finalPrice : pricing,
+                                badgeText: typeof pricing === 'object' ? (pricing as any).badgeText || promo.badgeText : promo.badgeText,
+                                campaignTiers: promo.tiers
+                            };
+                        }));
+
+                        result.carouselPromotions.push({
+                            promotionId: promo.id,
+                            campaignType: promo.campaignType === 'FLASH_SALE' ? 'FLASH' : promo.campaignType,
+                            displayTitle: promo.displayTitle,
+                            badgeText: promo.badgeText,
+                            slug: promo.slug,
+                            showCountdown: promo.showCountdown,
+                            endDate: promo.endDate,
+                            products: pricedProducts
+                        });
+                    }
+                }
+
+                if (locations.includes('POPUP') && !result.popupPromotion) {
+                    result.popupPromotion = {
+                        id: promo.id,
+                        displayTitle: promo.displayTitle,
+                        displaySubtitle: promo.displaySubtitle,
+                        bannerImage: promo.bannerImageMobile || promo.bannerImageDesktop || promo.bannerImage,
+                        popupImageDesktop: (promo as any).popupImageDesktop,
+                        popupImageMobile: (promo as any).popupImageMobile,
+                        popupYoutubeLink: promo.popupYoutubeLink,
+                        ctaText: promo.ctaText,
+                        ctaLink: promo.ctaLink || `/campaign/${promo.id}`,
+                        showCountdown: promo.showCountdown,
+                        endDate: promo.endDate
+                    };
+                }
+            }
+
+            return createResponse(result, "Storefront promotions retrieved");
         } catch (err: any) {
             fastify.log.error(err);
             return reply.status(500).send(createErrorResponse(err.message));

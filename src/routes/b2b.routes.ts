@@ -884,6 +884,9 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
       return reply.send({ message: 'Team member added successfully', member: teamMember });
     } catch (err: any) {
       fastify.log.error(err);
+      if (err.code === 'P2002') {
+        return reply.status(400).send({ message: 'This user is already a team member of your organization.' });
+      }
       return reply.status(500).send({ message: 'Failed to invite team member: ' + err.message });
     }
   });
@@ -919,26 +922,79 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         return reply.status(404).send({ message: 'Member not found or unauthorized' });
       }
 
-      // Cannot remove yourself
-      if (member.user_id === requesterId) {
-        return reply.status(400).send({ message: 'You cannot remove yourself from the team' });
-      }
-
-      // Delete the team member record
-      await fastify.prisma.b2b_team_members.delete({ where: { id } });
-
-      // De-link the user from the B2B profile
+      // Instead of deleting user, we just remove the team member record 
+      // and clear the user's b2bProfileId
       await fastify.prisma.user.update({
         where: { id: member.user_id },
         data: { b2bProfileId: null }
       });
 
-      return reply.send({ message: 'Member removed successfully' });
+      await fastify.prisma.b2b_team_members.delete({ where: { id } });
+
+      return reply.send({ message: 'Team member removed' });
     } catch (err: any) {
       fastify.log.error(err);
-      return reply.status(500).send({ message: 'Failed to remove member' });
+      return reply.status(500).send({ message: 'Failed to remove team member' });
     }
   });
+
+  // Toggle Team Member Status
+  fastify.patch('/b2b/team/:id/status', {
+    preHandler: [fastify.authenticate],
+    schema: {
+      description: 'Toggles the active status of a team member',
+      tags: ['B2B Operations'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } }
+      },
+      body: {
+        type: 'object',
+        required: ['isActive'],
+        properties: {
+          isActive: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    const { id } = request.params as any;
+    const { isActive } = request.body as any;
+    const requesterId = (request.user as any).id;
+
+    try {
+      const requester = await fastify.prisma.user.findUnique({
+        where: { id: requesterId },
+        select: { b2bProfileId: true }
+      });
+
+      const member = await fastify.prisma.b2b_team_members.findUnique({
+        where: { id },
+        include: { users: true }
+      });
+
+      if (!member || member.b2b_profile_id !== requester?.b2bProfileId) {
+        return reply.status(404).send({ message: 'Member not found or unauthorized' });
+      }
+
+      // Update both user and team member status
+      await fastify.prisma.user.update({
+        where: { id: member.user_id },
+        data: { isActive: isActive }
+      });
+
+      await fastify.prisma.b2b_team_members.update({
+        where: { id },
+        data: { status: isActive ? 'ACTIVE' : 'INACTIVE' }
+      });
+
+      return reply.send({ message: `Team member ${isActive ? 'activated' : 'deactivated'} successfully` });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to update team member status' });
+    }
+  });
+
 
   // ====================================
   // B2B CUSTOM CATALOGS

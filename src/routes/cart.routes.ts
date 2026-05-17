@@ -68,7 +68,8 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             return {
                 productId: item.productId,
                 basePrice: pkr ? Number(pkr.priceRetail) : Number(item.product.prices?.[0]?.priceRetail || item.product.price || 0),
-                sku: item.product.sku
+                sku: item.product.sku,
+                quantity: item.quantity
             };
         }),
         userId

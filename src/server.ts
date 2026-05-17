@@ -102,6 +102,7 @@ const start = async () => {
     await fastify.register(import('./routes/warehouse.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/industries.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/orders.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/finance.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/payments.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/checkout.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/guest-checkout.routes'), { prefix: '/api/v1' });
@@ -118,6 +119,7 @@ const start = async () => {
     await fastify.register(import('./routes/coupons.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/returns.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/whatsapp.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/promotions.routes'), { prefix: '/api/v1' });
     
     // New Admin Module Routes
     await fastify.register(import('./routes/flash-sales.routes'), { prefix: '/api/v1' });
@@ -134,6 +136,7 @@ const start = async () => {
     // CMS Routes
     await fastify.register(import('./routes/cms.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/blog.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/knowledge-base.routes'), { prefix: '/api/v1' });
 
     // Import Routes (NEW)
     await fastify.register(import('./routes/import.routes'), { prefix: '/api/v1' });
@@ -162,7 +165,10 @@ const start = async () => {
     await fastify.register(import('./routes/public-tracking.routes'), { prefix: '/api/public' });
     
     // Public Contact Routes (No Auth)
-    await fastify.register(import('./routes/public-contact.routes'), { prefix: '/api' });
+    await fastify.register(import('./routes/public-contact.routes'), { prefix: '/api/v1' });
+
+    // Public Knowledge Base Routes
+    await fastify.register(import('./routes/public-kb.routes'), { prefix: '/api' });
 
     // Typesense Search Plugin (NEW)
     await fastify.register(import('./plugins/typesense'));

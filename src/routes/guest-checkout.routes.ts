@@ -3,8 +3,11 @@ import { logActivity } from '../utils/audit';
 import { emailService } from '../services/email.service';
 import { PricingEngine } from '../utils/pricing.engine';
 import { LogisticsEngine } from '../services/logistics-engine.service';
+import { PromotionService } from '../services/promotion.service';
+import { generateOrderNumber } from '../utils/order-utils';
 import * as bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { createErrorResponse } from '../utils/response-wrapper';
 
 /**
  * Guest Checkout Routes
@@ -207,19 +210,26 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 return reply.code(400).send({ message: 'Cart is empty' });
             }
 
-            // 2. Calculate prices
-            const items = cart.items.map((item: any) => {
-                const pkr = item.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return {
-                    id: item.id,
+            // 2. Calculate prices with PricingEngine (Authoritative)
+            const pricedItems = await PricingEngine.calculateBulkPrices(
+                fastify.prisma as any,
+                cart.items.map(item => ({
                     productId: item.productId,
-                    title: item.product.name,
-                    price: pkr ? Number(pkr.priceRetail) : Number(item.product.price || 0),
-                    quantity: item.quantity,
-                    image: item.product.imageUrl,
-                    sku: item.product.sku
-                };
-            });
+                    basePrice: Number(item.product.price),
+                    sku: item.product.sku,
+                    quantity: item.quantity
+                }))
+            );
+
+            const items = pricedItems.map((pi, idx) => ({
+                id: cart.items[idx].id,
+                productId: pi.productId,
+                title: cart.items[idx].product.name,
+                price: pi.finalPrice,
+                quantity: cart.items[idx].quantity,
+                image: cart.items[idx].product.imageUrl,
+                sku: pi.sku
+            }));
 
             const subtotal = items.reduce((acc: number, item: any) => 
                 acc + (item.price * item.quantity), 0);
@@ -267,8 +277,18 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     country: { type: 'string' },
                     phone: { type: 'string', pattern: '^\\+?[0-9\\s-]{7,20}$' },
                     zipCode: { type: 'string' },
+                    companyName: { type: 'string' },
                     shippingMethodId: { type: 'string' },
-                    couponCode: { type: 'string' }
+                    couponCode: { type: 'string' },
+                    billingSameAsShipping: { type: 'boolean' },
+                    billingFirstName: { type: 'string' },
+                    billingLastName: { type: 'string' },
+                    billingCompanyName: { type: 'string' },
+                    billingStreetAddress: { type: 'string' },
+                    billingCity: { type: 'string' },
+                    billingProvince: { type: 'string' },
+                    billingZip: { type: 'string' },
+                    billingCountry: { type: 'string' }
                 }
             }
         }
@@ -278,7 +298,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             const { 
                 guestToken, firstName, lastName, email, 
                 address, city, country, province, phone, zipCode, 
-                shippingMethodId, couponCode 
+                companyName, shippingMethodId, couponCode 
             } = payload;
 
             // 1. Get Guest Cart
@@ -291,19 +311,32 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             // 2. Create or get hidden user account
             const guestUser = await getOrCreateGuestUser(email, phone, firstName, lastName);
 
-            // 3. Calculate prices
-            const items = cart.items.map((item: any) => {
-                const pkr = item.product.prices?.find((pr: any) => pr.currency?.code === 'PKR');
-                return {
-                    id: item.id,
+            // 3. Calculate prices with PricingEngine
+            const pricedItems = await PricingEngine.calculateBulkPrices(
+                fastify.prisma as any,
+                cart.items.map(item => ({
                     productId: item.productId,
-                    title: item.product.name,
-                    price: pkr ? Number(pkr.priceRetail) : Number(item.product.price || 0),
-                    quantity: item.quantity,
-                    image: item.product.imageUrl,
-                    sku: item.product.sku
-                };
-            });
+                    basePrice: Number(item.product.price),
+                    sku: item.product.sku,
+                    quantity: item.quantity
+                }))
+            );
+
+            const items = pricedItems.map((pi, idx) => ({
+                id: cart.items[idx].id,
+                productId: pi.productId,
+                title: cart.items[idx].product.name,
+                price: pi.finalPrice,
+                quantity: cart.items[idx].quantity,
+                image: cart.items[idx].product.imageUrl,
+                sku: pi.sku,
+                pricingSnapshot: {
+                    basePrice: pi.basePrice,
+                    finalPrice: pi.finalPrice,
+                    discountType: pi.discountType,
+                    promotionId: pi.promotionId
+                }
+            }));
 
             const subtotal = items.reduce((acc: number, item: any) => 
                 acc + (item.price * item.quantity), 0);
@@ -329,6 +362,12 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     finalCouponCode = couponResult.couponCode;
                 }
             }
+
+            const campaignSavings = pricedItems.reduce((acc, item) => {
+                const cartItem = cart.items.find(i => i.productId === item.productId);
+                const qty = cartItem?.quantity || 0;
+                return acc + ((item.basePrice - item.finalPrice) * qty);
+            }, 0);
 
             const tax = (subtotal - couponDiscount) * 0.15;
             const total = (subtotal - couponDiscount) + shippingCost + tax;
@@ -377,6 +416,18 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 });
             }
 
+            // 9.5 Fetch Product details to get cost prices
+            const productIds = items.map((i: any) => i.productId);
+            const products = await fastify.prisma.product.findMany({
+                where: { id: { in: productIds } },
+                select: { id: true, costPrice: true }
+            });
+
+            const totalCost = items.reduce((sum: number, item: any) => {
+                const product = products.find((p: any) => p.id === item.productId);
+                return sum + (Number(item.quantity) * Number(product?.costPrice || 0));
+            }, 0);
+
             // 10. Create DRAFT Order for guest
             const order = await (fastify.prisma as any).order.create({
                 data: {
@@ -384,6 +435,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     ...(guestUser?.id ? { user: { connect: { id: guestUser.id } } } : {}), // Link to hidden guest user via Prisma relations
                     status: 'DRAFT',
                     totalAmount: total,
+                    totalCost: totalCost,
                     taxAmount: tax,
                     shippingAmount: shippingCost,
                     currency: { connect: { id: currency.id } },
@@ -399,14 +451,24 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
                     shippingDetails: {
                         address, city, country, province, zipCode, phone, 
-                        firstName, lastName, shippingMethodId, 
+                        firstName, lastName, companyName, shippingMethodId, 
                         couponCode: finalCouponCode,
-                        email
+                        email,
+                        billingSameAsShipping: payload.billingSameAsShipping,
+                        billingFirstName: payload.billingFirstName,
+                        billingLastName: payload.billingLastName,
+                        billingCompanyName: payload.billingCompanyName,
+                        billingStreetAddress: payload.billingStreetAddress,
+                        billingCity: payload.billingCity,
+                        billingProvince: payload.billingProvince,
+                        billingZip: payload.billingZip,
+                        billingCountry: payload.billingCountry
                     },
                     shippingSnapshot: {
                         firstName,
                         lastName,
                         fullName: `${firstName} ${lastName}`,
+                        companyName,
                         streetAddress: address,
                         city,
                         province,
@@ -415,15 +477,45 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                         phone,
                         email
                     },
-                    pricingSummary: { subtotal, shippingCost, tax, couponDiscount, total },
+                    billingSnapshot: payload.billingSameAsShipping ? {
+                        firstName,
+                        lastName,
+                        fullName: `${firstName} ${lastName}`,
+                        companyName,
+                        streetAddress: address,
+                        city,
+                        province,
+                        country,
+                        zipCode,
+                        phone,
+                        email
+                    } : {
+                        firstName: payload.billingFirstName,
+                        lastName: payload.billingLastName,
+                        fullName: `${payload.billingFirstName} ${payload.billingLastName}`,
+                        companyName: payload.billingCompanyName,
+                        streetAddress: payload.billingStreetAddress,
+                        city: payload.billingCity,
+                        province: payload.billingProvince,
+                        country: payload.billingCountry,
+                        zipCode: payload.billingZip,
+                        phone: phone, // Using same phone for billing
+                        email: email
+                    },
+                    pricingSummary: { subtotal, originalSubtotal: subtotal + campaignSavings, campaignSavings, shippingCost, tax, couponDiscount, total },
 
                     items: {
-                        create: items.map((item: any) => ({
-                            product: { connect: { id: item.productId } },
-                            quantity: item.quantity,
-                            price: item.price,
-                            sku: item.sku
-                        }))
+                        create: items.map((item: any) => {
+                            const product = products.find((p: any) => p.id === item.productId);
+                            return {
+                                product: { connect: { id: item.productId } },
+                                quantity: item.quantity,
+                                price: item.price,
+                                unitCost: product?.costPrice || 0,
+                                sku: item.sku,
+                                pricingSnapshot: item.pricingSnapshot
+                            };
+                        })
                     }
                 } as any
             });
@@ -705,14 +797,24 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
         try {
             const { orderId, guestToken, paymentMethod, paymentMetadata } = request.body as any;
 
-            // Find draft order
+            // Find draft order (Idempotency check)
             const order = await (fastify.prisma as any).order.findFirst({
-                where: { id: orderId, guestToken, status: 'DRAFT', isGuestOrder: true },
-                include: { items: true }
+                where: { id: orderId, guestToken, isGuestOrder: true },
+                include: { items: { include: { product: true } } }
             }) as any;
 
             if (!order) {
-                return reply.code(400).send({ message: 'Draft order not found or already processed' });
+                return reply.code(404).send({ message: 'Order not found' });
+            }
+
+            if (order.status !== 'DRAFT') {
+                return {
+                    success: true,
+                    orderId: order.id,
+                    orderNumber: order.orderNumber,
+                    message: 'Order already processed',
+                    isGuestOrder: true
+                };
             }
 
             // Stripe: Verify PaymentIntent server-side before accepting
@@ -750,23 +852,49 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 }
             }
 
-            // Finalize order
-            const finalOrder = await fastify.prisma.order.update({
-                where: { id: orderId },
-                data: {
-                    status: 'PENDING',
-                    orderNumber: `ORD-${Date.now().toString().slice(-6)}`,
-                    paymentMethod: paymentMethod || 'COD',
-                    paymentDetails: {
-                        ...(paymentMetadata || {}),
-                        ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
-                    },
-                    // STRIPE: Mark as PAID immediately
-                    // BANK_TRANSFER: Mark as AWAITING_CONFIRMATION
-                    paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
-                    ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
-                    updatedAt: new Date()
+            // Finalize order within Transaction for atomicity
+            const finalOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
+                // Atomic Stock Reservation and Promotion Usage Check
+                for (const item of order.items) {
+                    // Increment Promotion Usage if applicable
+                    if (item.pricingSnapshot && (item.pricingSnapshot as any).promotionId) {
+                        const success = await PromotionService.incrementPromotionUsage(tx, (item.pricingSnapshot as any).promotionId, Number(item.quantity));
+                        if (!success) {
+                            throw new Error(`Promotion limit reached for item: ${item.product?.name || item.productId}`);
+                        }
+                    }
+
+                    // Atomic Stock check and reservation
+                    const stock = await tx.stock.findFirst({
+                       where: { productId: item.productId },
+                       orderBy: { qty: 'desc' }
+                    });
+
+                    if (!stock || (stock.qty - stock.reservedQty) < Number(item.quantity)) {
+                        throw new Error(`Insufficient stock for item: ${item.product?.name || item.productId}`);
+                    }
+
+                    await tx.stock.update({
+                        where: { id: stock.id },
+                        data: { reservedQty: { increment: Number(item.quantity) } }
+                    });
                 }
+
+                return await tx.order.update({
+                    where: { id: orderId },
+                    data: {
+                        status: 'PENDING',
+                        orderNumber: generateOrderNumber(),
+                        paymentMethod: paymentMethod || 'COD',
+                        paymentDetails: {
+                            ...(paymentMetadata || {}),
+                            ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
+                        },
+                        paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
+                        ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
+                        updatedAt: new Date()
+                    }
+                });
             });
 
             // Update coupon usage
@@ -812,24 +940,29 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             }
 
             // Auto-Assign Logistics
-            await LogisticsEngine.autoAssignLogistics(finalOrder.id, fastify.prisma as any);
+            try {
+                await LogisticsEngine.autoAssignLogistics(finalOrder.id, fastify.prisma as any);
+            } catch (logErr) {
+                fastify.log.error(logErr, 'Logistics assignment failed');
+            }
 
+            // Invalidate Promotion Caches (Crucial for high traffic stability)
+            try {
+                const segments = ['ALL', 'B2B', 'RETAIL', 'GUEST'];
+                for (const segment of segments) {
+                    await (fastify as any).cache.del(`shop:promotions:storefront:v3:${segment}`);
+                }
+            } catch (cacheErr) {
+                fastify.log.error(cacheErr, 'Cache invalidation failed');
+            }
 
-            // Reserve stock
-            for (const item of (order as any).items) {
-                const stock = await (fastify.prisma as any).stock.findFirst({
-                    where: { productId: item.productId },
-                    orderBy: { qty: 'desc' }
-                });
-
-                if (stock) {
-                    await (fastify.prisma as any).stock.update({
-                        where: { id: stock.id },
-                        data: { reservedQty: { increment: Number(item.quantity) } }
-                    });
-                    // Sync product status label with inventory
+            // Sync product status label with inventory
+            for (const item of order.items) {
+                try {
                     const { syncProductStockStatus } = require('../utils/product-status-sync');
                     await syncProductStockStatus(fastify.prisma, item.productId);
+                } catch (syncErr) {
+                    fastify.log.error(syncErr, 'Stock status sync failed');
                 }
             }
 
@@ -926,6 +1059,121 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
         } catch (err: any) {
             fastify.log.error(err);
             return reply.code(500).send({ message: 'Failed to validate coupon' });
+        }
+    });
+
+    /**
+     * POST /auth/activate-guest
+     * Triggers account activation for a guest user
+     */
+    fastify.post('/auth/activate-guest', {
+        schema: {
+            description: 'Activate guest account',
+            tags: ['Guest Checkout'],
+            body: {
+                type: 'object',
+                required: ['email'],
+                properties: {
+                    email: { type: 'string', format: 'email' }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const { email } = request.body as any;
+
+            // Find guest user
+            const user = await fastify.prisma.user.findUnique({
+                where: { email: email.toLowerCase() }
+            });
+
+            if (!user) {
+                return reply.code(404).send({ message: 'Guest account not found' });
+            }
+
+            const prefs = user.preferences as any;
+            if (prefs && !prefs.isGuestAccount) {
+                return reply.code(400).send({ message: 'Account is already active' });
+            }
+
+            const frontendUrl = process.env.FRONTEND_URL || 'https://paperland.com.pk';
+            // Link to Step 1 (Email) with pre-filled email
+            const activationLink = `${frontendUrl}/en/signup?email=${encodeURIComponent(user.email)}`;
+
+            // Send activation email
+            await emailService.sendGuestActivationEmail(user.email, user.firstName || 'Customer', activationLink);
+
+            return { 
+                success: true, 
+                message: 'Activation email sent successfully' 
+            };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.code(500).send({ message: 'Failed to trigger activation' });
+        }
+    });
+
+    /**
+     * POST /auth/activate-finalize
+     * Finalizes account activation by setting password and clearing guest flags
+     */
+    fastify.post('/auth/activate-finalize', {
+        schema: {
+            description: 'Finalize guest activation',
+            tags: ['Guest Checkout'],
+            body: {
+                type: 'object',
+                required: ['token', 'newPassword'],
+                properties: {
+                    token: { type: 'string' },
+                    newPassword: { 
+                        type: 'string', 
+                        minLength: 8,
+                        pattern: '^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+])[A-Za-z\\d!@#$%^&*()_+]{8,}$'
+                    }
+                }
+            }
+        }
+    }, async (request, reply) => {
+        try {
+            const { token, newPassword } = request.body as any;
+
+            // Verify token
+            const decoded = fastify.jwt.verify(token) as any;
+            if (!decoded || decoded.action !== 'activate_account') {
+                return reply.code(400).send({ message: 'Invalid or expired activation link' });
+            }
+
+            const user = await fastify.prisma.user.findUnique({
+                where: { id: decoded.id }
+            });
+
+            if (!user) {
+                return reply.code(404).send({ message: 'User not found' });
+            }
+
+            // Update password and clear guest flags
+            const passwordHash = await bcrypt.hash(newPassword, 10);
+            const prefs = (user.preferences as any) || {};
+            
+            await fastify.prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    passwordHash,
+                    isActive: true,
+                    accountStatus: 'ACTIVE',
+                    preferences: {
+                        ...prefs,
+                        isGuestAccount: false,
+                        activatedAt: new Date()
+                    }
+                }
+            });
+
+            return { success: true, message: 'Account activated successfully! You can now log in.' };
+        } catch (err: any) {
+            fastify.log.error(err);
+            return reply.code(400).send({ message: 'Invalid or expired activation link' });
         }
     });
 }
