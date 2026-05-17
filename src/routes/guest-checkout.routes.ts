@@ -8,6 +8,7 @@ import { generateOrderNumber } from '../utils/order-utils';
 import * as bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { createErrorResponse } from '../utils/response-wrapper';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 /**
  * Guest Checkout Routes
@@ -897,6 +898,26 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 });
             });
 
+            // Trigger n8n webhook
+            fireN8nEvent('order-placed', {
+                orderId: finalOrder.id,
+                orderNumber: finalOrder.orderNumber,
+                userId: order.userId,
+                isGuestOrder: true,
+                paymentMethod: finalOrder.paymentMethod,
+                totalAmount: Number(finalOrder.totalAmount),
+                shippingAmount: Number(finalOrder.shippingAmount),
+                taxAmount: Number(finalOrder.taxAmount),
+                items: order.items.map((item: any) => ({
+                    productId: item.productId,
+                    sku: item.sku,
+                    quantity: item.quantity,
+                    price: Number(item.price)
+                })),
+                shippingAddress: finalOrder.shippingSnapshot,
+                billingAddress: finalOrder.billingSnapshot
+            });
+
             // Update coupon usage
             if (order.couponId) {
                 try {
@@ -980,7 +1001,8 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     }
                 });
                 const emailToSend = fullOrder?.guestEmail || fullOrder?.user?.email || (fullOrder?.shippingDetails as any)?.email;
-                if (fullOrder && emailToSend) {
+                // Only send native email if n8n webhook URL is not set (failsafe backup check)
+                if (fullOrder && emailToSend && !process.env.N8N_WEBHOOK_URL) {
                     await emailService.sendOrderConfirmationEmail(emailToSend, fullOrder);
                 }
             } catch (emailErr) {

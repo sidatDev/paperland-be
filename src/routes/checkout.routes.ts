@@ -7,6 +7,7 @@ import { LogisticsEngine } from '../services/logistics-engine.service';
 import { PaymentResolver } from '../services/payment-resolver.service';
 import { generateOrderNumber } from '../utils/order-utils';
 import { PromotionService } from '../services/promotion.service';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 
 export default async function checkoutRoutes(fastify: FastifyInstance) {
     const formatOrder = (order: any) => {
@@ -918,6 +919,25 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             });
         });
 
+        // Trigger n8n webhook
+        fireN8nEvent('order-placed', {
+            orderId: finalOrder.id,
+            orderNumber: finalOrder.orderNumber,
+            userId: userId,
+            paymentMethod: finalOrder.paymentMethod,
+            totalAmount: Number(finalOrder.totalAmount),
+            shippingAmount: Number(finalOrder.shippingAmount),
+            taxAmount: Number(finalOrder.taxAmount),
+            items: order.items.map((item: any) => ({
+                productId: item.productId,
+                sku: item.sku,
+                quantity: item.quantity,
+                price: Number(item.price)
+            })),
+            shippingAddress: finalOrder.shippingSnapshot,
+            billingAddress: finalOrder.billingSnapshot
+        });
+
         // Update Coupon Usage Tracking
         if (order.couponId) {
             try {
@@ -1019,7 +1039,8 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                     }
                 }
             });
-            if (fullOrder && fullOrder.user?.email) {
+            // Only send native email if n8n webhook URL is not set (failsafe backup check)
+            if (fullOrder && fullOrder.user?.email && !process.env.N8N_WEBHOOK_URL) {
                 await emailService.sendOrderConfirmationEmail(fullOrder.user.email, fullOrder);
             }
         } catch (emailErr) {

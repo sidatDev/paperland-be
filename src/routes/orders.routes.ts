@@ -5,6 +5,7 @@ import { logActivity } from '../utils/audit';
 import { syncProductStockStatus } from '../utils/product-status-sync';
 import { emailService } from '../services/email.service';
 import { generateOrderNumber } from '../utils/order-utils';
+import { fireN8nEvent } from '../utils/n8n-webhook';
 import { z } from 'zod';
 
 // Order Validation Schema
@@ -458,6 +459,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                           }
                       });
 
+                      // Trigger n8n webhook
+                      fireN8nEvent('order-status-updated', {
+                          orderId: order.id,
+                          orderNumber: order.orderNumber,
+                          oldStatus: order.status,
+                          newStatus: status,
+                          notes: "Bulk Status Updated",
+                          changedBy: userId
+                      });
+
                       successCount++;
                   }
               });
@@ -647,6 +658,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   notes: note || `Order status updated to ${status}`,
                   changedBy: (request.user as any)?.id || null
               }
+          });
+
+          // Trigger n8n webhook
+          fireN8nEvent('order-status-updated', {
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              oldStatus: order.status,
+              newStatus: status,
+              notes: note || `Order status updated to ${status}`,
+              changedBy: (request.user as any)?.id || 'system'
           });
 
           // Audit Log

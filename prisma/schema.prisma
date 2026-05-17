@@ -945,14 +945,16 @@ model OrderStatusHistory {
 }
 
 model Cart {
-  id         String     @id @default(uuid())
-  userId     String?    @map("user_id")
-  createdAt  DateTime   @default(now()) @map("created_at")
-  updatedAt  DateTime   @updatedAt @map("updated_at")
-  guestToken String?    @map("guest_token")
-  status     String     @default("ACTIVE")
-  items      CartItem[]
-  user       User?      @relation(fields: [userId], references: [id])
+  id                  String     @id @default(uuid())
+  userId              String?    @map("user_id")
+  createdAt           DateTime   @default(now()) @map("created_at")
+  updatedAt           DateTime   @updatedAt @map("updated_at")
+  guestToken          String?    @map("guest_token")
+  status              String     @default("ACTIVE")
+  recoveryEmailCount  Int        @default(0) @map("recovery_email_count")
+  lastRecoveryEmailAt DateTime?  @map("last_recovery_email_at")
+  items               CartItem[]
+  user                User?      @relation(fields: [userId], references: [id])
 
   @@unique([userId, status], name: "unique_active_user_cart")
   @@index([guestToken])
