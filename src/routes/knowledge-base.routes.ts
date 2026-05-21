@@ -46,6 +46,18 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   // Create Category
   fastify.post('/admin/kb/categories', checkManage, async (request: any, reply) => {
     const { name, parentId, description, icon, visibility, isActive } = request.body;
+    
+    // Check case-insensitive name uniqueness among active categories
+    const existingName = await prisma.kbCategory.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        deletedAt: null
+      }
+    });
+    if (existingName) {
+      return reply.status(400).send(createErrorResponse('Category name must be unique'));
+    }
+
     const slug = generateKbSlug(name);
     
     // Check slug uniqueness
@@ -84,12 +96,23 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const { id } = request.params;
     const data = request.body;
     
-    if (data.name) {
-      data.slug = generateKbSlug(data.name);
-    }
-
     const current = await prisma.kbCategory.findUnique({ where: { id } });
     if (!current) return reply.status(404).send(createErrorResponse('Category not found'));
+
+    if (data.name) {
+      // Check case-insensitive name uniqueness among active categories excluding this category itself
+      const existingName = await prisma.kbCategory.findFirst({
+        where: {
+          name: { equals: data.name, mode: 'insensitive' },
+          deletedAt: null,
+          id: { not: id }
+        }
+      });
+      if (existingName) {
+        return reply.status(400).send(createErrorResponse('Category name must be unique'));
+      }
+      data.slug = generateKbSlug(data.name);
+    }
 
     if (data.parentId !== undefined || data.slug) {
       const finalSlug = data.slug || current.slug;
@@ -113,6 +136,48 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     });
 
     return createResponse(category, 'Category updated successfully');
+  });
+
+  // Delete Category
+  fastify.delete('/admin/kb/categories/:id', checkManage, async (request: any, reply) => {
+    const { id } = request.params;
+
+    const category = await prisma.kbCategory.findUnique({
+      where: { id },
+      include: {
+        children: { where: { deletedAt: null } },
+        articles: { where: { deletedAt: null } },
+        faqs: { where: { deletedAt: null } }
+      }
+    });
+
+    if (!category || category.deletedAt) {
+      return reply.status(404).send(createErrorResponse('Category not found'));
+    }
+
+    if (category.children.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active subcategories'));
+    }
+    if (category.articles.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active articles'));
+    }
+    if (category.faqs.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active FAQs'));
+    }
+
+    await prisma.kbCategory.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+
+    await logActivity(fastify, {
+      entityType: 'KB_CATEGORY',
+      entityId: id,
+      action: 'DELETE',
+      performedBy: (request.user as any).id
+    });
+
+    return createResponse(null, 'Category deleted successfully');
   });
 
   // ─── ARTICLES ─────────────────────────────────────────────────────
