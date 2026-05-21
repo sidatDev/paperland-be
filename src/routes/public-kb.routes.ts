@@ -26,6 +26,10 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                                 where: { 
                                     status: 'PUBLISHED', 
                                     deletedAt: null,
+                                    OR: [
+                                        { publishedAt: { lte: new Date() } },
+                                        { publishedAt: null }
+                                    ],
                                     NOT: [
                                         { title: { equals: 'Untitled', mode: 'insensitive' } },
                                         { title: { equals: 'Untitled Article', mode: 'insensitive' } }
@@ -79,6 +83,10 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                 status: 'PUBLISHED',
                 visibility: 'PUBLIC',
                 deletedAt: null,
+                OR: [
+                    { publishedAt: { lte: new Date() } },
+                    { publishedAt: null }
+                ],
                 NOT: [
                     { title: { equals: 'Untitled', mode: 'insensitive' } },
                     { title: { equals: 'Untitled Article', mode: 'insensitive' } }
@@ -155,7 +163,11 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                     slug,
                     status: 'PUBLISHED',
                     visibility: 'PUBLIC',
-                    deletedAt: null
+                    deletedAt: null,
+                    OR: [
+                        { publishedAt: { lte: new Date() } },
+                        { publishedAt: null }
+                    ]
                 },
                 include: {
                     category: {
@@ -167,6 +179,10 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                                 where: { 
                                     status: 'PUBLISHED', 
                                     deletedAt: null,
+                                    OR: [
+                                        { publishedAt: { lte: new Date() } },
+                                        { publishedAt: null }
+                                    ],
                                     NOT: [
                                         { title: { equals: 'Untitled', mode: 'insensitive' } },
                                         { title: { equals: 'Untitled Article', mode: 'insensitive' } }
