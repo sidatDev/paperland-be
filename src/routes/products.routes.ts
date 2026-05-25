@@ -89,7 +89,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
       groupNumber: p.groupNumber,
       groupId: p.groupId,
       status: (() => {
-        // Dynamic Status Logic
         const baseStock = p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
         const variantsStock = p.variants?.reduce((acc: number, v: any) => 
             acc + (v.stocks?.reduce((a: number, s: any) => a + (s.qty || 0), 0) || 0), 0) || 0;
@@ -100,12 +99,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
             acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
         const effectiveThreshold = p.variants?.length > 0 ? variantsThreshold : baseThreshold;
 
-        // If manual status is already 'Out of Stock', keep it.
-        // Otherwise, if stock <= threshold, mark as 'Out of Stock'
-        if (p.status === 'Out of Stock') return 'Out of Stock';
-        if (totalStock <= effectiveThreshold) return 'Out of Stock';
-        
-        return p.status || (p.isActive ? 'Active' : 'Draft');
+        if (totalStock > effectiveThreshold) {
+            if (p.status === "Out of Stock") return "Active";
+            return p.status || (p.isActive ? "Active" : "Draft");
+        } else {
+            if (p.status === "Active" || (!p.status && p.isActive)) return "Out of Stock";
+            return p.status || "Out of Stock";
+        }
       })(),
       price: Number(p.price || 0),
       relatedProductsCount: 0, 
@@ -240,53 +240,140 @@ export default async function productRoutes(fastify: FastifyInstance) {
   // Products Search (Lightweight for Autocomplete)
   fastify.get('/admin/products/search', {
     schema: {
-        description: 'Search products by name or SKU for autocomplete',
+        description: 'Search products by name, brand, or SKU for autocomplete',
         tags: ['Catalog'],
         querystring: {
             type: 'object',
             properties: {
-                q: { type: 'string', minLength: 2 }
-            },
-            required: ['q']
+                q: { type: 'string' }
+            }
         }
     }
   }, async (request: any, reply) => {
       const { q } = request.query;
       try {
+          // If query is empty, return default active products from Prisma
+          if (!q || q.trim() === '') {
+              const products = await (fastify.prisma as any).product.findMany({
+                  where: {
+                      deletedAt: null,
+                      isActive: true,
+                      parentId: null
+                  },
+                  select: {
+                      id: true,
+                      name: true,
+                      sku: true,
+                      price: true,
+                      imageUrl: true,
+                      brand: { select: { name: true } },
+                      prices: {
+                          where: { isActive: true },
+                          include: { currency: true }
+                      },
+                      stocks: true
+                  },
+                  orderBy: { createdAt: 'desc' },
+                  take: 20
+              });
+
+              const transformed = products.map((p: any) => ({
+                  id: p.id,
+                  name: p.name,
+                  sku: p.sku,
+                  price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
+                  brand: p.brand?.name || 'Unknown',
+                  currency: p.prices?.[0]?.currency?.code || 'PKR',
+                  currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
+                  image_url: p.imageUrl
+              }));
+
+              return createResponse(transformed, "Default products retrieved");
+          }
+
+          // Try Typesense search first
+          if (fastify.typesense) {
+              try {
+                  const searchParameters = {
+                      q: q,
+                      query_by: 'name,brand,sku,category',
+                      filter_by: 'isActive:true',
+                      per_page: 20
+                  };
+                  const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+                  
+                  const transformed = result.hits?.map((hit: any) => {
+                      const doc = hit.document;
+                      return {
+                          id: doc.id,
+                          name: doc.name,
+                          sku: doc.sku,
+                          price: Number(doc.price || 0),
+                          brand: doc.brand || 'Unknown',
+                          currency: doc.currency || 'PKR',
+                          currentStock: 0,
+                          image_url: doc.image_url
+                      };
+                  }) || [];
+
+                  // Populate stock count for Typesense hits from Prisma
+                  if (transformed.length > 0) {
+                      const productIds = transformed.map((t: any) => t.id);
+                      const stocks = await (fastify.prisma as any).stock.findMany({
+                          where: { productId: { in: productIds } }
+                      });
+                      transformed.forEach((t: any) => {
+                          const pStocks = stocks.filter((s: any) => s.productId === t.id);
+                          t.currentStock = pStocks.reduce((acc: number, s: any) => acc + s.qty, 0) || 0;
+                      });
+                  }
+
+                  return createResponse(transformed, "Search successful via Typesense");
+              } catch (tsErr) {
+                  fastify.log.error(tsErr, "Typesense search failed, falling back to Prisma");
+              }
+          }
+
+          // Prisma Fallback Search (searching name, sku, brand name, and category name)
           const products = await (fastify.prisma as any).product.findMany({
               where: {
                   deletedAt: null,
                   isActive: true,
                   OR: [
                       { name: { contains: q, mode: 'insensitive' } },
-                      { sku: { contains: q, mode: 'insensitive' } }
+                      { sku: { contains: q, mode: 'insensitive' } },
+                      { brand: { name: { contains: q, mode: 'insensitive' } } },
+                      { category: { name: { contains: q, mode: 'insensitive' } } }
                   ]
               },
               select: {
                   id: true,
                   name: true,
                   sku: true,
+                  price: true,
+                  imageUrl: true,
+                  brand: { select: { name: true } },
                   prices: {
                       where: { isActive: true },
                       include: { currency: true }
                   },
-                  stocks: true,
-                  isVisibleOnEcommerce: true
+                  stocks: true
               },
               take: 20
           });
 
-          const transformed = products.map((p: any) => ({
+          const transformedFallback = products.map((p: any) => ({
               id: p.id,
               name: p.name,
               sku: p.sku,
               price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
-               currency: p.prices?.[0]?.currency?.code || 'PKR',
+              brand: p.brand?.name || 'Unknown',
+              currency: p.prices?.[0]?.currency?.code || 'PKR',
               currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
-              isVisibleOnEcommerce: p.isVisibleOnEcommerce
+              image_url: p.imageUrl
           }));
 
-          return createResponse(transformed, "Search successful");
+          return createResponse(transformedFallback, "Search successful via Prisma");
       } catch (err) {
           fastify.log.error(err);
           return reply.status(500).send(createErrorResponse('Search Failed'));
@@ -315,6 +402,24 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
     fastify.log.info({ query: request.query }, "Admin list products filters");
     try {
+      let productIdsFromSearch: string[] | undefined = undefined;
+
+      if (search && search.trim() !== '') {
+        if (fastify.typesense) {
+          try {
+            const searchParameters = {
+              q: search,
+              query_by: 'name,brand,sku,category',
+              per_page: 250
+            };
+            const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+            productIdsFromSearch = result.hits?.map((hit: any) => hit.document.id) || [];
+          } catch (tsErr) {
+            fastify.log.error(tsErr, "Typesense query failed in admin list, falling back to Prisma search");
+          }
+        }
+      }
+
       const parseFilterArray = (val: any) => {
         if (!val || val === 'all') return undefined;
         const arr = Array.isArray(val) ? val : val.split(',').filter(Boolean);
@@ -330,13 +435,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
       const where: any = {
         deletedAt: null, 
         AND: [
-          search ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { sku: { contains: search, mode: 'insensitive' } },
-              { description: { contains: search, mode: 'insensitive' } },
-            ]
-          } : {},
+          productIdsFromSearch !== undefined ? { id: { in: productIdsFromSearch } } : (
+            search ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { sku: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } },
+              ]
+            } : {}
+          ),
           
           // Status Filter
           status && status !== 'all' ? { status } : {},
@@ -922,6 +1029,30 @@ export default async function productRoutes(fastify: FastifyInstance) {
             parentId, variantOptions, variantAttributes
         } = data;
 
+        let finalStatus = status;
+        let finalIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : undefined;
+
+        if (stock !== undefined) {
+            const numericStock = Number(stock);
+            if (!isNaN(numericStock)) {
+                const thresholdVal = data.threshold !== undefined 
+                    ? Number(data.threshold) 
+                    : (existing.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 10);
+                
+                const currentStatus = status !== undefined ? status : existing.status;
+                if (numericStock > thresholdVal) {
+                    if (currentStatus === 'Out of Stock') {
+                        finalStatus = 'Active';
+                        finalIsActive = true;
+                    }
+                } else {
+                    if (currentStatus === 'Active' || (!currentStatus && (bodyIsActive === true || existing.isActive))) {
+                        finalStatus = 'Out of Stock';
+                    }
+                }
+            }
+        }
+
         const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
             where: { isDefault: true, isActive: true },
             select: { id: true }
@@ -969,7 +1100,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (fullDescription !== undefined) updateData.fullDescription = fullDescription;
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
         if (groupId !== undefined) updateData.groupId = groupId;
-        if (status !== undefined) updateData.status = status;
+        if (finalStatus !== undefined) updateData.status = finalStatus;
         if (costPrice !== undefined) updateData.costPrice = Number(costPrice);
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (mediaUrls !== undefined) updateData.images = mediaUrls;
@@ -1063,9 +1194,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 });
             }
         }
-        const resolvedIsActive = bodyIsActive !== undefined 
-            ? (bodyIsActive === 'true' || bodyIsActive === true) 
-            : (status === "Draft" ? false : (status === "Active" ? true : undefined));
+        const resolvedIsActive = finalIsActive !== undefined 
+            ? finalIsActive
+            : (finalStatus === "Draft" ? false : (finalStatus === "Active" ? true : undefined));
 
         if (resolvedIsActive !== undefined) updateData.isActive = resolvedIsActive;
         if (isFeatured !== undefined) updateData.isFeatured = (isFeatured === 'true' || isFeatured === true);
@@ -1098,6 +1229,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
         }
         if (variantOptions !== undefined) updateData.variantOptions = variantOptions;
         if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
+
+        if (stock !== undefined && stock !== null) {
+            const numericStock = Number(stock);
+            if (!isNaN(numericStock)) {
+                updateData.stocks = {
+                    upsert: {
+                        where: { productId_warehouseId: { productId: id, warehouseId: defaultWarehouseId || '' } },
+                        create: { qty: numericStock, locationId: 'DEFAULT', warehouseId: defaultWarehouseId },
+                        update: { qty: numericStock }
+                    }
+                };
+            }
+        }
 
         if (data.variants !== undefined && Array.isArray(data.variants)) {
             const variantsInRequest = data.variants;

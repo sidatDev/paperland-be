@@ -25,10 +25,7 @@ export default async function productRelationsRoutes(fastify: FastifyInstance) {
     try {
       const relations = await (fastify.prisma as any).productRelation.findMany({
         where: {
-          OR: [
-            { sourceProductId: id },
-            { targetProductId: id }
-          ]
+          sourceProductId: id
         },
         include: {
           sourceProduct: {
