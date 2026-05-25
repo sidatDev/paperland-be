@@ -1257,6 +1257,7 @@ model PendingRegistration {
   updatedAt        DateTime  @updatedAt @map("updated_at")
   state            String?
   zipCode          String?   @map("zip_code")
+  referralCode     String?   @map("referral_code")
 
   @@map("pending_registrations")
 }

@@ -3,6 +3,7 @@ import { createResponse, createErrorResponse } from '../utils/response-wrapper';
 import { logActivity } from '../utils/audit';
 import { z } from 'zod';
 import { emailService } from '../services/email.service';
+import { PromotionService } from '../services/promotion.service';
 
 export default async function paymentsRoutes(fastify: FastifyInstance) {
 
@@ -147,6 +148,10 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
                       processingDate: action === 'APPROVE' && !transaction.order.processingDate ? new Date() : transaction.order.processingDate
                   }
               });
+
+              if (orderPaymentStatus === 'PAID') {
+                  await PromotionService.triggerOrderReferralReward(tx, updatedOrder);
+              }
 
               return { updatedTx, updatedOrder };
           });
@@ -492,7 +497,7 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
                       return reply.send({ received: true });
                   }
 
-                  await fastify.prisma.order.update({
+                  const updatedOrder = await fastify.prisma.order.update({
                       where: { id: orderId },
                       data: {
                           paymentStatus: 'PAID',
@@ -505,6 +510,8 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
                           updatedAt: new Date()
                       }
                   });
+
+                  await PromotionService.triggerOrderReferralReward(fastify.prisma, updatedOrder);
 
                   // Update Transaction record if exists
                   await prisma.transaction.updateMany({
@@ -712,7 +719,7 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
           }
 
           if (status.toUpperCase() === 'SUCCESS') {
-              await prisma.order.update({
+              const updatedOrder = await prisma.order.update({
                   where: { id: orderId },
                   data: {
                       paymentStatus: 'PAID',
@@ -726,6 +733,8 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
                       updatedAt: new Date()
                   }
               });
+
+              await PromotionService.triggerOrderReferralReward(prisma, updatedOrder);
 
               // Update any associated PENDING transaction record
               await prisma.transaction.updateMany({

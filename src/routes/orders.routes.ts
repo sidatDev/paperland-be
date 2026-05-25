@@ -7,6 +7,7 @@ import { emailService } from '../services/email.service';
 import { generateOrderNumber } from '../utils/order-utils';
 import { fireN8nEvent } from '../utils/n8n-webhook';
 import { z } from 'zod';
+import { PromotionService } from '../services/promotion.service';
 
 // Order Validation Schema
 const OrderItemSchema = z.object({
@@ -1266,10 +1267,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   }
               }
 
-              return await tx.order.update({
-                  where: { id: order.id },
-                  data: updateData
-              });
+               const updated = await tx.order.update({
+                   where: { id: order.id },
+                   data: updateData
+               });
+
+               if (updated.paymentStatus === 'PAID') {
+                   await PromotionService.triggerOrderReferralReward(tx, updated);
+               }
+
+               return updated;
           });
 
           await logActivity(fastify, {
