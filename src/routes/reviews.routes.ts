@@ -184,7 +184,7 @@ export default async function reviewsRoutes(fastify: FastifyInstance) {
       });
       
       if (existingReview) {
-        return reply.status(400).send(createErrorResponse('You can only submit a review once per product.'));
+        return reply.status(400).send(createErrorResponse('You have already submitted a review for this product.'));
       }
 
       const review = await (fastify.prisma as any).review.create({

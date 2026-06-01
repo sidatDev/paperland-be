@@ -552,7 +552,7 @@ export class EmailService {
         userName: orderData.user?.firstName || 'Customer',
         orderNumber: orderData.orderNumber,
         trackingUrl: `${portalUrl}/en/order-tracking?orderId=${orderData.orderNumber}${orderData.guestToken ? `&guestToken=${orderData.guestToken}` : ''}`,
-        reviewUrl: `${portalUrl}/en/dashboard/orders/${orderData.id}`,
+        reviewUrl: `${portalUrl}/en/dashboard/orders/${orderData.id}?review=true`,
         trackingNumber: orderData.trackingNumber || 'Not Yet Assigned',
         courierPartner: orderData.deliveryMethod || 'Standard Shipping',
         orderItems: this.buildOrderItemsHtml(orderData.items, orderData.currency?.code || 'PKR'),
