@@ -298,6 +298,52 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
             });
         }
 
+        // B2B Auto-Assignment Engine
+        const emailParts = user.email.split('@');
+        const userDomain = emailParts.length > 1 ? emailParts[1].toLowerCase() : '';
+        const companyName = companyDetails.companyName;
+
+        const activeRules = await (fastify.prisma as any).b2BAssignmentRule.findMany({
+            where: { isActive: true }
+        });
+
+        let matchedRule = null;
+        for (const rule of activeRules) {
+            if (rule.emailDomain && userDomain && rule.emailDomain.trim().toLowerCase() === userDomain) {
+                matchedRule = rule;
+                break;
+            }
+            if (rule.companyNamePattern && companyName && companyName.toLowerCase().includes(rule.companyNamePattern.trim().toLowerCase())) {
+                matchedRule = rule;
+                break;
+            }
+        }
+
+        if (matchedRule) {
+            if (matchedRule.catalogId) {
+                await (fastify.prisma as any).companyCatalog.upsert({
+                    where: {
+                        companyId_catalogId: {
+                            companyId: company.id,
+                            catalogId: matchedRule.catalogId
+                        }
+                    },
+                    create: {
+                        companyId: company.id,
+                        catalogId: matchedRule.catalogId,
+                        priority: 100
+                    },
+                    update: {}
+                });
+            }
+            if (matchedRule.discountTierId && user.b2bProfileId) {
+                await (fastify.prisma as any).b2BProfile.update({
+                    where: { id: user.b2bProfileId },
+                    data: { discountTierId: matchedRule.discountTierId }
+                });
+            }
+        }
+
         // Send approval email
         const { emailService } = await import('../services/email.service');
         await emailService.sendB2BApprovalEmail(
@@ -851,7 +897,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
       // 1. Get requester's B2B profile
       const requester = await fastify.prisma.user.findUnique({
         where: { id: requesterId },
-        select: { b2bProfileId: true }
+        select: { b2bProfileId: true, companyId: true }
       });
 
       if (!requester?.b2bProfileId) {
@@ -865,6 +911,15 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
         if (targetUser.b2bProfileId) {
           return reply.status(400).send({ message: 'User is already part of a B2B account' });
         }
+        // Associate existing user
+        targetUser = await fastify.prisma.user.update({
+          where: { id: targetUser.id },
+          data: {
+            b2bProfileId: requester.b2bProfileId,
+            companyId: requester.companyId,
+            accountStatus: 'APPROVED'
+          }
+        });
       } else {
         // Create new user (temporary password, they should reset it or use invite link)
         // In a real app, send an invite email with a token
@@ -882,6 +937,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
             passwordHash: tempPassword,
             roleId: b2bRole?.id || '',
             b2bProfileId: requester.b2bProfileId,
+            companyId: requester.companyId,
             accountStatus: 'APPROVED',
             isActive: true
           }
@@ -1115,65 +1171,68 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
          return reply.status(404).send({ message: 'Catalog not assigned to your company' });
       }
 
-      const catalog = await (fastify.prisma as any).catalog.findUnique({
-        where: { id },
-        include: {
-          products: {
-            include: {
-              product: {
-                include: {
-                  variants: {
-                    where: {
-                      catalogVariants: {
-                        some: { catalogId: id }
-                      }
-                    },
-                    include: {
-                      prices: { where: { isActive: true }, take: 1 },
-                      catalogPricing: { where: { catalogId: id } }
-                    }
-                  },
-                  prices: { where: { isActive: true }, take: 1 },
-                  catalogPricing: { where: { catalogId: id } },
-                  catalogVariants: { where: { catalogId: id } }
-                }
-              }
-            }
-          }
-        }
-      });
-
-      if (!catalog || !catalog.isActive || catalog.deletedAt) {
-        return reply.status(404).send({ message: 'Catalog not found or inactive' });
-      }
-
-      // Format response strictly as requested
-      const formattedResponse = {
-        company_name: user.company?.name || 'Your Company',
-        catalog_name: catalog.name,
-        products: catalog.products
-          .map((cp: any) => {
-            const prod = cp.product;
-            
-            // Check if product itself is allowed (if it has no children variants but is in catalog)
-            const isSelfAllowed = prod.catalogVariants.length > 0;
-            const variantsToProcess = [...prod.variants];
-            if (isSelfAllowed) {
-              variantsToProcess.unshift(prod);
-            }
-
-            const formattedVariants = variantsToProcess.map((v: any) => {
-              const pricing = v.catalogPricing?.[0];
-              const retailPrice = v.prices?.[0]?.priceRetail || v.price || 0;
-
-              return {
-                variant_id: v.id,
-                variant_name: v.name || 'Standard',
-                image_url: v.imageUrl || prod.imageUrl || '/placeholder-product.png',
-                price: pricing ? parseFloat(pricing.customPrice.toString()) : parseFloat(retailPrice.toString()),
-                moq: pricing ? pricing.minimumQuantity : 1
-              };
-            });
+       const catalog = await (fastify.prisma as any).catalog.findUnique({
+         where: { id },
+         include: {
+           products: {
+             include: {
+               product: {
+                 include: {
+                   parent: true,
+                   variants: {
+                     where: {
+                       catalogVariants: {
+                         some: { catalogId: id }
+                       }
+                     },
+                     include: {
+                       parent: true,
+                       prices: { where: { isActive: true }, take: 1 },
+                       catalogPricing: { where: { catalogId: id } }
+                     }
+                   },
+                   prices: { where: { isActive: true }, take: 1 },
+                   catalogPricing: { where: { catalogId: id } },
+                   catalogVariants: { where: { catalogId: id } }
+                 }
+               }
+             }
+           }
+         }
+       });
+ 
+       if (!catalog || !catalog.isActive || catalog.deletedAt) {
+         return reply.status(404).send({ message: 'Catalog not found or inactive' });
+       }
+ 
+       // Format response strictly as requested
+       const formattedResponse = {
+         company_name: user.company?.name || 'Your Company',
+         catalog_name: catalog.name,
+         products: catalog.products
+           .map((cp: any) => {
+             const prod = cp.product;
+             
+             // Check if product itself is allowed (if it has no children variants but is in catalog)
+             const isSelfAllowed = prod.catalogVariants.length > 0;
+             const variantsToProcess = [...prod.variants];
+             if (isSelfAllowed) {
+               variantsToProcess.unshift(prod);
+             }
+ 
+             const formattedVariants = variantsToProcess.map((v: any) => {
+               const pricing = v.catalogPricing?.[0];
+               const retailPrice = v.prices?.[0]?.priceRetail || v.price || 0;
+ 
+               return {
+                 variant_id: v.id,
+                 variant_name: v.name || 'Standard',
+                 image_url: v.imageUrl || v.parent?.imageUrl || prod.imageUrl || prod.parent?.imageUrl || '/placeholder-product.png',
+                 price: pricing ? parseFloat(pricing.customPrice.toString()) : parseFloat(retailPrice.toString()),
+                 retail_price: parseFloat(retailPrice.toString()),
+                 moq: pricing ? pricing.minimumQuantity : 1
+               };
+             });
 
             if (formattedVariants.length === 0) return null;
 
@@ -1274,6 +1333,166 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Failed to fetch purchase order details' });
+    }
+  });
+
+  // ====================================
+  // ADMIN: B2B AUTO-ASSIGNMENT RULES
+  // ====================================
+
+  // List all rules
+  fastify.get('/b2b/rules', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('catalog_view')],
+    schema: {
+      description: 'List all B2B auto-assignment rules',
+      tags: ['Admin B2B Rules'],
+      security: [{ bearerAuth: [] }]
+    }
+  }, async (request, reply) => {
+    try {
+      const rules = await (fastify.prisma as any).b2BAssignmentRule.findMany({
+        include: {
+          catalog: { select: { id: true, name: true } },
+          discountTier: { select: { id: true, name: true } }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+      return reply.send(rules);
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to fetch rules: ' + err.message });
+    }
+  });
+
+  // Create a rule
+  fastify.post('/b2b/rules', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('catalog_manage')],
+    schema: {
+      description: 'Create a new B2B auto-assignment rule',
+      tags: ['Admin B2B Rules'],
+      security: [{ bearerAuth: [] }],
+      body: {
+        type: 'object',
+        required: ['name'],
+        properties: {
+          name: { type: 'string' },
+          emailDomain: { type: 'string' },
+          companyNamePattern: { type: 'string' },
+          catalogId: { type: 'string' },
+          discountTierId: { type: 'string' },
+          isActive: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { name, emailDomain, companyNamePattern, catalogId, discountTierId, isActive } = request.body as any;
+
+      const rule = await (fastify.prisma as any).b2BAssignmentRule.create({
+        data: {
+          name,
+          emailDomain: emailDomain || null,
+          companyNamePattern: companyNamePattern || null,
+          catalogId: catalogId || null,
+          discountTierId: discountTierId || null,
+          isActive: isActive !== undefined ? isActive : true
+        }
+      });
+
+      return reply.send({ message: 'Rule created successfully', rule });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to create rule: ' + err.message });
+    }
+  });
+
+  // Update a rule
+  fastify.put('/b2b/rules/:id', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('catalog_manage')],
+    schema: {
+      description: 'Update a B2B auto-assignment rule',
+      tags: ['Admin B2B Rules'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string' } }
+      },
+      body: {
+        type: 'object',
+        properties: {
+          name: { type: 'string' },
+          emailDomain: { type: 'string' },
+          companyNamePattern: { type: 'string' },
+          catalogId: { type: 'string' },
+          discountTierId: { type: 'string' },
+          isActive: { type: 'boolean' }
+        }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params as any;
+      const { name, emailDomain, companyNamePattern, catalogId, discountTierId, isActive } = request.body as any;
+
+      const existingRule = await (fastify.prisma as any).b2BAssignmentRule.findUnique({
+        where: { id }
+      });
+      if (!existingRule) {
+        return reply.status(404).send({ message: 'Rule not found' });
+      }
+
+      const rule = await (fastify.prisma as any).b2BAssignmentRule.update({
+        where: { id },
+        data: {
+          ...(name !== undefined && { name }),
+          ...(emailDomain !== undefined && { emailDomain: emailDomain || null }),
+          ...(companyNamePattern !== undefined && { companyNamePattern: companyNamePattern || null }),
+          ...(catalogId !== undefined && { catalogId: catalogId || null }),
+          ...(discountTierId !== undefined && { discountTierId: discountTierId || null }),
+          ...(isActive !== undefined && { isActive })
+        }
+      });
+
+      return reply.send({ message: 'Rule updated successfully', rule });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to update rule: ' + err.message });
+    }
+  });
+
+  // Delete a rule
+  fastify.delete('/b2b/rules/:id', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('catalog_manage')],
+    schema: {
+      description: 'Delete a B2B auto-assignment rule',
+      tags: ['Admin B2B Rules'],
+      security: [{ bearerAuth: [] }],
+      params: {
+        type: 'object',
+        required: ['id'],
+        properties: { id: { type: 'string' } }
+      }
+    }
+  }, async (request, reply) => {
+    try {
+      const { id } = request.params as any;
+
+      const existingRule = await (fastify.prisma as any).b2BAssignmentRule.findUnique({
+        where: { id }
+      });
+      if (!existingRule) {
+        return reply.status(404).send({ message: 'Rule not found' });
+      }
+
+      await (fastify.prisma as any).b2BAssignmentRule.delete({
+        where: { id }
+      });
+
+      return reply.send({ message: 'Rule deleted successfully' });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send({ message: 'Failed to delete rule: ' + err.message });
     }
   });
 

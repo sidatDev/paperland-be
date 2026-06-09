@@ -148,7 +148,8 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           isStackable: { type: 'boolean' },
           isActive: { type: 'boolean', default: true },
           productIds: { type: 'array', items: { type: 'string' } },
-          categoryIds: { type: 'array', items: { type: 'string' } }
+          categoryIds: { type: 'array', items: { type: 'string' } },
+          allowedEmails: { type: 'array', items: { type: 'string' } }
         }
       }
     }
@@ -159,7 +160,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
         minOrderAmount, maxDiscountAmount, startDate, endDate,
         usageLimit, usageLimitPerCustomer, budgetCap, couponType,
         applicationType, customerType, visibility, isStackable, isActive,
-        productIds, categoryIds
+        productIds, categoryIds, allowedEmails
       } = request.body as any;
 
       let finalCode = code.toUpperCase();
@@ -207,6 +208,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
               customerType: customerType || 'ALL',
               visibility: visibility || 'PRIVATE',
               isStackable: isStackable !== undefined ? isStackable : false,
+              allowedEmails: allowedEmails || [],
               deletedAt: null // Restore
             }
           });
@@ -245,7 +247,8 @@ export default async function couponRoutes(fastify: FastifyInstance) {
             customerType: customerType || 'ALL',
             visibility: visibility || 'PRIVATE',
             isStackable: isStackable || false,
-            isActive: isActive !== undefined ? isActive : true
+            isActive: isActive !== undefined ? isActive : true,
+            allowedEmails: allowedEmails || []
           }
         });
 
@@ -386,7 +389,8 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           isStackable: { type: 'boolean' },
           isActive: { type: 'boolean' },
           productIds: { type: 'array', items: { type: 'string' } },
-          categoryIds: { type: 'array', items: { type: 'string' } }
+          categoryIds: { type: 'array', items: { type: 'string' } },
+          allowedEmails: { type: 'array', items: { type: 'string' } }
         }
       }
     }
@@ -431,6 +435,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
           usageLimit: data.usageLimit === 0 ? null : (data.usageLimit || undefined),
           usageLimitPerCustomer: data.usageLimitPerCustomer === 0 ? null : (data.usageLimitPerCustomer || undefined),
           budgetCap: data.budgetCap === 0 ? null : (data.budgetCap || undefined),
+          allowedEmails: data.allowedEmails !== undefined ? data.allowedEmails : undefined,
         };
 
         if (applicationType !== undefined) {
@@ -593,7 +598,7 @@ export default async function couponRoutes(fastify: FastifyInstance) {
   fastify.get('/coupons/validate/:code', async (request, reply) => {
     try {
       const { code } = request.params as any;
-      const { amount, userId } = request.query as any;
+      const { amount, userId, email } = request.query as any;
 
       const coupon = await (fastify.prisma as any).coupon.findUnique({
         where: { code: code.toUpperCase() },
@@ -641,6 +646,27 @@ export default async function couponRoutes(fastify: FastifyInstance) {
       if (isGuest && coupon.customerType === 'NEW_CUSTOMERS') {
         // For guest checkout, treat as new customer (they don't have order history)
         // Allow the coupon
+      }
+
+      // User-specific email validation
+      if (coupon.allowedEmails && coupon.allowedEmails.length > 0) {
+        let emailToCheck = email;
+        if (!emailToCheck && userId) {
+          const user = await (fastify.prisma as any).user.findUnique({
+            where: { id: userId },
+            select: { email: true }
+          });
+          if (user) {
+            emailToCheck = user.email;
+          }
+        }
+        if (!emailToCheck) {
+          return reply.status(400).send({ valid: false, message: 'This coupon is restricted to specific users. Please log in or enter your email.' });
+        }
+        const isAllowed = coupon.allowedEmails.some((e: string) => e.toLowerCase() === emailToCheck.toLowerCase());
+        if (!isAllowed) {
+          return reply.status(400).send({ valid: false, message: 'This coupon is not valid for your email address.' });
+        }
       }
 
       // Budget cap check

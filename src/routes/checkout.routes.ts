@@ -18,7 +18,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             title: item.product?.name || 'Unknown Product',
             price: Number(item.price),
             quantity: item.quantity,
-            image: item.product?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : null),
+            image: item.product?.imageUrl || item.product?.parent?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : (item.product?.parent?.images ? (item.product.parent.images as string[])[0] : null)),
             partNumber: item.product?.sku || item.sku,
             sku: item.product?.sku || item.sku,
             originalPrice: item.pricingSnapshot?.basePrice || undefined,
@@ -536,7 +536,11 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
             include: { 
                 items: { 
                     include: { 
-                        product: true 
+                        product: {
+                            include: {
+                                parent: true
+                            }
+                        } 
                     } 
                 },
                 coupon: true
@@ -587,6 +591,20 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
 
         if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
             return reply.code(400).send({ message: 'Coupon usage limit reached' });
+        }
+
+        if (coupon.allowedEmails && coupon.allowedEmails.length > 0) {
+            const user = await fastify.prisma.user.findUnique({
+                where: { id: userId },
+                select: { email: true }
+            });
+            if (!user || !user.email) {
+                return reply.code(400).send({ message: 'User account details could not be verified' });
+            }
+            const isAllowed = coupon.allowedEmails.some((e: string) => e.toLowerCase() === user.email.toLowerCase());
+            if (!isAllowed) {
+                return reply.code(400).send({ message: 'This coupon is not valid for your email address' });
+            }
         }
 
         if (coupon.usageLimitPerCustomer && userId) {
@@ -661,7 +679,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 updatedAt: new Date()
             },
             include: { 
-                items: { include: { product: true } },
+                items: { include: { product: { include: { parent: true } } } },
                 coupon: true
             }
         });
@@ -708,7 +726,7 @@ export default async function checkoutRoutes(fastify: FastifyInstance) {
                 updatedAt: new Date()
             },
             include: { 
-                items: { include: { product: true } },
+                items: { include: { product: { include: { parent: true } } } },
                 coupon: true
             }
         });

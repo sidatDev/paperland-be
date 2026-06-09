@@ -259,9 +259,10 @@ model B2BProfile {
   taxId             String?                   @map("tax_id")
   creditLimit       Decimal                   @default(0) @map("credit_limit") @db.Decimal(12, 2)
   usedCredit        Decimal                   @default(0) @map("used_credit") @db.Decimal(12, 2)
-  paymentTerms      String?                   @map("payment_terms")
-  status            String                    @default("PENDING")
-  createdAt         DateTime                  @default(now()) @map("created_at")
+  paymentTerms       String?                   @map("payment_terms")
+  status             String                    @default("PENDING")
+  isCatalogExclusive Boolean                   @default(false) @map("is_catalog_exclusive")
+  createdAt          DateTime                  @default(now()) @map("created_at")
   updatedAt         DateTime                  @updatedAt @map("updated_at")
   deletedAt         DateTime?                 @map("deleted_at")
   currencyId        String?                   @map("currency_id")
@@ -1331,10 +1332,27 @@ model DiscountTier {
   isActive        Boolean      @default(true) @map("is_active")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
-  exemptSkus      String[]     @default([]) @map("exempt_skus")
+  exemptSkus      String[]             @default([]) @map("exempt_skus")
   b2bProfiles     B2BProfile[]
+  assignmentRules B2BAssignmentRule[]
 
   @@map("discount_tiers")
+}
+
+model B2BAssignmentRule {
+  id                 String        @id @default(uuid())
+  name               String
+  emailDomain        String?       @map("email_domain")
+  companyNamePattern String?       @map("company_name_pattern")
+  catalogId          String?       @map("catalog_id")
+  discountTierId     String?       @map("discount_tier_id")
+  isActive           Boolean       @default(true) @map("is_active")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  catalog            Catalog?      @relation(fields: [catalogId], references: [id], onDelete: SetNull)
+  discountTier       DiscountTier? @relation(fields: [discountTierId], references: [id], onDelete: SetNull)
+
+  @@map("b2b_assignment_rules")
 }
 
 model ProductDiscountOverride {
@@ -1378,6 +1396,7 @@ model Coupon {
   visibility            String           @default("PRIVATE") @map("visibility")
   isStackable           Boolean          @default(false) @map("is_stackable")
   couponType            String           @default("STATIC") @map("coupon_type")
+  allowedEmails         String[]         @default([]) @map("allowed_emails")
   categories            CouponCategory[]
   products              CouponProduct[]
   orders                Order[]
@@ -1616,6 +1635,7 @@ model Catalog {
   products         CatalogProduct[]
   variants         CatalogVariant[]
   companies        CompanyCatalog[]
+  assignmentRules  B2BAssignmentRule[]
 
   @@map("catalogs")
 }

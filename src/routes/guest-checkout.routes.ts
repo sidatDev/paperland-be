@@ -90,7 +90,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 title: item.product?.name || 'Unknown Product',
                 price: Number(item.price || pkr?.priceRetail || item.product?.price || 0),
                 quantity: item.quantity,
-                image: item.product?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : null),
+                image: item.product?.imageUrl || item.product?.parent?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : (item.product?.parent?.images ? (item.product.parent.images as string[])[0] : null)),
                 sku: item.product?.sku || item.sku,
                 partNumber: item.product?.sku || item.sku
             };
@@ -105,7 +105,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
     /**
      * Helper: Validate guest coupon
      */
-    const validateGuestCoupon = async (couponCode: string, subtotal: number, items: any[]) => {
+    const validateGuestCoupon = async (couponCode: string, subtotal: number, items: any[], email?: string) => {
         if (!couponCode) return { valid: false, couponDiscount: 0, couponId: null };
 
         const coupon = await (fastify.prisma as any).coupon.findUnique({
@@ -122,6 +122,17 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
         if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
             return { valid: false, couponDiscount: 0, couponId: null, error: 'Coupon usage limit reached' };
+        }
+
+        // User-specific email validation
+        if (coupon.allowedEmails && coupon.allowedEmails.length > 0) {
+            if (!email) {
+                return { valid: false, couponDiscount: 0, couponId: null, error: 'This coupon is restricted to specific users. Please enter your email.' };
+            }
+            const isAllowed = coupon.allowedEmails.some((e: string) => e.toLowerCase() === email.toLowerCase());
+            if (!isAllowed) {
+                return { valid: false, couponDiscount: 0, couponId: null, error: 'This coupon is not valid for your email address.' };
+            }
         }
 
         // Check customer type eligibility
@@ -364,7 +375,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             let finalCouponCode = null;
 
             if (couponCode) {
-                const couponResult = await validateGuestCoupon(couponCode, subtotal, cart.items);
+                const couponResult = await validateGuestCoupon(couponCode, subtotal, cart.items, email);
                 if (couponResult.valid) {
                     couponDiscount = couponResult.couponDiscount;
                     couponId = couponResult.couponId;
@@ -575,7 +586,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },
@@ -643,7 +657,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             }, 0);
 
             // Validate coupon for guest
-            const couponResult = await validateGuestCoupon(couponCode, subtotal, (order as any).items);
+            const couponResult = await validateGuestCoupon(couponCode, subtotal, (order as any).items, order.guestEmail || undefined);
             
             if (!couponResult.valid) {
                 return reply.code(400).send({ 
@@ -681,7 +695,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },
@@ -766,7 +783,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },

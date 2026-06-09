@@ -571,10 +571,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const result = await fastify.cache.wrap(cacheKey, async () => {
                 // Fetch user's catalogs for filtering if logged in
                 let catalogIds: string[] = [];
+                let isExclusive = false;
                 if (userId && userId !== 'guest') {
                     const user = await (fastify.prisma as any).user.findUnique({
                         where: { id: userId },
                         select: {
+                            b2bProfile: {
+                                select: {
+                                    isCatalogExclusive: true
+                                }
+                            },
                             company: {
                                 select: {
                                     catalogs: {
@@ -600,6 +606,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (user?.company?.catalogs) {
                         catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                     }
+                    if (user?.b2bProfile) {
+                        isExclusive = user.b2bProfile.isCatalogExclusive;
+                    }
                 }
 
                 const where: any = {
@@ -620,7 +629,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 };
 
                 // Catalog Visibility Filter for B2B Users
-                if (catalogIds.length > 0) {
+                if (catalogIds.length > 0 && isExclusive) {
                     where.AND.push({
                         catalogProducts: {
                             some: {
@@ -982,10 +991,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             // Fetch user's catalogs for filtering if logged in
             let catalogIds: string[] = [];
+            let isExclusive = false;
             if (userId) {
                 const user = await (fastify.prisma as any).user.findUnique({
                     where: { id: userId },
                     select: {
+                        b2bProfile: {
+                            select: {
+                                isCatalogExclusive: true
+                            }
+                        },
                         company: {
                             select: {
                                 catalogs: {
@@ -1011,6 +1026,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 if (user?.company?.catalogs) {
                     catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 }
+                if (user?.b2bProfile) {
+                    isExclusive = user.b2bProfile.isCatalogExclusive;
+                }
             }
 
             const product = await (fastify.prisma as any).product.findFirst({
@@ -1028,7 +1046,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { industries: { some: { industry: { isActive: true, deletedAt: null } } } }
                             ]
                         },
-                        catalogIds.length > 0 ? {
+                        catalogIds.length > 0 && isExclusive ? {
                             catalogProducts: {
                                 some: {
                                     catalogId: { in: catalogIds }
@@ -1099,7 +1117,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 variantAttributes: product.variantAttributes,
                 variants: await Promise.all((product.variants || [])
                     .filter((v: any) => {
-                        if (catalogIds.length === 0) return true;
+                        if (catalogIds.length === 0 || !isExclusive) return true;
                         // For B2B with catalogs, variants must also be in the catalog
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })
@@ -1176,10 +1194,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             // Fetch user's catalogs for filtering if logged in
             let catalogIds: string[] = [];
+            let isExclusive = false;
             if (userId && userId !== 'guest') {
                 const user = await (fastify.prisma as any).user.findUnique({
                     where: { id: userId },
                     select: {
+                        b2bProfile: {
+                            select: {
+                                isCatalogExclusive: true
+                            }
+                        },
                         company: {
                             select: {
                                 catalogs: {
@@ -1205,6 +1229,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 if (user?.company?.catalogs) {
                     catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 }
+                if (user?.b2bProfile) {
+                    isExclusive = user.b2bProfile.isCatalogExclusive;
+                }
             }
 
             const product = await (fastify.prisma as any).product.findFirst({
@@ -1227,7 +1254,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 ...(isUUID ? [{ id: slug }] : [])
                             ]
                         },
-                        catalogIds.length > 0 ? {
+                        catalogIds.length > 0 && isExclusive ? {
                             catalogProducts: {
                                 some: {
                                     catalogId: { in: catalogIds }
@@ -1298,7 +1325,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 variantAttributes: product.variantAttributes,
                 variants: await Promise.all((product.variants || [])
                     .filter((v: any) => {
-                        if (catalogIds.length === 0) return true;
+                        if (catalogIds.length === 0 || !isExclusive) return true;
                         // For B2B with catalogs, variants must also be in the catalog
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })

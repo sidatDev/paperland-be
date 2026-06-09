@@ -344,6 +344,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
           usedCredit: user.b2bProfile.usedCredit,
           paymentTerms: user.b2bProfile.paymentTerms,
           status: user.b2bProfile.status,
+          isCatalogExclusive: user.b2bProfile.isCatalogExclusive || false,
           adminNotes: (user.b2bProfile as any).adminNotes,
           rejectionReason: (user.b2bProfile as any).rejectionReason,
           discountTier: user.b2bProfile.discountTier,
@@ -766,13 +767,14 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           creditLimit: { type: 'number' },
-          adminNotes: { type: 'string' }
+          adminNotes: { type: 'string' },
+          isCatalogExclusive: { type: 'boolean' }
         }
       }
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { creditLimit, adminNotes } = request.body as any;
+    const { creditLimit, adminNotes, isCatalogExclusive } = request.body as any;
 
     try {
       const user = await fastify.prisma.user.findUnique({
@@ -788,6 +790,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         where: { id: user.b2bProfileId },
         data: {
           creditLimit: creditLimit !== undefined ? creditLimit : undefined,
+          isCatalogExclusive: isCatalogExclusive !== undefined ? isCatalogExclusive : undefined,
           // adminNotes: adminNotes !== undefined ? adminNotes : undefined // adminNotes might not be in Prisma schema yet
         }
       }) as any);
@@ -803,7 +806,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         entityId: id,
         action: 'UPDATE_CUSTOMER_INFO',
         performedBy: (request.user as any)?.id,
-        details: { creditLimit, adminNotes }
+        details: { creditLimit, adminNotes, isCatalogExclusive }
       });
 
       // Sync to Typesense
