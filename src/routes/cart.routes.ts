@@ -136,6 +136,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             const user = await fastify.prisma.user.findUnique({
                 where: { id: userId },
                 include: {
+                    b2bProfile: { select: { isCatalogExclusive: true } },
                     company: {
                         include: {
                             catalogs: {
@@ -160,6 +161,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             });
 
             const catalogIds = user?.company?.catalogs.map((c: any) => c.catalogId) || [];
+            const isExclusive = user?.b2bProfile?.isCatalogExclusive === true;
 
             for (const item of (cart as any).items) {
                 let status = 'VALID';
@@ -171,7 +173,9 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                     });
 
                     if (!catalogProduct) {
-                        status = 'INVALID_CATALOG';
+                        if (isExclusive) {
+                            status = 'INVALID_CATALOG';
+                        }
                     } else {
                         selectedCatalogId = catalogProduct.catalogId;
                         const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
@@ -309,6 +313,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
             const user = await fastify.prisma.user.findUnique({
                 where: { id: userId },
                 include: {
+                    b2bProfile: { select: { isCatalogExclusive: true } },
                     company: {
                         include: {
                             catalogs: {
@@ -333,6 +338,8 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                 }
             });
 
+            const isExclusive = user?.b2bProfile?.isCatalogExclusive === true;
+
             if (user?.company && user.company.catalogs.length > 0) {
                 const catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 
@@ -341,11 +348,13 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                     where: { productId, catalogId: { in: catalogIds } }
                 });
 
-                if (!catalogProduct) {
+                if (!catalogProduct && isExclusive) {
                     return reply.status(403).send(createErrorResponse("This product is not available in your organization's catalogs."));
                 }
 
-                selectedCatalogId = catalogProduct.catalogId;
+                if (catalogProduct) {
+                    selectedCatalogId = catalogProduct.catalogId;
+                }
 
                 // Check for MOQ in CatalogPricing
                 const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
@@ -500,6 +509,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
         const user = await fastify.prisma.user.findUnique({
             where: { id: userId },
             include: {
+                b2bProfile: { select: { isCatalogExclusive: true } },
                 company: {
                     include: {
                         catalogs: {
@@ -521,6 +531,7 @@ export default async function cartRoutes(fastify: FastifyInstance) {
         });
 
         const catalogIds = user?.company?.catalogs.map((c: any) => c.catalogId) || [];
+        const isExclusive = user?.b2bProfile?.isCatalogExclusive === true;
 
         // 2. Find or Create Cart
         let cart = await fastify.prisma.cart.findFirst({
@@ -558,11 +569,13 @@ export default async function cartRoutes(fastify: FastifyInstance) {
                     where: { productId, catalogId: { in: catalogIds } }
                 });
 
-                if (!catalogProduct) {
+                if (!catalogProduct && isExclusive) {
                     results.push({ productId, success: false, message: "Product not in your catalogs" });
                     continue;
                 }
-                selectedCatalogId = catalogProduct.catalogId;
+                if (catalogProduct) {
+                    selectedCatalogId = catalogProduct.catalogId;
+                }
 
                 const catalogPricing = await fastify.prisma.catalogPricing.findFirst({
                     where: { variantId: productId, catalogId: { in: catalogIds } }
