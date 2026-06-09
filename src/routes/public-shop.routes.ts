@@ -687,16 +687,38 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             categoryId: { in: categoryIds }
                         });
                     } else {
-                        // Otherwise do general search including category name
-                        where.AND.push({
-                            OR: [
-                                { name: { contains: q, mode: 'insensitive' } },
-                                { sku: { contains: q, mode: 'insensitive' } },
-                                { specifications: { path: ['partNo'], string_contains: q } },
-                                { category: { name: { contains: q, mode: 'insensitive' } } },
-                                { brand: { name: { contains: q, mode: 'insensitive' } } }
-                            ]
-                        });
+                        let productIdsFromSearch: string[] | undefined = undefined;
+                        if (fastify.typesense) {
+                            try {
+                                const searchParameters = {
+                                    q: q,
+                                    query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,description,brand,category',
+                                    filter_by: 'isActive:true',
+                                    per_page: 1000
+                                };
+                                const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+                                productIdsFromSearch = result.hits?.map((hit: any) => hit.document.id) || [];
+                            } catch (tsErr) {
+                                fastify.log.error(tsErr, "Typesense search failed in public shop, falling back to Prisma search");
+                            }
+                        }
+
+                        if (productIdsFromSearch !== undefined) {
+                            where.AND.push({
+                                id: { in: productIdsFromSearch }
+                            });
+                        } else {
+                            // Otherwise do general search including category name
+                            where.AND.push({
+                                OR: [
+                                    { name: { contains: q, mode: 'insensitive' } },
+                                    { sku: { contains: q, mode: 'insensitive' } },
+                                    { specifications: { path: ['partNo'], string_contains: q } },
+                                    { category: { name: { contains: q, mode: 'insensitive' } } },
+                                    { brand: { name: { contains: q, mode: 'insensitive' } } }
+                                ]
+                            });
+                        }
                     }
                 }
 
