@@ -243,7 +243,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
             properties: {
                 page: { type: 'integer', default: 1 },
                 limit: { type: 'integer', default: 10 },
-                status: { type: 'string', enum: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'all'] },
+                status: { type: 'string', enum: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'CANCELLATION_REQUESTED', 'RETURN_REQUESTED', 'REFUNDED', 'all'] },
                 search: { type: 'string', description: 'Search by Order Number, ERP ID or Customer Email' },
                 startDate: { type: 'string', format: 'date' },
                 endDate: { type: 'string', format: 'date' },
