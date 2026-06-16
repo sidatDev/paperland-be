@@ -124,8 +124,15 @@ export class WhatsAppWebProvider implements MessagingProvider {
     await this.updateConnectionStatus('CONNECTING', null);
     
     // We wrap initialize in a try/catch, but run it asynchronously
-    this.client.initialize().catch((err) => {
+    this.client.initialize().catch(async (err) => {
       this.fastify.log.error(err, '[WhatsAppWebProvider] Initialization failed');
+      await this.updateConnectionStatus('DISCONNECTED', null);
+      if (this.fastify.io) {
+        this.fastify.io.to('support-agents').emit('chat:whatsapp-status', {
+          status: 'DISCONNECTED',
+          qrCode: null
+        });
+      }
     });
   }
 
