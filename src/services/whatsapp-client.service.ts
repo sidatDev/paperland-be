@@ -91,10 +91,24 @@ export class WhatsappClientService {
     }
   }
 
+  async getWhatsAppNumber(): Promise<string> {
+    try {
+      const conn = await this.fastify.prisma.whatsAppConnectionStatus.findUnique({
+        where: { id: 'singleton' }
+      });
+      if (conn?.whatsappNumber) {
+        return conn.whatsappNumber.trim();
+      }
+    } catch (err) {
+      this.fastify.log.error(err, '[WhatsappClientService] Failed to retrieve whatsapp number from database');
+    }
+    return (process.env.WHATSAPP_NUMBER || '').trim();
+  }
+
   async sendOutboundForward(shortId: string, senderName: string, content: string): Promise<string | null> {
-    const adminPhone = (process.env.WHATSAPP_NUMBER || '').trim();
+    const adminPhone = await this.getWhatsAppNumber();
     if (!adminPhone) {
-      this.fastify.log.error('[WhatsappClientService] WHATSAPP_NUMBER is not set in environment variables');
+      this.fastify.log.error('[WhatsappClientService] WhatsApp number is not set in database or environment variables');
       return null;
     }
 

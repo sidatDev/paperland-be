@@ -2075,10 +2075,11 @@ model ChatAgent {
 }
 
 model WhatsAppConnectionStatus {
-  id        String   @id @default("singleton")
-  status    String   // CONNECTED, DISCONNECTED, AUTH_FAILURE, CONNECTING
-  qrCode    String?  @db.Text
-  updatedAt DateTime @updatedAt @map("updated_at")
+  id             String   @id @default("singleton")
+  status         String   // CONNECTED, DISCONNECTED, AUTH_FAILURE, CONNECTING
+  qrCode         String?  @db.Text
+  whatsappNumber String?  @map("whatsapp_number")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("whatsapp_connection_statuses")
 }

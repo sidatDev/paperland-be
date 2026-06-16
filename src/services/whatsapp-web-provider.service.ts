@@ -95,7 +95,18 @@ export class WhatsAppWebProvider implements MessagingProvider {
 
     this.client.on('message', async (msg) => {
       // Check if message is from the configured support number, is not from me, and has the prefix
-      const adminPhone = (process.env.WHATSAPP_NUMBER || '').trim();
+      let adminPhone = (process.env.WHATSAPP_NUMBER || '').trim().replace(/[\s\-\+\(\)]/g, '');
+      try {
+        const conn = await this.fastify.prisma.whatsAppConnectionStatus.findUnique({
+          where: { id: 'singleton' }
+        });
+        if (conn?.whatsappNumber) {
+          adminPhone = conn.whatsappNumber.trim().replace(/[\s\-\+\(\)]/g, '');
+        }
+      } catch (err) {
+        this.fastify.log.error(err, '[WhatsAppWebProvider] Failed to fetch whatsapp number from db for message validation');
+      }
+
       const cleanFrom = msg.from.replace('@c.us', '');
       
       const isAdminMessage = cleanFrom === adminPhone || msg.from.includes(adminPhone);
@@ -125,13 +136,33 @@ export class WhatsAppWebProvider implements MessagingProvider {
 
     try {
       let formattedPhone = toPhone.trim();
-      if (!formattedPhone.endsWith('@c.us')) {
-        formattedPhone = formattedPhone.replace(/[\s\-\+\(\)]/g, ''); // strip formatting
-        formattedPhone = `${formattedPhone}@c.us`;
+      if (formattedPhone.endsWith('@c.us')) {
+        formattedPhone = formattedPhone.replace('@c.us', '');
+      }
+      formattedPhone = formattedPhone.replace(/[\s\-\+\(\)]/g, ''); // strip formatting
+
+      // Resolve the correct serialized JID/LID first
+      let numberId = null;
+      try {
+        numberId = await this.client.getNumberId(formattedPhone);
+      } catch (err) {
+        this.fastify.log.warn(`[WhatsAppWebProvider] getNumberId failed for ${formattedPhone}. Number is likely not registered on WhatsApp.`);
       }
 
-      this.fastify.log.info(`[WhatsAppWebProvider] Sending message to ${formattedPhone}`);
-      const response = await this.client.sendMessage(formattedPhone, content);
+      if (!numberId) {
+        this.fastify.log.error(`[WhatsAppWebProvider] Phone number ${formattedPhone} is not registered on WhatsApp.`);
+        return null;
+      }
+      const recipientId = numberId._serialized;
+
+      this.fastify.log.info(`[WhatsAppWebProvider] Resolved recipient JID: ${recipientId}. Loading chat...`);
+      
+      // Resolve contact and chat to establish LID mapping and prevent "No LID for user" errors
+      const contact = await this.client.getContactById(recipientId);
+      const targetChatId = (contact as any).lid || contact.id._serialized;
+      const chat = await this.client.getChatById(targetChatId);
+      
+      const response = await chat.sendMessage(content);
       return response.id.id;
     } catch (err) {
       this.fastify.log.error(err, '[WhatsAppWebProvider] Error sending message');

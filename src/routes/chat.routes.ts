@@ -257,7 +257,46 @@ export default async function chatRoutes(fastify: FastifyInstance) {
       const conn = await prisma.whatsAppConnectionStatus.findUnique({
         where: { id: 'singleton' }
       });
-      return createResponse(conn || { status: 'DISCONNECTED', qrCode: null });
+      return createResponse(conn || { status: 'DISCONNECTED', qrCode: null, whatsappNumber: null });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // POST /api/v1/chat/whatsapp/number
+  // Private (Admin view) - Update support whatsapp number
+  fastify.post('/chat/whatsapp/number', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('support_manage')],
+    schema: {
+      description: 'Update WhatsApp support number',
+      tags: ['Support Chat'],
+      body: {
+        type: 'object',
+        required: ['whatsappNumber'],
+        properties: {
+          whatsappNumber: { type: 'string' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const prisma = fastify.prisma;
+    const { whatsappNumber } = request.body;
+    try {
+      const conn = await prisma.whatsAppConnectionStatus.upsert({
+        where: { id: 'singleton' },
+        create: {
+          id: 'singleton',
+          status: 'DISCONNECTED',
+          whatsappNumber: whatsappNumber.trim(),
+          updatedAt: new Date()
+        },
+        update: {
+          whatsappNumber: whatsappNumber.trim(),
+          updatedAt: new Date()
+        }
+      });
+      return createResponse(conn, 'WhatsApp support number updated successfully');
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse(err.message));
