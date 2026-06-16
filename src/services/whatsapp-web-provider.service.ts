@@ -3,6 +3,7 @@ import { MessagingProviderType } from '@prisma/client';
 import { Client, LocalAuth } from 'whatsapp-web.js';
 import QRCode from 'qrcode';
 import path from 'path';
+import fs from 'fs';
 import { FastifyInstance } from 'fastify';
 
 export class WhatsAppWebProvider implements MessagingProvider {
@@ -188,6 +189,59 @@ export class WhatsAppWebProvider implements MessagingProvider {
 
   getProviderType(): MessagingProviderType {
     return MessagingProviderType.WHATSAPP_WEB;
+  }
+
+  async logout(): Promise<void> {
+    this.fastify.log.info('[WhatsAppWebProvider] Logging out and resetting WhatsApp session...');
+    this.ready = false;
+    try {
+      await this.client.logout();
+    } catch (err) {
+      this.fastify.log.warn(err, '[WhatsAppWebProvider] client.logout() failed, destroying client manually');
+      try {
+        await this.client.destroy();
+      } catch (destroyErr) {
+        this.fastify.log.error(destroyErr, '[WhatsAppWebProvider] client.destroy() failed');
+      }
+    }
+
+    const sessionDir = path.join(process.cwd(), '.wwebjs_auth');
+    try {
+      if (fs.existsSync(sessionDir)) {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+        this.fastify.log.info('[WhatsAppWebProvider] Deleted .wwebjs_auth session directory');
+      }
+    } catch (fsErr) {
+      this.fastify.log.error(fsErr, '[WhatsAppWebProvider] Failed to delete session directory');
+    }
+
+    const newClient = new Client({
+      authStrategy: new LocalAuth({
+        dataPath: sessionDir
+      }),
+      puppeteer: {
+        headless: true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process'
+        ]
+      }
+    });
+
+    this.client = newClient;
+    this.setupListeners();
+    await this.updateConnectionStatus('DISCONNECTED', null);
+    
+    this.client.initialize().catch(async (err) => {
+      this.fastify.log.error(err, '[WhatsAppWebProvider] Re-initialization failed');
+      await this.updateConnectionStatus('DISCONNECTED', null);
+    });
   }
 
   private async updateConnectionStatus(status: string, qrCode: string | null) {

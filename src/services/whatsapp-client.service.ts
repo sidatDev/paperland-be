@@ -123,6 +123,12 @@ export class WhatsappClientService {
   getProviderType(): MessagingProviderType {
     return this.provider.getProviderType();
   }
+
+  async logout(): Promise<void> {
+    if (this.provider instanceof WhatsAppWebProvider) {
+      await this.provider.logout();
+    }
+  }
 }
 
 declare module 'fastify' {

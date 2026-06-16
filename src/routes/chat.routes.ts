@@ -209,9 +209,9 @@ export default async function chatRoutes(fastify: FastifyInstance) {
     }
   });
 
-  // POST /api/v1/chat/session/:id/close
+  // POST /chat/session/:id/close
   // Private (Admin action) - Close session
-  fastify.post('/api/v1/chat/session/:id/close', {
+  fastify.post('/chat/session/:id/close', {
     preHandler: [fastify.authenticate, fastify.hasPermission('support_manage')],
     schema: {
       description: 'Close an active chat session',
@@ -321,6 +321,24 @@ export default async function chatRoutes(fastify: FastifyInstance) {
         qrCode: conn?.qrCode || null,
         status: conn?.status || 'DISCONNECTED'
       });
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(err.message));
+    }
+  });
+
+  // POST /api/v1/chat/whatsapp/reset
+  // Private (Admin view) - Reset/Unlink WhatsApp session
+  fastify.post('/chat/whatsapp/reset', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('support_manage')],
+    schema: {
+      description: 'Reset connection and unlink WhatsApp account',
+      tags: ['Support Chat']
+    }
+  }, async (request, reply) => {
+    try {
+      await fastify.whatsappClient.logout();
+      return createResponse(null, 'WhatsApp session reset successfully');
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse(err.message));
