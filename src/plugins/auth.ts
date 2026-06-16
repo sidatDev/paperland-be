@@ -138,6 +138,10 @@ export default fp(async (fastify: FastifyInstance) => {
       '/public/upload',
       '/redis-health',
       '/api/redis-health',
+      '/chat/session',
+      '/chat/message',
+      '/chat/messages',
+      '/chat/webhook',
     ];
 
     // Allow Swagger

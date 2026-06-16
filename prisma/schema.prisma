@@ -2002,3 +2002,84 @@ model KbMedia {
 
   @@map("kb_media_assets")
 }
+
+enum ChatStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SenderType {
+  VISITOR
+  AGENT
+  SYSTEM
+}
+
+enum MessagingProviderType {
+  WHATSAPP_WEB
+  WHATSAPP_CLOUD
+}
+
+model ChatSession {
+  id                    String        @id @default(uuid())
+  shortId               String        @unique @map("short_id")
+  visitorId             String        @map("visitor_id")
+  status                ChatStatus    @default(ACTIVE)
+  visitorName           String?       @map("visitor_name")
+  visitorEmail          String?       @map("visitor_email")
+  userAgent             String?       @map("user_agent")
+  ipAddress             String?       @map("ip_address")
+  closedAt              DateTime?     @map("closed_at")
+  closedBy              String?       @map("closed_by")
+  closeReason           String?       @map("close_reason")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  messages              ChatMessage[]
+
+  @@index([visitorId])
+  @@index([shortId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id                     String                @id @default(uuid())
+  sessionId              String                @map("session_id")
+  direction              MessageDirection
+  sender                 SenderType
+  content                String
+  provider               MessagingProviderType @default(WHATSAPP_WEB)
+  providerMessageId      String?               @map("provider_message_id")
+  providerConversationId String?               @map("provider_conversation_id")
+  attachmentUrl          String?               @map("attachment_url")
+  attachmentType         String?               @map("attachment_type")
+  isRead                 Boolean               @default(false) @map("is_read")
+  readAt                 DateTime?             @map("read_at")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  session                ChatSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+model ChatAgent {
+  id        String   @id @default(uuid())
+  name      String
+  role      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("chat_agents")
+}
+
+model WhatsAppConnectionStatus {
+  id        String   @id @default("singleton")
+  status    String   // CONNECTED, DISCONNECTED, AUTH_FAILURE, CONNECTING
+  qrCode    String?  @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("whatsapp_connection_statuses")
+}
+
