@@ -1179,12 +1179,14 @@ model PriceUpdateLog {
   userName          String?  @map("user_name")
   reason            String?
   createdAt         DateTime @default(now()) @map("created_at")
+  batchId           String?  @map("batch_id")
   
   product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   performer         User?    @relation(fields: [performedBy], references: [id])
 
   @@index([productId])
   @@index([createdAt])
+  @@index([batchId])
   @@map("price_update_logs")
 }
 

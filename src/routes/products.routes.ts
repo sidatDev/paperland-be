@@ -1933,11 +1933,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
           { header: 'Sub-Category', key: 'subCategory' },
           { header: 'Industry', key: 'industry' },
           { header: 'Status', key: 'status' },
-          { header: 'Base Price (SAR)', key: 'basePrice' },
-          { header: 'SAR Retail', key: 'sarRetail' },
-          { header: 'SAR Wholesale', key: 'sarWholesale' },
-          { header: 'AED Retail', key: 'aedRetail' },
-          { header: 'AED Wholesale', key: 'aedWholesale' },
+          { header: 'Base Price (PKR)', key: 'basePrice' },
           { header: 'PKR Retail', key: 'pkrRetail' },
           { header: 'PKR Wholesale', key: 'pkrWholesale' },
           { header: 'Total Stock', key: 'totalStock' },
@@ -1962,8 +1958,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
               basePrice: Number(p.price || 0),
               pkrRetail: getPriceByCurrency(p, 'PKR', 'retail'),
               pkrWholesale: getPriceByCurrency(p, 'PKR', 'wholesale'),
-              aedRetail: getPriceByCurrency(p, 'AED', 'retail'),
-              aedWholesale: getPriceByCurrency(p, 'AED', 'wholesale'),
               totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
               seoTitle: seo.title || "",
               seoDescription: seo.description || "",
@@ -2002,6 +1996,552 @@ export default async function productRoutes(fastify: FastifyInstance) {
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse('Export Failed'));
+    }
+  });
+
+  // POST /admin/products/bulk-price-update
+  fastify.post('/admin/products/bulk-price-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Price and Rate Update',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['ids', 'actionType', 'field', 'value'],
+        properties: {
+          ids: { type: 'array', items: { type: 'string' } },
+          actionType: { type: 'string', enum: ['SET_SAME', 'INC_FIXED', 'DEC_FIXED', 'INC_PERCENT', 'DEC_PERCENT', 'COPY_PRODUCT'] },
+          field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL'] },
+          value: { type: 'number' },
+          copyFromProductId: { type: 'string' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { ids, actionType, field, value, copyFromProductId } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!ids || ids.length === 0) {
+        return reply.status(400).send(createErrorResponse('No products selected'));
+      }
+
+      // Generate a single batch ID for this bulk action
+      const batchId = crypto.randomUUID();
+
+      // Fetch target products and variants
+      const targets = await prisma.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        include: {
+          prices: { where: { isActive: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: { where: { isActive: true } } }
+          }
+        }
+      });
+
+      if (targets.length === 0) {
+        return reply.status(404).send(createErrorResponse('No valid target products found'));
+      }
+
+      // Collect all individual items (standalone, parents, and child variants) to update
+      const itemsMap = new Map<string, any>();
+      for (const t of targets) {
+        itemsMap.set(t.id, t);
+        if (t.variants && t.variants.length > 0) {
+          for (const v of t.variants) {
+            itemsMap.set(v.id, {
+              ...v,
+              parentSku: t.sku
+            });
+          }
+        }
+      }
+
+      const allItems = Array.from(itemsMap.values());
+
+      // Fetch source product if action is COPY_PRODUCT
+      let sourceProduct: any = null;
+      if (actionType === 'COPY_PRODUCT') {
+        if (!copyFromProductId) {
+          return reply.status(400).send(createErrorResponse('copyFromProductId is required for COPY_PRODUCT'));
+        }
+        sourceProduct = await prisma.product.findUnique({
+          where: { id: copyFromProductId },
+          include: {
+            prices: { where: { isActive: true } },
+            variants: {
+              where: { deletedAt: null },
+              include: { prices: { where: { isActive: true } } }
+            }
+          }
+        });
+        if (!sourceProduct) {
+          return reply.status(404).send(createErrorResponse('Source product to copy from not found'));
+        }
+      }
+
+      // Helper to get matching variant by attributes
+      const findMatchingVariant = (sourceVariants: any[], targetAttributes: any) => {
+        if (!sourceVariants || !targetAttributes) return null;
+        return sourceVariants.find(sv => {
+          const svAttrs = sv.variantAttributes || {};
+          const targetAttrs = targetAttributes || {};
+          const svKeys = Object.keys(svAttrs);
+          const targetKeys = Object.keys(targetAttrs);
+          if (svKeys.length !== targetKeys.length) return false;
+          return svKeys.every(k => String(svAttrs[k]).toLowerCase() === String(targetAttrs[k]).toLowerCase());
+        });
+      };
+
+      // Resolve admin user display name
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const defaultWarehouse = await prisma.warehouse.findFirst({
+        where: { isDefault: true, isActive: true },
+        select: { id: true }
+      });
+      const defaultWarehouseId = defaultWarehouse?.id ?? null;
+
+      const currencyRec = await prisma.currency.findFirst({
+        where: { code: 'PKR' }
+      }) || { id: 'PKR' };
+
+      const updates: any[] = [];
+      const logsToCreate: any[] = [];
+
+      for (const item of allItems) {
+        const activePriceObj = item.prices?.[0];
+        let oldPrice = 0;
+
+        if (field === 'RETAIL') {
+          oldPrice = Number(item.price || 0);
+        } else if (field === 'WHOLESALE') {
+          oldPrice = Number(activePriceObj?.priceWholesale || Number(item.price || 0) * 0.9);
+        } else if (field === 'SPECIAL') {
+          oldPrice = Number(activePriceObj?.priceSpecial || 0);
+        }
+
+        let newPrice = oldPrice;
+
+        if (actionType === 'SET_SAME') {
+          newPrice = Number(value);
+        } else if (actionType === 'INC_FIXED') {
+          newPrice = oldPrice + Number(value);
+        } else if (actionType === 'DEC_FIXED') {
+          newPrice = Math.max(0, oldPrice - Number(value));
+        } else if (actionType === 'INC_PERCENT') {
+          newPrice = oldPrice * (1 + Number(value) / 100);
+        } else if (actionType === 'DEC_PERCENT') {
+          newPrice = Math.max(0, oldPrice * (1 - Number(value) / 100));
+        } else if (actionType === 'COPY_PRODUCT') {
+          let sourceItem = sourceProduct;
+          if (item.parentId && sourceProduct.variants && sourceProduct.variants.length > 0) {
+            const matchedVariant = findMatchingVariant(sourceProduct.variants, item.variantAttributes);
+            if (matchedVariant) {
+              sourceItem = matchedVariant;
+            }
+          }
+          
+          const srcPriceObj = sourceItem.prices?.[0];
+          if (field === 'RETAIL') {
+            newPrice = Number(sourceItem.price || 0);
+          } else if (field === 'WHOLESALE') {
+            newPrice = Number(srcPriceObj?.priceWholesale || Number(sourceItem.price || 0) * 0.9);
+          } else if (field === 'SPECIAL') {
+            newPrice = Number(srcPriceObj?.priceSpecial || 0);
+          }
+        }
+
+        newPrice = Number(newPrice.toFixed(2));
+
+        if (newPrice !== oldPrice) {
+          logsToCreate.push({
+            productId: item.id,
+            productName: item.name,
+            sku: item.sku,
+            priceType: field,
+            oldPrice,
+            newPrice,
+            performedBy: user?.id || null,
+            userName,
+            reason: `Bulk Update (${actionType})`,
+            batchId
+          });
+
+          updates.push({
+            itemId: item.id,
+            field,
+            newPrice,
+            activePriceObj
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return createResponse(null, "No price changes were necessary");
+      }
+
+      await prisma.$transaction(async (tx: any) => {
+        await tx.priceUpdateLog.createMany({ data: logsToCreate });
+
+        for (const up of updates) {
+          const updateData: any = {};
+          if (up.field === 'RETAIL') {
+            updateData.price = up.newPrice;
+          }
+
+          if (up.activePriceObj) {
+            const priceFields: any = {};
+            if (up.field === 'RETAIL') priceFields.priceRetail = up.newPrice;
+            if (up.field === 'WHOLESALE') priceFields.priceWholesale = up.newPrice;
+            if (up.field === 'SPECIAL') priceFields.priceSpecial = up.newPrice;
+
+            await tx.price.update({
+              where: { id: up.activePriceObj.id },
+              data: priceFields
+            });
+          } else {
+            const priceRetail = up.field === 'RETAIL' ? up.newPrice : 0;
+            const priceWholesale = up.field === 'WHOLESALE' ? up.newPrice : (priceRetail * 0.9);
+            const priceSpecial = up.field === 'SPECIAL' ? up.newPrice : null;
+
+            await tx.price.create({
+              data: {
+                productId: up.itemId,
+                currencyId: currencyRec.id,
+                priceRetail,
+                priceWholesale,
+                priceSpecial,
+                isActive: true
+              }
+            });
+          }
+
+          if (Object.keys(updateData).length > 0) {
+            await tx.product.update({
+              where: { id: up.itemId },
+              data: updateData
+            });
+          }
+        }
+      });
+
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: updates.map(u => u.itemId) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: batchId,
+        action: 'BULK_UPDATE_PRICE',
+        performedBy: user?.id || 'unknown',
+        details: { count: updates.length, field, actionType, batchId },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ batchId, count: updates.length }, "Bulk pricing update completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Bulk update failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-price-undo
+  fastify.post('/admin/products/bulk-price-undo', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Undo/Revert price adjustments',
+      tags: ['Finance'],
+      body: {
+        type: 'object',
+        properties: {
+          batchId: { type: 'string' },
+          logId: { type: 'string' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { batchId, logId } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!batchId && !logId) {
+        return reply.status(400).send(createErrorResponse('Either batchId or logId is required'));
+      }
+
+      const whereClause: any = {};
+      if (batchId) whereClause.batchId = batchId;
+      else whereClause.id = logId;
+
+      const logs = await prisma.priceUpdateLog.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (logs.length === 0) {
+        return reply.status(404).send(createErrorResponse('No matching price update logs found to revert'));
+      }
+
+      const undoBatchId = crypto.randomUUID();
+
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const productIdsToSync = new Set<string>();
+      const reversionLogs: any[] = [];
+
+      await prisma.$transaction(async (tx: any) => {
+        for (const log of logs) {
+          productIdsToSync.add(log.productId);
+
+          const activePrice = await tx.price.findFirst({
+            where: { productId: log.productId, isActive: true }
+          });
+
+          if (log.priceType === 'RETAIL') {
+            await tx.product.update({
+              where: { id: log.productId },
+              data: { price: log.oldPrice }
+            });
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceRetail: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'WHOLESALE') {
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceWholesale: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'SPECIAL') {
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceSpecial: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'COST') {
+            await tx.product.update({
+              where: { id: log.productId },
+              data: { costPrice: log.oldPrice }
+            });
+          }
+
+          reversionLogs.push({
+            productId: log.productId,
+            productName: log.productName,
+            sku: log.sku,
+            priceType: log.priceType,
+            oldPrice: log.newPrice,
+            newPrice: log.oldPrice,
+            performedBy: user?.id || null,
+            userName,
+            reason: `Undo Revert of ${batchId ? 'Batch ' + batchId : 'Log ' + logId}`,
+            batchId: undoBatchId
+          });
+        }
+
+        await tx.priceUpdateLog.createMany({ data: reversionLogs });
+      });
+
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: Array.from(productIdsToSync) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense revert sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: undoBatchId,
+        action: 'UNDO_PRICE_UPDATE',
+        performedBy: user?.id || 'unknown',
+        details: { revertedBatchId: batchId || null, revertedLogId: logId || null, undoBatchId },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ undoBatchId, count: logs.length }, "Price reversion completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Undo failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-status-update
+  fastify.post('/admin/products/bulk-status-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Status Update for Products',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['ids', 'status'],
+        properties: {
+          ids: { type: 'array', items: { type: 'string' } },
+          status: { type: 'string', enum: ['Active', 'Draft', 'Out of Stock'] }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { ids, status } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!ids || ids.length === 0) {
+        return reply.status(400).send(createErrorResponse('No products selected'));
+      }
+
+      // Fetch all targets and variants
+      const targets = await prisma.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        include: {
+          variants: { where: { deletedAt: null } }
+        }
+      });
+
+      if (targets.length === 0) {
+        return reply.status(404).send(createErrorResponse('No valid products found'));
+      }
+
+      const itemsMap = new Map<string, any>();
+      for (const t of targets) {
+        itemsMap.set(t.id, t);
+        if (t.variants && t.variants.length > 0) {
+          for (const v of t.variants) {
+            itemsMap.set(v.id, v);
+          }
+        }
+      }
+
+      const allIds = Array.from(itemsMap.keys());
+      const isActive = status === 'Active' || status === 'Out of Stock';
+
+      await prisma.product.updateMany({
+        where: { id: { in: allIds } },
+        data: { status, isActive }
+      });
+
+      // Fetch updated details for Typesense sync
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: allIds } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync on bulk status update for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: ids[0],
+        action: 'BULK_UPDATE_STATUS',
+        performedBy: user?.id || 'unknown',
+        details: { count: allIds.length, status },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ count: allIds.length, status }, "Bulk status update completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Bulk status update failed: ${err.message}`));
     }
   });
 }
