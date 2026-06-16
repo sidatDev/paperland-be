@@ -11,6 +11,7 @@ import {
 
 export class ChatService {
   private jwtSecret: string;
+  private rateLimitMap = new Map<string, { count: number; expiresAt: number }>();
 
   constructor(private fastify: FastifyInstance) {
     this.jwtSecret = process.env.JWT_SECRET || 'njdksandksacmvjgjdn38fdja2gs8cjn';
@@ -179,18 +180,43 @@ export class ChatService {
     }
 
     // 4. Enforce Rate Limiting (5 messages / 10s per visitor ID)
-    // Strict Redis checking
     const redisEnabled = process.env.REDIS_ENABLED === 'true';
-    if (!redisEnabled || !this.fastify.redis) {
-      this.fastify.log.error('[ChatService] Redis rate limiting unavailable. Disabling support chat.');
-      throw new Error('CHAT_SERVICE_TEMPORARILY_UNAVAILABLE');
-    }
+    let messageCount = 0;
 
-    const redisKey = `chat:rate-limit:${verified.visitorId}`;
-    const messageCount = await this.fastify.redis.incr(redisKey);
-    
-    if (messageCount === 1) {
-      await this.fastify.redis.expire(redisKey, 10);
+    if (redisEnabled && this.fastify.redis) {
+      const redisKey = `chat:rate-limit:${verified.visitorId}`;
+      try {
+        messageCount = await this.fastify.redis.incr(redisKey);
+        if (messageCount === 1) {
+          await this.fastify.redis.expire(redisKey, 10);
+        }
+      } catch (err) {
+        this.fastify.log.warn(err, '[ChatService] Redis operation failed, falling back to in-memory rate limiting');
+        // Fallback inside catch
+        const now = Date.now();
+        const visitorKey = verified.visitorId;
+        const current = this.rateLimitMap.get(visitorKey);
+        if (!current || now > current.expiresAt) {
+          messageCount = 1;
+          this.rateLimitMap.set(visitorKey, { count: 1, expiresAt: now + 10000 });
+        } else {
+          current.count += 1;
+          messageCount = current.count;
+        }
+      }
+    } else {
+      // Fallback to in-memory rate limiting
+      const now = Date.now();
+      const visitorKey = verified.visitorId;
+      const current = this.rateLimitMap.get(visitorKey);
+
+      if (!current || now > current.expiresAt) {
+        messageCount = 1;
+        this.rateLimitMap.set(visitorKey, { count: 1, expiresAt: now + 10000 });
+      } else {
+        current.count += 1;
+        messageCount = current.count;
+      }
     }
 
     if (messageCount > 5) {
