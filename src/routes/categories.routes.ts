@@ -12,7 +12,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           status: { type: 'string', enum: ['Active', 'Inactive'] }, // allow filtering by status
-          deleted: { type: 'boolean' } // optional: show deleted
+          deleted: { type: 'boolean' }, // optional: show deleted
+          hasProducts: { type: 'string', enum: ['true', 'false'] }
         }
       },
       response: {
@@ -65,7 +66,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { status, deleted } = request.query as any;
+    const { status, deleted, hasProducts } = request.query as any;
     try {
       const whereClause: any = {};
       
@@ -77,6 +78,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       // Soft Delete Filtering (default: hide deleted)
       if (!deleted) {
         whereClause.deletedAt = null;
+      }
+
+      if (hasProducts === 'true') {
+        whereClause.products = {
+          some: {
+            deletedAt: null
+          }
+        };
       }
 
       const categories = await (fastify.prisma as any).category.findMany({

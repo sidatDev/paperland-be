@@ -2007,9 +2007,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
       tags: ['Catalog'],
       body: {
         type: 'object',
-        required: ['ids', 'actionType', 'field', 'value'],
+        required: ['actionType', 'field', 'value'],
         properties: {
           ids: { type: 'array', items: { type: 'string' } },
+          brandIds: { type: 'array', items: { type: 'string' } },
+          categoryIds: { type: 'array', items: { type: 'string' } },
           actionType: { type: 'string', enum: ['SET_SAME', 'INC_FIXED', 'DEC_FIXED', 'INC_PERCENT', 'DEC_PERCENT', 'COPY_PRODUCT'] },
           field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL'] },
           value: { type: 'number' },
@@ -2018,13 +2020,33 @@ export default async function productRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request: any, reply) => {
-    const { ids, actionType, field, value, copyFromProductId } = request.body;
+    const { ids, actionType, field, value, copyFromProductId, brandIds, categoryIds } = request.body;
     const prisma = fastify.prisma as any;
     const user = request.user as any;
 
     try {
-      if (!ids || ids.length === 0) {
-        return reply.status(400).send(createErrorResponse('No products selected'));
+      if ((!ids || ids.length === 0) && (!brandIds || brandIds.length === 0) && (!categoryIds || categoryIds.length === 0)) {
+        return reply.status(400).send(createErrorResponse('No products, brands, or categories selected'));
+      }
+
+      let resolvedIds = ids || [];
+      if (resolvedIds.length === 0 && ((brandIds && brandIds.length > 0) || (categoryIds && categoryIds.length > 0))) {
+        const filters: any = { deletedAt: null, parentId: null };
+        if (brandIds && brandIds.length > 0) {
+          filters.brandId = { in: brandIds };
+        }
+        if (categoryIds && categoryIds.length > 0) {
+          filters.categoryId = { in: categoryIds };
+        }
+        const matchingProducts = await prisma.product.findMany({
+          where: filters,
+          select: { id: true }
+        });
+        resolvedIds = matchingProducts.map((p: any) => p.id);
+      }
+
+      if (resolvedIds.length === 0) {
+        return reply.status(404).send(createErrorResponse('No products found matching selection'));
       }
 
       // Generate a single batch ID for this bulk action
@@ -2032,7 +2054,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
       // Fetch target products and variants
       const targets = await prisma.product.findMany({
-        where: { id: { in: ids }, deletedAt: null },
+        where: { id: { in: resolvedIds }, deletedAt: null },
         include: {
           prices: { where: { isActive: true } },
           variants: {
@@ -2282,6 +2304,221 @@ export default async function productRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse(`Bulk update failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-inline-price-update
+  fastify.post('/admin/products/bulk-inline-price-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Save Manual Inline Price Updates',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['updates'],
+        properties: {
+          updates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'priceRetail', 'priceWholesale'],
+              properties: {
+                id: { type: 'string' },
+                priceRetail: { type: 'number' },
+                priceWholesale: { type: 'number' },
+                priceSpecial: { type: 'number', nullable: true }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { updates } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!updates || updates.length === 0) {
+        return reply.status(400).send(createErrorResponse('No updates provided'));
+      }
+
+      // Generate a batch ID for this manual batch
+      const batchId = crypto.randomUUID();
+
+      // Resolve user name
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const currencyRec = await prisma.currency.findFirst({
+        where: { code: 'PKR' }
+      }) || { id: 'PKR' };
+
+      // Fetch all targets to be updated
+      const productIds = updates.map((u: any) => u.id);
+      const targetProducts = await prisma.product.findMany({
+        where: { id: { in: productIds }, deletedAt: null },
+        include: {
+          prices: { where: { isActive: true } }
+        }
+      });
+
+      const productsMap = new Map<string, any>(targetProducts.map((p: any) => [p.id, p]));
+
+      const logsToCreate: any[] = [];
+      const dbUpdates: any[] = [];
+
+      for (const u of updates) {
+        const product = productsMap.get(u.id);
+        if (!product) continue;
+
+        const activePriceObj = product.prices?.[0];
+        
+        // Old values
+        const oldRetail = Number(product.price || 0);
+        const oldWholesale = Number(activePriceObj?.priceWholesale || oldRetail * 0.9);
+        const oldSpecial = activePriceObj?.priceSpecial !== null && activePriceObj?.priceSpecial !== undefined ? Number(activePriceObj.priceSpecial) : null;
+
+        // New values from payload
+        const newRetail = Number(u.priceRetail);
+        const newWholesale = Number(u.priceWholesale);
+        const newSpecial = u.priceSpecial !== null && u.priceSpecial !== undefined && String(u.priceSpecial).trim() !== '' ? Number(u.priceSpecial) : null;
+
+        // Perform comparison and construct logs
+        const logField = (field: 'RETAIL' | 'WHOLESALE' | 'SPECIAL', oldVal: number, newVal: number) => {
+          logsToCreate.push({
+            productId: product.id,
+            productName: product.name,
+            sku: product.sku,
+            priceType: field,
+            oldPrice: oldVal,
+            newPrice: newVal,
+            performedBy: user?.id || null,
+            userName,
+            reason: 'Manual Inline Edit',
+            batchId
+          });
+        };
+
+        let changed = false;
+        if (newRetail !== oldRetail) {
+          logField('RETAIL', oldRetail, newRetail);
+          changed = true;
+        }
+        if (newWholesale !== oldWholesale) {
+          logField('WHOLESALE', oldWholesale, newWholesale);
+          changed = true;
+        }
+        // Special comparison: handle null vs 0 vs existing
+        const oldSpecialCompare = oldSpecial !== null ? oldSpecial : 0;
+        const newSpecialCompare = newSpecial !== null ? newSpecial : 0;
+        if (newSpecialCompare !== oldSpecialCompare) {
+          logField('SPECIAL', oldSpecialCompare, newSpecialCompare);
+          changed = true;
+        }
+
+        if (changed) {
+          dbUpdates.push({
+            id: product.id,
+            priceRetail: newRetail,
+            priceWholesale: newWholesale,
+            priceSpecial: newSpecial,
+            activePriceObj
+          });
+        }
+      }
+
+      if (dbUpdates.length === 0) {
+        return createResponse(null, "No price changes detected");
+      }
+
+      await prisma.$transaction(async (tx: any) => {
+        await tx.priceUpdateLog.createMany({ data: logsToCreate });
+
+        for (const item of dbUpdates) {
+          // Update product price if Retail price changed
+          await tx.product.update({
+            where: { id: item.id },
+            data: { price: item.priceRetail }
+          });
+
+          if (item.activePriceObj) {
+            await tx.price.update({
+              where: { id: item.activePriceObj.id },
+              data: {
+                priceRetail: item.priceRetail,
+                priceWholesale: item.priceWholesale,
+                priceSpecial: item.priceSpecial
+              }
+            });
+          } else {
+            await tx.price.create({
+              data: {
+                productId: item.id,
+                currencyId: currencyRec.id,
+                priceRetail: item.priceRetail,
+                priceWholesale: item.priceWholesale,
+                priceSpecial: item.priceSpecial,
+                isActive: true
+              }
+            });
+          }
+        }
+      });
+
+      // Fetch updated details for Typesense sync
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: dbUpdates.map(u => u.id) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: batchId,
+        action: 'BULK_UPDATE_PRICE',
+        performedBy: user?.id || 'unknown',
+        details: { count: dbUpdates.length, batchId, mode: 'INLINE_EDIT' },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ batchId, count: dbUpdates.length }, "Inline pricing updates completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Inline pricing updates failed: ${err.message}`));
     }
   });
 

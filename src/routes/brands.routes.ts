@@ -2,7 +2,6 @@ import { FastifyInstance } from 'fastify';
 import { logActivity } from '../utils/audit';
 
 export default async function brandRoutes(fastify: FastifyInstance) {
-  
   // List all brands
   fastify.get('/admin/brands', {
     schema: {
@@ -11,7 +10,8 @@ export default async function brandRoutes(fastify: FastifyInstance) {
       querystring: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['Active', 'Inactive'] }
+          status: { type: 'string', enum: ['Active', 'Inactive'] },
+          hasProducts: { type: 'string', enum: ['true', 'false'] }
         }
       },
       response: {
@@ -39,12 +39,20 @@ export default async function brandRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { status } = request.query as any;
+    const { status, hasProducts } = request.query as any;
     try {
       const whereClause: any = { deletedAt: null };
       
       if (status) {
         whereClause.isActive = status === 'Active';
+      }
+
+      if (hasProducts === 'true') {
+        whereClause.products = {
+          some: {
+            deletedAt: null
+          }
+        };
       }
 
       const brands = await (fastify.prisma as any).brand.findMany({
