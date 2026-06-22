@@ -364,16 +364,12 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
 
       // Invalidate Cache
       try {
-        await fastify.cache.del('shop:home');
-        await fastify.cache.clearPattern('shop:products:*');
-        // Also clear specific product cache if it exists (using slug or ID)
         const product = await (fastify.prisma as any).product.findUnique({
           where: { id: productId },
-          select: { slug: true }
+          select: { id: true, slug: true, parentId: true }
         });
         if (product) {
-          await fastify.cache.del(`product:${product.id}`);
-          if (product.slug) await fastify.cache.del(`product:${product.slug}`);
+          await fastify.cache.invalidateProductCache(product);
         }
       } catch (cacheErr) {
         fastify.log.error(cacheErr, 'Failed to invalidate cache on stock adjust');

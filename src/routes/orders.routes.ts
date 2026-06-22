@@ -704,30 +704,30 @@ export default async function orderRoutes(fastify: FastifyInstance) {
 
           fastify.log.info(`Order ${id} status updated from ${order.status} to ${status}`);
 
-           // Invalidate Cache
-           try {
-               await (fastify as any).cache.del('shop:home');
-               await (fastify as any).cache.clearPattern('shop:products:*');
-               if (updatedOrder && updatedOrder.items) {
-                   for (const item of updatedOrder.items) {
-                       if (item.productId) {
-                           const p = await (fastify as any).prisma.product.findUnique({ where: { id: item.productId }, select: { slug: true } });
-                           if (p) {
-                                await (fastify as any).cache.del("product:" + item.productId);
-                                if (p.slug) await (fastify as any).cache.del("product:" + p.slug);
-                           }
-                       }
-                   }
-               }
-           } catch (cacheErr) {
-               fastify.log.error(cacheErr, 'Failed to invalidate cache on status update');
-           }
-           return createResponse(updatedOrder, "Order Status Updated");
-       } catch (err: any) {
-           fastify.log.error(`Error updating order ${id} status:`, err);
-           return reply.status(500).send(createErrorResponse(err.message));
-       }
-   });
+          // Invalidate Cache
+          try {
+              if (updatedOrder && updatedOrder.items) {
+                  for (const item of updatedOrder.items) {
+                      if (item.productId) {
+                          const p = await (fastify as any).prisma.product.findUnique({
+                              where: { id: item.productId },
+                              select: { id: true, slug: true, parentId: true }
+                          });
+                          if (p) {
+                              await (fastify as any).cache.invalidateProductCache(p);
+                          }
+                      }
+                  }
+              }
+          } catch (cacheErr) {
+              fastify.log.error(cacheErr, 'Failed to invalidate cache on status update');
+          }
+          return createResponse(updatedOrder, "Order Status Updated");
+      } catch (err: any) {
+          fastify.log.error(`Error updating order ${id} status:`, err);
+          return reply.status(500).send(createErrorResponse(err.message));
+      }
+  });
    
   // PATCH /admin/orders/:id/logistics
   fastify.patch('/admin/orders/:id/logistics', {

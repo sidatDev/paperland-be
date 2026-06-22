@@ -943,8 +943,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache for listings and homepage
         try {
-            await fastify.cache.invalidateShopCache('products');
-            await fastify.cache.invalidateShopCache('home');
+            await fastify.cache.invalidateProductCache(productCreated);
         } catch (cacheErr) {
             fastify.log.error(cacheErr, 'Failed to invalidate cache on create');
         }
@@ -1456,9 +1455,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache
         try {
-            await fastify.cache.invalidateShopCache('products');
-            await fastify.cache.invalidateShopCache('home');
-            if (updated.slug) await fastify.cache.clearPattern(`product:${updated.slug}:*`);
+            await fastify.cache.invalidateProductCache(updated);
             // Also invalidate the old slug if it changed
             if (existing.slug && existing.slug !== updated.slug) {
                 await fastify.cache.clearPattern(`product:${existing.slug}:*`);
@@ -1552,9 +1549,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
           // Invalidate Cache
           try {
-              await fastify.cache.invalidateShopCache('products');
-              await fastify.cache.invalidateShopCache('home');
-              if (product.slug) await fastify.cache.clearPattern(`product:${product.slug}:*`);
+              await fastify.cache.invalidateProductCache(product);
           } catch (cacheErr) {
               fastify.log.error(cacheErr, 'Failed to invalidate cache on delete');
           }
@@ -1674,10 +1669,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache for main product
         const restored = await (fastify.prisma as any).product.findUnique({ where: { id } });
-        if (restored?.slug) {
-            await fastify.cache.del(`product:${restored.slug}`);
-            await fastify.cache.del('shop:home');
-            await fastify.cache.clearPattern('shop:products:*');
+        if (restored) {
+            await fastify.cache.invalidateProductCache(restored);
         }
 
         // Re-sync to Typesense
