@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 import pLimit from 'p-limit'; // Added for batching logic
 import he from 'he';
 
-const prisma = new PrismaClient();
+let prisma = new PrismaClient();
 
 // Configure S3 matching file-upload.utils
 const s3Client = new S3Client({
@@ -22,6 +22,33 @@ const s3Client = new S3Client({
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'public-bucket';
 
 const cleanTitle = (text: string) => he.decode(text || '').trim();
+
+// Retry helper for remote database query stability
+async function retry<T>(fn: () => Promise<T>, retries = 5, delay = 2000): Promise<T> {
+  try {
+    return await fn();
+  } catch (error: any) {
+    if (retries <= 0) throw error;
+    
+    const isConnError = error.code === 'P1017' || 
+                        error.message?.includes('closed the connection') || 
+                        error.message?.includes('connection') ||
+                        error.message?.includes('socket') ||
+                        error.message?.includes('ECONNRESET');
+
+    if (isConnError) {
+      console.warn(`\n⚠️ Database connection lost. Re-initializing PrismaClient...`);
+      try {
+        await prisma.$disconnect();
+      } catch {}
+      prisma = new PrismaClient();
+    }
+
+    console.warn(`\n⚠️ DB query failed: ${error.message || error.code}. Retrying in ${delay}ms... (${retries} retries left)`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    return retry(fn, retries - 1, delay * 2);
+  }
+}
 
 const slugify = (text: string) => (text || '').toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
 
@@ -161,16 +188,16 @@ function normalizeVariantValue(val: string): string {
 
 async function main() {
     console.log('🏁 Starting Enhanced Product Import from Excel...');
-    const filePath = path.join(__dirname, '../../Docs/Extracted_Data_PaperLand-8-4-2026_Enhanced.xlsx');
+    const filePath = path.join(__dirname, '../../docs/Data script for scrapping 10-04-2026/Extracted_Data_PaperLand-8-4-2026_Enhanced_Checked (1).xlsx');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
 
-    const categories = await prisma.category.findMany();
-    const brands = await prisma.brand.findMany();
+    const categories = await retry(() => prisma.category.findMany());
+    const brands = await retry(() => prisma.brand.findMany());
     
-    let currencyRec = await prisma.currency.findUnique({ where: { code: 'PKR' } });
+    let currencyRec = await retry(() => prisma.currency.findUnique({ where: { code: 'PKR' } }));
     if (!currencyRec) {
-         currencyRec = await prisma.currency.create({ data: { code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs' } });
+         currencyRec = await retry(() => prisma.currency.create({ data: { code: 'PKR', name: 'Pakistani Rupee', symbol: 'Rs' } }));
     }
     
     const othersBrand = brands.find(b => b.slug === 'others');
@@ -190,7 +217,7 @@ async function main() {
         const idx = headerMap[colName];
         if (!idx) return '';
         const v = row.getCell(idx).value;
-        if (v && typeof v === 'object' && 'text' in v) return String(v.text).trim(); // formula/hyperlink case
+        if (v && typeof v === 'object' && 'text' in v) return String((v as any).text).trim(); // formula/hyperlink case
         return v ? String(v).trim() : '';
     };
 
@@ -210,6 +237,12 @@ async function main() {
         if (rowObj['product_page_status'] === '404/Broken') continue;
         if (!rowObj['Title'] || !rowObj['Handle']) continue;
 
+        // RULE: Only allow estationery.pk and penworld.com.pk
+        const source = (rowObj['Source'] || '').toLowerCase().trim();
+        if (source !== 'estationery.pk' && source !== 'penworld.com.pk') {
+            continue;
+        }
+
         // RULE: Remove products with no images
         if (!rowObj['all_images'] || rowObj['all_images'] === 'null' || rowObj['all_images'].trim() === '') {
             continue;
@@ -228,8 +261,10 @@ async function main() {
 
     console.log(`\n📂 Normalized into ${grouped.size} products from ${rawData.length} rows (Similarity Grouping).`);
 
-    const limit = pLimit(10);
-    const updatedIds = new Set<string>();    const tasks = Array.from(grouped.entries()).map(([simKey, rows]) => limit(async () => {
+    // Lowered concurrency from 10 to 3 for remote database network stability
+    const limit = pLimit(3);
+    const updatedIds = new Set<string>();
+    const tasks = Array.from(grouped.entries()).map(([simKey, rows]) => limit(async () => {
         const baseRow = rows[0];
         const parentName = normalizeVariantValue(simKey).replace(/pen\s+$/i, 'Pen').trim(); 
         const description = stripHtml(baseRow['description_text']);
@@ -316,7 +351,7 @@ async function main() {
         const categoryId = category ? category.id : categories[0].id;
 
         // UPSERT PARENT
-        const product = await prisma.product.upsert({
+        const product = await retry(() => prisma.product.upsert({
             where: { sku: baseSku },
             update: {
                 name: parentName,
@@ -348,16 +383,16 @@ async function main() {
                 status: 'Active',
                 variantOptions,
             }
-        });
+        }));
         updatedIds.add(product.id);
 
         // Parent Price Table Audit (for Homepage)
-        const existingParentPrice = await prisma.price.findFirst({ where: { productId: product.id } });
-        await prisma.price.upsert({
+        const existingParentPrice = await retry(() => prisma.price.findFirst({ where: { productId: product.id } }));
+        await retry(() => prisma.price.upsert({
             where: { id: existingParentPrice?.id || '00000000-0000-0000-0000-000000000000' },
             update: { priceRetail: pkrPriceBase, priceSpecial: pkrPriceBase, isActive: true },
             create: { productId: product.id, currencyId: currencyRec!.id, priceRetail: pkrPriceBase, priceSpecial: pkrPriceBase, isActive: true }
-        });
+        }));
 
         // UPSERT VARIANTS
         for (let i = 0; i < processedRows.length; i++) {
@@ -380,7 +415,7 @@ async function main() {
                 } catch {}
             }
 
-            const variant = await prisma.product.upsert({
+            const variant = await retry(() => prisma.product.upsert({
                 where: { sku: varSku },
                 update: {
                     name: cleanTitle(r['Title']),
@@ -405,21 +440,21 @@ async function main() {
                     variantAttributes,
                     parentId: product.id,
                 }
-            });
+            }));
             updatedIds.add(variant.id);
             
-            const existingPrice = await prisma.price.findFirst({ where: { productId: variant.id } });
-            await prisma.price.upsert({
+            const existingPrice = await retry(() => prisma.price.findFirst({ where: { productId: variant.id } }));
+            await retry(() => prisma.price.upsert({
                 where: { id: existingPrice?.id || '00000000-0000-0000-0000-000000000000' },
                 update: { priceRetail: pkrPrice, priceSpecial: pkrPrice, isActive: true },
                 create: { productId: variant.id, currencyId: currencyRec!.id, priceRetail: pkrPrice, priceSpecial: pkrPrice, isActive: true }
-            });
+            }));
 
-            await prisma.stock.upsert({
+            await retry(() => prisma.stock.upsert({
                 where: { productId_warehouseId: { productId: variant.id, warehouseId: 'default-main-warehouse' } },
                 update: { qty: 50 },
                 create: { productId: variant.id, warehouseId: 'default-main-warehouse', qty: 50, locationId: 'MAIN' }
-            });
+            }));
         }
         process.stdout.write('.');
     }));
@@ -428,21 +463,21 @@ async function main() {
 
     // SOFT CLEANUP: Deactivate any orphaned IMP- products that were not updated (meaning they are duplicates or unwanted)
     console.log('\n🧹 Performing soft cleanup of orphaned IMP products...');
-    const orphaned = await prisma.product.findMany({
+    const orphaned = await retry(() => prisma.product.findMany({
         where: {
             sku: { startsWith: 'IMP-' },
             id: { notIn: Array.from(updatedIds) },
             parentId: null
         },
         select: { id: true, sku: true }
-    });
+    }));
 
     if (orphaned.length > 0) {
         console.log(`🔍 Found ${orphaned.length} orphaned products. Marking as inactive.`);
-        await prisma.product.updateMany({
+        await retry(() => prisma.product.updateMany({
             where: { id: { in: orphaned.map(o => o.id) } },
             data: { isActive: false, isVisibleOnEcommerce: false, status: 'Retired' }
-        });
+        }));
     }
     
     console.log(`\n✨ Normalized Import Complete! Processes executed safely.`);

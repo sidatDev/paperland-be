@@ -13,7 +13,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * List all B2B registration requests (for admin approval)
    */
   fastify.get('/admin/b2b/requests', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_view')],
     schema: {
       description: 'List B2B registration requests for admin review',
       tags: ['Admin B2B Management'],
@@ -121,7 +121,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * Get specific B2B registration request details
    */
   fastify.get('/admin/b2b/requests/:userId', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_view')],
     schema: {
       description: 'Get B2B registration request details',
       tags: ['Admin B2B Management'],
@@ -201,7 +201,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * Approve or reject B2B application
    */
   fastify.patch('/admin/b2b/requests/:userId/status', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_manage')],
     schema: {
       description: 'Approve or reject a B2B registration',
       tags: ['Admin B2B Management'],
@@ -443,7 +443,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * List all RFQs across all B2B users
    */
   fastify.get('/admin/b2b/rfq', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_view')],
     schema: {
       description: 'List all RFQs for admin review',
       tags: ['Admin B2B Management'],
@@ -490,7 +490,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * Get specific RFQ details for admin
    */
   fastify.get('/admin/b2b/rfq/:id', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_view')],
     schema: {
       description: 'Get specific RFQ details',
       tags: ['Admin B2B Management'],
@@ -520,7 +520,7 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
    * Admin sets custom price/quote for an RFQ
    */
   fastify.patch('/admin/b2b/rfq/:id/quote', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('b2b_manage')],
     schema: {
       description: 'Update RFQ status or provide a quote',
       tags: ['Admin B2B Management'],

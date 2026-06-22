@@ -5,7 +5,7 @@ import { stringify } from 'csv-stringify';
 export default async function financeRoutes(fastify: FastifyInstance) {
   // GET /admin/finance/sales/export (CSV Export)
   fastify.get('/admin/finance/sales/export', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('finance_view')],
     schema: {
       description: 'Export Order Profitability Report as CSV',
       tags: ['Finance'],
@@ -84,7 +84,7 @@ export default async function financeRoutes(fastify: FastifyInstance) {
 
   // GET /admin/finance/sales (Finance Summary)
   fastify.get('/admin/finance/sales', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('finance_view')],
     schema: {
       description: 'Get Order Profitability Summary for Admin Finance Dashboard',
       tags: ['Finance'],
@@ -191,7 +191,7 @@ export default async function financeRoutes(fastify: FastifyInstance) {
 
   // GET /admin/finance/sales/:id (Detail Profit Breakdown)
   fastify.get('/admin/finance/sales/:id', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('finance_view')],
     schema: {
         description: 'Get Detailed Financial Summary for a specific order',
         tags: ['Finance'],
@@ -267,7 +267,7 @@ export default async function financeRoutes(fastify: FastifyInstance) {
 
   // GET /admin/finance/price-logs
   fastify.get('/admin/finance/price-logs', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('finance_view')],
     schema: {
         description: 'Get Product Price Change Logs',
         tags: ['Finance'],

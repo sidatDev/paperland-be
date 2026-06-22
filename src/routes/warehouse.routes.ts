@@ -425,6 +425,161 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
     }
   });
 
+  // POST /admin/warehouses/:id/bulk-publish - Publish all products associated with a warehouse
+  fastify.post('/admin/warehouses/:id/bulk-publish', async (request, reply) => {
+    const { id: warehouseId } = request.params as any;
+    try {
+      const stocks = await (fastify.prisma as any).stock.findMany({
+        where: { warehouseId },
+        select: { productId: true }
+      });
+      const productIds = stocks.map((s: any) => s.productId);
+
+      if (productIds.length > 0) {
+        // 1. Set visibility and active state in bulk
+        await (fastify.prisma as any).product.updateMany({
+          where: { id: { in: productIds }, deletedAt: null },
+          data: {
+            isVisibleOnEcommerce: true,
+            isActive: true
+          }
+        });
+
+        // 2. Fetch all stocks for these products to determine status
+        const allStocks = await (fastify.prisma as any).stock.findMany({
+          where: { productId: { in: productIds } },
+          select: { productId: true, qty: true, reservedQty: true }
+        });
+
+        const stockMap: Record<string, number> = {};
+        for (const s of allStocks) {
+          if (stockMap[s.productId] === undefined) {
+            stockMap[s.productId] = 0;
+          }
+          stockMap[s.productId] += (s.qty || 0) - (s.reservedQty || 0);
+        }
+
+        const activeIds: string[] = [];
+        const outOfStockIds: string[] = [];
+
+        for (const pId of productIds) {
+          const available = stockMap[pId] || 0;
+          if (available <= 0) {
+            outOfStockIds.push(pId);
+          } else {
+            activeIds.push(pId);
+          }
+        }
+
+        // 3. Bulk update status for Active products
+        if (activeIds.length > 0) {
+          await (fastify.prisma as any).product.updateMany({
+            where: { id: { in: activeIds }, deletedAt: null },
+            data: { status: 'Active' }
+          });
+
+          try {
+            await (fastify.prisma as any).$executeRawUnsafe(
+              `UPDATE "products" SET "specifications" = jsonb_set(COALESCE("specifications", '{}'::jsonb), '{status}', '"Active"') WHERE "id" = ANY($1::uuid[]) AND "deleted_at" IS NULL`,
+              activeIds
+            );
+          } catch (rawErr) {
+            fastify.log.error(rawErr, 'Failed to update specifications JSON for active products');
+          }
+        }
+
+        // 4. Bulk update status for Out of Stock products
+        if (outOfStockIds.length > 0) {
+          await (fastify.prisma as any).product.updateMany({
+            where: { id: { in: outOfStockIds }, deletedAt: null },
+            data: { status: 'Out of Stock' }
+          });
+
+          try {
+            await (fastify.prisma as any).$executeRawUnsafe(
+              `UPDATE "products" SET "specifications" = jsonb_set(COALESCE("specifications", '{}'::jsonb), '{status}', '"Out of Stock"') WHERE "id" = ANY($1::uuid[]) AND "deleted_at" IS NULL`,
+              outOfStockIds
+            );
+          } catch (rawErr) {
+            fastify.log.error(rawErr, 'Failed to update specifications JSON for out of stock products');
+          }
+        }
+
+        try {
+          await fastify.cache.clearPattern('shop:products:*');
+          await fastify.cache.del('shop:home');
+        } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on bulk publish');
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'WAREHOUSE',
+        entityId: warehouseId,
+        action: 'BULK_PUBLISH_PRODUCTS',
+        performedBy: (request as any).user?.id,
+        details: { count: productIds.length }
+      });
+
+      return { success: true, count: productIds.length };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: 'Internal Server Error' });
+    }
+  });
+
+  // POST /admin/warehouses/:id/bulk-unpublish - Unpublish all products associated with a warehouse
+  fastify.post('/admin/warehouses/:id/bulk-unpublish', async (request, reply) => {
+    const { id: warehouseId } = request.params as any;
+    try {
+      const stocks = await (fastify.prisma as any).stock.findMany({
+        where: { warehouseId },
+        select: { productId: true }
+      });
+      const productIds = stocks.map((s: any) => s.productId);
+
+      if (productIds.length > 0) {
+        await (fastify.prisma as any).product.updateMany({
+          where: { id: { in: productIds }, deletedAt: null },
+          data: {
+            isVisibleOnEcommerce: false,
+            isActive: false,
+            status: 'Draft'
+          }
+        });
+
+        try {
+          await (fastify.prisma as any).$executeRawUnsafe(
+            `UPDATE "products" SET "specifications" = jsonb_set(COALESCE("specifications", '{}'::jsonb), '{status}', '"Draft"') WHERE "id" = ANY($1::uuid[]) AND "deleted_at" IS NULL`,
+            productIds
+          );
+        } catch (rawErr) {
+          fastify.log.error(rawErr, 'Failed to update specifications JSON for draft products');
+        }
+
+        try {
+          await fastify.cache.clearPattern('shop:products:*');
+          await fastify.cache.del('shop:home');
+        } catch (cacheErr) {
+          fastify.log.error(cacheErr, 'Failed to invalidate cache on bulk unpublish');
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'WAREHOUSE',
+        entityId: warehouseId,
+        action: 'BULK_UNPUBLISH_PRODUCTS',
+        performedBy: (request as any).user?.id,
+        details: { count: productIds.length }
+      });
+
+      return { success: true, count: productIds.length };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: 'Internal Server Error' });
+    }
+  });
+
   // GET /admin/inventory/overview - Dashboard stats
   fastify.get('/admin/inventory/overview', async (request, reply) => {
     try {

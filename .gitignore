@@ -12,3 +12,5 @@ backups/pre-checkout-backup-2026-02-09T13-24-08-725Z.json
 # Support Chat Auth Storage
 .wwebjs_auth/
 .wwebjs_cache/
+/prisma/seed-enhanced-products.ts
+/src/scripts/sync-s3-prod-to-dev.ts
