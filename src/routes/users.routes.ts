@@ -6,7 +6,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
   
   // List all users
   fastify.get('/admin/users', {
-    preHandler: [fastify.authenticate, fastify.requireSuperAdmin],
+    preHandler: [fastify.authenticate, fastify.hasPermission('user_view')],
     schema: {
       description: 'List all staff users with pagination and search',
       tags: ['Users'],
@@ -190,6 +190,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       body: {
         type: 'object',
         properties: {
+          email: { type: 'string', format: 'email' },
           firstName: { type: 'string' },
           lastName: { type: 'string' },
           roleId: { type: 'string' },
@@ -201,7 +202,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { firstName, lastName, roleId, isActive, password, accountStatus } = request.body as any;
+    const { email, firstName, lastName, roleId, isActive, password, accountStatus } = request.body as any;
     try {
       const beforeUser = await fastify.prisma.user.findUnique({ where: { id } });
       const currentLockedAt = beforeUser?.lockedAt;
@@ -214,6 +215,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
       }
 
       const updateData: any = {
+        email,
         firstName,
         lastName,
         roleId,
@@ -246,6 +248,9 @@ export default async function userRoutes(fastify: FastifyInstance) {
 
       return user;
     } catch (err: any) {
+      if (err.code === 'P2002') {
+        return reply.status(400).send({ message: 'A user with this email address already exists' });
+      }
       if (err.code === 'P2003') {
         return reply.status(400).send({ message: 'Invalid Role ID provided' });
       }

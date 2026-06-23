@@ -9,7 +9,7 @@ export default async function paymentsRoutes(fastify: FastifyInstance) {
 
   // GET /admin/payments/pending - List transactions awaiting manual verification
   fastify.get('/admin/payments/pending', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('order_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('order_view')],
     schema: {
         description: 'Get pending manual payments (Bank Transfer, EasyPaisa, JazzCash)',
         tags: ['Payments'],
