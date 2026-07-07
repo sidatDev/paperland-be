@@ -140,7 +140,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     internalName: { type: 'string' },
                     displayTitle: { type: 'string' },
                     subtitle: { type: 'string' },
-                    type: { type: 'string', enum: ['GRID', 'BENTO', 'SLIDER'] },
+                    type: { type: 'string', enum: ['GRID', 'BENTO', 'SLIDER', 'SECONDARY_PROMO'] },
                     ctaLink: { type: 'string' },
                     styles: { type: 'object', additionalProperties: true }
                 }
@@ -168,6 +168,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     sortOrder: nextOrder
                 }
             });
+            await fastify.cache.invalidateShopCache('home');
             return section;
         } catch (err: any) {
             fastify.log.error(err);
@@ -191,6 +192,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                 where: { id },
                 data: request.body
             });
+            await fastify.cache.invalidateShopCache('home');
             return section;
         } catch (err: any) {
             fastify.log.error(err);
@@ -210,6 +212,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
         const { id } = request.params;
         try {
             await (fastify.prisma as any).homepageSection.delete({ where: { id } });
+            await fastify.cache.invalidateShopCache('home');
             return { success: true };
         } catch (err: any) {
             fastify.log.error(err);
@@ -259,6 +262,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     data: { sortOrder: item.sortOrder }
                 });
             }
+            await fastify.cache.invalidateShopCache('home');
             return { success: true };
         } catch (err: any) {
             fastify.log.error(err);
@@ -314,6 +318,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     sectionId
                 }
             });
+            await fastify.cache.invalidateShopCache('home');
             return item;
         } catch (err: any) {
             fastify.log.error(err);
@@ -352,6 +357,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                 where: { id: itemId },
                 data: updateData
             });
+            await fastify.cache.invalidateShopCache('home');
             return item;
         } catch (err: any) {
             fastify.log.error(err);
@@ -371,6 +377,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
         const { itemId } = request.params;
         try {
             await (fastify.prisma as any).homepageSectionItem.delete({ where: { id: itemId } });
+            await fastify.cache.invalidateShopCache('home');
             return { success: true };
         } catch (err: any) {
             fastify.log.error(err);
@@ -411,6 +418,7 @@ export default async function homepageRoutes(fastify: FastifyInstance) {
                     data: { sortOrder: item.sortOrder }
                 });
             }
+            await fastify.cache.invalidateShopCache('home');
             return { success: true };
         } catch (err: any) {
             fastify.log.error(err);

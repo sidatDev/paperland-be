@@ -391,6 +391,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                     originalPrice: isSale ? basePrice : undefined,
                                     isSale,
                                     currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
+                                    customSubtitle: i.customSubtitle || '',
+                                    customDescription: i.customDescription || '',
                                     ... (i.product ? calculateAvailability(i.product) : {}),
                                     ... (i.product ? calculateVariantPriceRange(i.product) : {}),
                                     rating: i.product?.reviews?.length > 0 
@@ -436,7 +438,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             }
                             return {
                                 id: i.id, name: i.customTitle || 'Unnamed', image: i.customImage || '',
-                                price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
+                                price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge,
+                                customSubtitle: i.customSubtitle || '',
+                                customDescription: i.customDescription || ''
                             };
                         })
                     };
