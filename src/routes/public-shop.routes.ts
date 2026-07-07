@@ -25,6 +25,27 @@ async function getAllCategoryIdsRecursive(prisma: any, categoryIds: string[]): P
     return Array.from(new Set(allIds));
 }
 
+async function getAllParentCategoryIdsRecursive(prisma: any, categoryIds: string[]): Promise<string[]> {
+    if (!categoryIds || categoryIds.length === 0) return [];
+    
+    let allIds = [...categoryIds];
+    let currentLevelIds = [...categoryIds];
+    
+    while (currentLevelIds.length > 0) {
+        const parents = await prisma.category.findMany({
+            where: { id: { in: currentLevelIds }, parentId: { not: null } },
+            select: { parentId: true }
+        });
+        
+        currentLevelIds = parents.map((c: any) => c.parentId).filter(Boolean);
+        if (currentLevelIds.length > 0) {
+            allIds = [...allIds, ...currentLevelIds];
+        }
+    }
+    
+    return Array.from(new Set(allIds));
+}
+
 export default async function publicShopRoutes(fastify: FastifyInstance) {
     
     // 0. GET /api/redis-health
@@ -837,6 +858,20 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         break;
                 }
 
+                const clonePrismaWhere = (original: any) => {
+                    return JSON.parse(JSON.stringify(original));
+                };
+
+                const whereForBrandFacet = {
+                    ...clonePrismaWhere(where),
+                    AND: where.AND ? where.AND.filter((item: any) => !item.brand) : []
+                };
+
+                const whereForCategoryFacet = {
+                    ...clonePrismaWhere(where),
+                    AND: where.AND ? where.AND.filter((item: any) => !item.categoryId) : []
+                };
+
                 const [products, total, totalCategories, totalBrands, totalIndustries] = await Promise.all([
                     (fastify.prisma as any).product.findMany({
                         where,
@@ -906,24 +941,33 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         });
                     }),
                     (fastify.prisma as any).product.count({ where }),
-                    (fastify.prisma as any).category.findMany({ 
-                        where: { 
-                            isActive: true, 
-                            deletedAt: null 
-                        }, 
-                        select: { 
-                            id: true, 
-                            name: true, 
-                            slug: true, 
-                            imageUrl: true, 
-                            parentId: true,
-                            _count: {
-                                select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
-                            }
-                        },
-                        orderBy: { name: 'asc' }
+                    (fastify.prisma as any).product.findMany({
+                        where: whereForCategoryFacet,
+                        select: { categoryId: true },
+                        distinct: ['categoryId']
+                    }).then(async (catIdsInResults: any[]) => {
+                        const directCatIds = catIdsInResults.map((p: any) => p.categoryId).filter(Boolean);
+                        const relevantCatIds = await getAllParentCategoryIdsRecursive(fastify.prisma, directCatIds);
+                        return (fastify.prisma as any).category.findMany({
+                            where: { id: { in: relevantCatIds }, isActive: true, deletedAt: null },
+                            select: { id: true, name: true, slug: true, imageUrl: true, parentId: true,
+                                _count: { select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } } }
+                            },
+                            orderBy: { name: 'asc' }
+                        });
                     }),
-                    (fastify.prisma as any).brand.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } }),
+                    (fastify.prisma as any).product.findMany({
+                        where: whereForBrandFacet,
+                        select: { brandId: true },
+                        distinct: ['brandId']
+                    }).then(async (brandIdsInResults: any[]) => {
+                        const relevantBrandIds = brandIdsInResults.map((p: any) => p.brandId).filter(Boolean);
+                        return (fastify.prisma as any).brand.findMany({
+                            where: { id: { in: relevantBrandIds }, isActive: true, deletedAt: null },
+                            select: { id: true, name: true, slug: true, logoUrl: true },
+                            orderBy: { name: 'asc' }
+                        });
+                    }),
                     (fastify.prisma as any).industry.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } })
                 ]);
 
@@ -950,7 +994,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 });
                             };
 
-                            return pruneEmpty(rootCategories);
+                            const annotateWithAncestors = (nodes: any[], ancestors: {id: string; name: string; slug: string}[] = []) => {
+                                nodes.forEach(node => {
+                                    node.ancestors = ancestors;
+                                    annotateWithAncestors(node.subCategories || [], [
+                                        ...ancestors,
+                                        { id: node.id, name: node.name, slug: node.slug }
+                                    ]);
+                                });
+                            };
+
+                            const prunedCategories = pruneEmpty(rootCategories);
+                            annotateWithAncestors(prunedCategories);
+                            return prunedCategories;
                         })(totalCategories),
                         brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
                         industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
