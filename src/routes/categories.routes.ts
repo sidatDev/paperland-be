@@ -41,6 +41,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
               showOnHomepage: { type: 'boolean' },
               homepageOrder: { type: 'integer' },
               homepageImage: { type: 'string', nullable: true },
+              productsCount: { type: 'integer' },
               subCategories: {
                 type: 'array',
                 items: {
@@ -95,11 +96,21 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           subCategories: { 
              where: { deletedAt: null },
              select: { id: true, name: true, slug: true, isActive: true, parentId: true } 
+          },
+          _count: {
+            select: {
+              products: {
+                where: { deletedAt: null }
+              }
+            }
           }
         },
         orderBy: { position: 'asc' }
       });
-      return categories;
+      return categories.map((cat: any) => ({
+        ...cat,
+        productsCount: cat._count?.products || 0
+      }));
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Internal Server Error' });
