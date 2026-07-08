@@ -2006,7 +2006,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
           brandIds: { type: 'array', items: { type: 'string' } },
           categoryIds: { type: 'array', items: { type: 'string' } },
           actionType: { type: 'string', enum: ['SET_SAME', 'INC_FIXED', 'DEC_FIXED', 'INC_PERCENT', 'DEC_PERCENT', 'COPY_PRODUCT'] },
-          field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL'] },
+          field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL', 'COST'] },
           value: { type: 'number' },
           copyFromProductId: { type: 'string' }
         }
@@ -2146,6 +2146,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
           oldPrice = Number(activePriceObj?.priceWholesale || Number(item.price || 0) * 0.9);
         } else if (field === 'SPECIAL') {
           oldPrice = Number(activePriceObj?.priceSpecial || 0);
+        } else if (field === 'COST') {
+          oldPrice = Number(item.costPrice || 0);
         }
 
         let newPrice = oldPrice;
@@ -2176,6 +2178,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
             newPrice = Number(srcPriceObj?.priceWholesale || Number(sourceItem.price || 0) * 0.9);
           } else if (field === 'SPECIAL') {
             newPrice = Number(srcPriceObj?.priceSpecial || 0);
+          } else if (field === 'COST') {
+            newPrice = Number(sourceItem.costPrice || 0);
           }
         }
 
@@ -2215,33 +2219,37 @@ export default async function productRoutes(fastify: FastifyInstance) {
           const updateData: any = {};
           if (up.field === 'RETAIL') {
             updateData.price = up.newPrice;
+          } else if (up.field === 'COST') {
+            updateData.costPrice = up.newPrice;
           }
 
-          if (up.activePriceObj) {
-            const priceFields: any = {};
-            if (up.field === 'RETAIL') priceFields.priceRetail = up.newPrice;
-            if (up.field === 'WHOLESALE') priceFields.priceWholesale = up.newPrice;
-            if (up.field === 'SPECIAL') priceFields.priceSpecial = up.newPrice;
+          if (up.field !== 'COST') {
+            if (up.activePriceObj) {
+              const priceFields: any = {};
+              if (up.field === 'RETAIL') priceFields.priceRetail = up.newPrice;
+              if (up.field === 'WHOLESALE') priceFields.priceWholesale = up.newPrice;
+              if (up.field === 'SPECIAL') priceFields.priceSpecial = up.newPrice;
 
-            await tx.price.update({
-              where: { id: up.activePriceObj.id },
-              data: priceFields
-            });
-          } else {
-            const priceRetail = up.field === 'RETAIL' ? up.newPrice : 0;
-            const priceWholesale = up.field === 'WHOLESALE' ? up.newPrice : (priceRetail * 0.9);
-            const priceSpecial = up.field === 'SPECIAL' ? up.newPrice : null;
+              await tx.price.update({
+                where: { id: up.activePriceObj.id },
+                data: priceFields
+              });
+            } else {
+              const priceRetail = up.field === 'RETAIL' ? up.newPrice : 0;
+              const priceWholesale = up.field === 'WHOLESALE' ? up.newPrice : (priceRetail * 0.9);
+              const priceSpecial = up.field === 'SPECIAL' ? up.newPrice : null;
 
-            await tx.price.create({
-              data: {
-                productId: up.itemId,
-                currencyId: currencyRec.id,
-                priceRetail,
-                priceWholesale,
-                priceSpecial,
-                isActive: true
-              }
-            });
+              await tx.price.create({
+                data: {
+                  productId: up.itemId,
+                  currencyId: currencyRec.id,
+                  priceRetail,
+                  priceWholesale,
+                  priceSpecial,
+                  isActive: true
+                }
+              });
+            }
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -2319,7 +2327,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 id: { type: 'string' },
                 priceRetail: { type: 'number' },
                 priceWholesale: { type: 'number' },
-                priceSpecial: { type: 'number', nullable: true }
+                priceSpecial: { type: 'number', nullable: true },
+                costPrice: { type: 'number', nullable: true }
               }
             }
           }
@@ -2379,14 +2388,16 @@ export default async function productRoutes(fastify: FastifyInstance) {
         const oldRetail = Number(product.price || 0);
         const oldWholesale = Number(activePriceObj?.priceWholesale || oldRetail * 0.9);
         const oldSpecial = activePriceObj?.priceSpecial !== null && activePriceObj?.priceSpecial !== undefined ? Number(activePriceObj.priceSpecial) : null;
+        const oldCost = Number(product.costPrice || 0);
 
         // New values from payload
         const newRetail = Number(u.priceRetail);
         const newWholesale = Number(u.priceWholesale);
         const newSpecial = u.priceSpecial !== null && u.priceSpecial !== undefined && String(u.priceSpecial).trim() !== '' ? Number(u.priceSpecial) : null;
+        const newCost = u.costPrice !== undefined && u.costPrice !== null && String(u.costPrice).trim() !== '' ? Number(u.costPrice) : 0;
 
         // Perform comparison and construct logs
-        const logField = (field: 'RETAIL' | 'WHOLESALE' | 'SPECIAL', oldVal: number, newVal: number) => {
+        const logField = (field: 'RETAIL' | 'WHOLESALE' | 'SPECIAL' | 'COST', oldVal: number, newVal: number) => {
           logsToCreate.push({
             productId: product.id,
             productName: product.name,
@@ -2417,6 +2428,10 @@ export default async function productRoutes(fastify: FastifyInstance) {
           logField('SPECIAL', oldSpecialCompare, newSpecialCompare);
           changed = true;
         }
+        if (newCost !== oldCost) {
+          logField('COST', oldCost, newCost);
+          changed = true;
+        }
 
         if (changed) {
           dbUpdates.push({
@@ -2424,6 +2439,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             priceRetail: newRetail,
             priceWholesale: newWholesale,
             priceSpecial: newSpecial,
+            costPrice: newCost,
             activePriceObj
           });
         }
@@ -2437,10 +2453,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
         await tx.priceUpdateLog.createMany({ data: logsToCreate });
 
         for (const item of dbUpdates) {
-          // Update product price if Retail price changed
+          // Update product price if Retail price changed, and always update costPrice
           await tx.product.update({
             where: { id: item.id },
-            data: { price: item.priceRetail }
+            data: { 
+              price: item.priceRetail,
+              costPrice: item.costPrice
+            }
           });
 
           if (item.activePriceObj) {
