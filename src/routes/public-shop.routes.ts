@@ -323,7 +323,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     const hasPremium = s.some((sec: any) => sec.type === 'special_offers');
                     const hasBestSellers = s.some((sec: any) => sec.type === 'bestsellers');
 
-                    if (!hasCategories || !hasFeatured || !hasPremium || !hasBestSellers) {
+                    if (false) { // Disabled homepage fallbacks to hide mock data when db is empty
                         const [popularProducts, featuredProducts, premiumProducts] = await Promise.all([
                             (fastify.prisma as any).product.findMany({
                                 where: { isActive: true, isVisibleOnEcommerce: true, deletedAt: null, parentId: null },
