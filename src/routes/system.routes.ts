@@ -707,6 +707,22 @@ export default async function systemRoutes(fastify: FastifyInstance) {
     });
 
     try {
+        // Check if there is a physical collection with this name (not an alias)
+        let isPhysical = false;
+        try {
+            await fastify.typesense.collections(collectionName).retrieve();
+            try {
+                await fastify.typesense.aliases(collectionName).retrieve();
+            } catch (e) {
+                isPhysical = true;
+            }
+        } catch (e) {}
+
+        if (isPhysical) {
+            fastify.log.warn(`Deleting physical collection ${collectionName} to clear name for alias swap`);
+            await fastify.typesense.collections(collectionName).delete();
+        }
+
         if (collectionName === 'products') {
             // 1. Create temporary schema
             const schema: any = {
