@@ -2288,6 +2288,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
         } catch (tsErr) {
           fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
         }
+        try {
+          await fastify.cache.invalidateProductCache(p);
+        } catch (cacheErr) {
+          fastify.log.error(cacheErr, `Failed to invalidate product cache for ${p.id}`);
+        }
       }
 
       await logActivity(fastify, {
@@ -2514,6 +2519,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
         } catch (tsErr) {
           fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
         }
+        try {
+          await fastify.cache.invalidateProductCache(p);
+        } catch (cacheErr) {
+          fastify.log.error(cacheErr, `Failed to invalidate product cache for ${p.id}`);
+        }
       }
 
       await logActivity(fastify, {
@@ -2670,6 +2680,11 @@ export default async function productRoutes(fastify: FastifyInstance) {
           }
         } catch (tsErr) {
           fastify.log.error(tsErr, `Failed to queue typesense revert sync for ${p.id}`);
+        }
+        try {
+          await fastify.cache.invalidateProductCache(p);
+        } catch (cacheErr) {
+          fastify.log.error(cacheErr, `Failed to invalidate product cache for ${p.id}`);
         }
       }
 
