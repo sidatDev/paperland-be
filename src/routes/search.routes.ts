@@ -118,6 +118,7 @@ export default async function searchRoutes(fastify: FastifyInstance) {
           brand: hit.document.brand,
           category: hit.document.category,
           price: hit.document.price,
+          originalPrice: hit.document.original_price && hit.document.original_price > 0 ? hit.document.original_price : undefined,
           currency: hit.document.currency,
           image_url: hit.document.image_url,
           description: hit.document.description,

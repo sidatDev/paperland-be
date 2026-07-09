@@ -56,6 +56,7 @@ async function syncProducts() {
         { name: 'category', type: 'string', facet: true },
         { name: 'sub_category', type: 'string', facet: true, optional: true },
         { name: 'price', type: 'float', facet: true },
+        { name: 'original_price', type: 'float', optional: true },
         { name: 'currency', type: 'string', facet: true },
         { name: 'image_url', type: 'string', facet: false, optional: true },
         { name: 'industry', type: 'string[]', facet: true },
@@ -163,7 +164,22 @@ async function syncProducts() {
       brand: p.brand?.name || 'Unknown',
       category: p.category?.parent ? p.category.parent.name : (p.category?.name || 'Uncategorized'),
       sub_category: p.category?.parent ? p.category.name : '',
-      price: Number(p.prices[0]?.priceRetail || 0),
+      price: (() => {
+        const retailPrice = Number(p.prices[0]?.priceRetail || 0);
+        const specialPrice = Number(p.prices[0]?.priceSpecial || 0);
+        if (specialPrice > 0 && specialPrice < retailPrice) {
+          return specialPrice;
+        }
+        return retailPrice;
+      })(),
+      original_price: (() => {
+        const retailPrice = Number(p.prices[0]?.priceRetail || 0);
+        const specialPrice = Number(p.prices[0]?.priceSpecial || 0);
+        if (specialPrice > 0 && specialPrice < retailPrice) {
+          return retailPrice;
+        }
+        return 0;
+      })(),
       currency: p.prices[0]?.currency?.code || 'PKR',
       image_url: p.imageUrl || '',
       industry: p.industries.map((i) => i.industry.name),

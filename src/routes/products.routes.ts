@@ -54,7 +54,20 @@ export default async function productRoutes(fastify: FastifyInstance) {
   };
 
   // Helper to map Prisma Product to Typesense Document
-  const mapToTypesenseDocument = (p: any) => ({
+  const mapToTypesenseDocument = (p: any) => {
+    const pkr = p.prices?.find((pr: any) => pr.isActive && pr.currency?.code === 'PKR') || p.prices?.[0];
+    const retailPrice = pkr ? Number(pkr.priceRetail) : Number(p.price || 0);
+    const specialPrice = pkr ? Number(pkr.priceSpecial || 0) : 0;
+
+    let finalPrice = retailPrice;
+    let originalPrice = 0;
+
+    if (specialPrice > 0 && specialPrice < retailPrice) {
+      finalPrice = specialPrice;
+      originalPrice = retailPrice;
+    }
+
+    return {
       id: p.id,
       name: p.name,
       slug: p.slug || '',
@@ -65,7 +78,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
       description: p.description || '',
       brand: p.brand?.name || 'Unknown',
       category: p.category?.name || 'Uncategorized',
-      price: Number(p.prices?.[0]?.priceRetail || p.price || 0),
+      price: finalPrice,
+      original_price: originalPrice,
       currency: p.prices?.[0]?.currency?.code || 'PKR',
       image_url: p.imageUrl || '',
       industry: p.industries?.map((i: any) => i.industry.name) || [],
@@ -73,7 +87,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
       is_featured: p.isFeatured || false,
       isActive: p.isActive,
       status: p.status || (p.isActive ? 'Active' : 'Draft'),
-  });
+    };
+  };
 
   // Helper to transform Prisma Product to API JSON
   const transformProduct = (p: any) => {
