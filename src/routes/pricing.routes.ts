@@ -4,7 +4,7 @@ export default async function pricingRoutes(fastify: FastifyInstance) {
 
   // GET all discount tiers
   fastify.get('/admin/pricing/tiers', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('pricing_view')],
     schema: {
       tags: ['Admin Pricing'],
       security: [{ bearerAuth: [] }]
@@ -23,7 +23,7 @@ export default async function pricingRoutes(fastify: FastifyInstance) {
 
   // POST create a new discount tier
   fastify.post('/admin/pricing/tiers', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('pricing_manage')],
     schema: {
       tags: ['Admin Pricing'],
       security: [{ bearerAuth: [] }],
@@ -68,7 +68,7 @@ export default async function pricingRoutes(fastify: FastifyInstance) {
 
   // PUT update a discount tier
   fastify.put('/admin/pricing/tiers/:id', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('pricing_manage')],
     schema: {
       tags: ['Admin Pricing'],
       security: [{ bearerAuth: [] }],
@@ -123,7 +123,7 @@ export default async function pricingRoutes(fastify: FastifyInstance) {
 
   // DELETE a discount tier
   fastify.delete('/admin/pricing/tiers/:id', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('pricing_manage')],
     schema: {
       tags: ['Admin Pricing'],
       security: [{ bearerAuth: [] }],

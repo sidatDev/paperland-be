@@ -12,7 +12,8 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           status: { type: 'string', enum: ['Active', 'Inactive'] }, // allow filtering by status
-          deleted: { type: 'boolean' } // optional: show deleted
+          deleted: { type: 'boolean' }, // optional: show deleted
+          hasProducts: { type: 'string', enum: ['true', 'false'] }
         }
       },
       response: {
@@ -40,6 +41,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
               showOnHomepage: { type: 'boolean' },
               homepageOrder: { type: 'integer' },
               homepageImage: { type: 'string', nullable: true },
+              productsCount: { type: 'integer' },
               subCategories: {
                 type: 'array',
                 items: {
@@ -65,7 +67,7 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { status, deleted } = request.query as any;
+    const { status, deleted, hasProducts } = request.query as any;
     try {
       const whereClause: any = {};
       
@@ -79,6 +81,14 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
         whereClause.deletedAt = null;
       }
 
+      if (hasProducts === 'true') {
+        whereClause.products = {
+          some: {
+            deletedAt: null
+          }
+        };
+      }
+
       const categories = await (fastify.prisma as any).category.findMany({
         where: whereClause,
         include: {
@@ -86,11 +96,21 @@ export default async function categoryRoutes(fastify: FastifyInstance) {
           subCategories: { 
              where: { deletedAt: null },
              select: { id: true, name: true, slug: true, isActive: true, parentId: true } 
+          },
+          _count: {
+            select: {
+              products: {
+                where: { deletedAt: null }
+              }
+            }
           }
         },
         orderBy: { position: 'asc' }
       });
-      return categories;
+      return categories.map((cat: any) => ({
+        ...cat,
+        productsCount: cat._count?.products || 0
+      }));
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Internal Server Error' });

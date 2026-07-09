@@ -5,7 +5,7 @@ import * as z from 'zod';
 export default async function logisticsRoutes(fastify: FastifyInstance) {
   // ----- COURIERS -----
   fastify.get('/admin/logistics/couriers', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_manage')]
+    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_view')]
   }, async (request, reply) => {
     const couriers = await (fastify.prisma as any).courierProvider.findMany({
       orderBy: { createdAt: 'desc' }
@@ -130,7 +130,7 @@ export default async function logisticsRoutes(fastify: FastifyInstance) {
 
   // ----- RIDERS -----
   fastify.get('/admin/logistics/riders', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_manage')]
+    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_view')]
   }, async (request, reply) => {
     const riders = await (fastify.prisma as any).rider.findMany({
       orderBy: { createdAt: 'desc' }
@@ -242,7 +242,7 @@ export default async function logisticsRoutes(fastify: FastifyInstance) {
 
   // ----- SHIPPING RULES -----
   fastify.get('/admin/logistics/shipping-rules', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_manage')]
+    preHandler: [fastify.authenticate, fastify.hasPermission('logistics_view')]
   }, async (request, reply) => {
     const rules = await (fastify.prisma as any).shippingRule.findMany({
       orderBy: { priority: 'desc' },

@@ -84,6 +84,35 @@ export class CacheService {
     if (type === 'home' || type === 'all') await this.clearPattern('shop:home:*');
     this.fastify.log.info(`[Cache] Invalidated shop cache: ${type}`);
   }
+
+  /**
+   * Invalidate cache for a specific product and its parent if it is a variant
+   */
+  async invalidateProductCache(product: { id: string; slug?: string | null; parentId?: string | null }): Promise<void> {
+    try {
+      if (product.slug) {
+        await this.clearPattern(`product:${product.slug}:*`);
+      }
+      await this.clearPattern(`product:${product.id}:*`);
+
+      // If it has parent, find parent and clear parent's cache as well
+      if (product.parentId) {
+        const parent = await (this.fastify.prisma as any).product.findUnique({
+          where: { id: product.parentId },
+          select: { slug: true }
+        });
+        if (parent?.slug) {
+          await this.clearPattern(`product:${parent.slug}:*`);
+        }
+        await this.clearPattern(`product:${product.parentId}:*`);
+      }
+
+      // Invalidate general shop/search listings, categories and home cache
+      await this.invalidateShopCache('all');
+    } catch (err) {
+      this.fastify.log.error(err, `Failed to invalidate product cache for ID: ${product.id}`);
+    }
+  }
 }
 
 // Fastify plugin to decorate instance with cache service

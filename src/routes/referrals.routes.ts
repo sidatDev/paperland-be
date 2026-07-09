@@ -14,7 +14,30 @@ export default async function referralRoutes(fastify: FastifyInstance) {
       const referrals = await (fastify.prisma as any).customerReferral.findMany({
         orderBy: { createdAt: 'desc' }
       });
-      return reply.send(referrals);
+
+      const referrerIds = [...new Set(referrals.map((r: any) => r.referrerId))].filter(Boolean) as string[];
+      const referrers = await (fastify.prisma as any).user.findMany({
+        where: { id: { in: referrerIds } },
+        select: { id: true, firstName: true, lastName: true, email: true }
+      });
+
+      const referrerMap = new Map(referrers.map((u: any) => [
+        u.id,
+        `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email
+      ]));
+
+      const enrichedReferrals = referrals.map((r: any) => {
+        const parts = r.referralCode.split('-');
+        const referredEmail = parts.length >= 3 ? parts.slice(2).join('-') : '';
+        const referrerName = referrerMap.get(r.referrerId) || 'Unknown User';
+        return {
+          ...r,
+          referredEmail,
+          referrerName
+        };
+      });
+
+      return reply.send(enrichedReferrals);
     } catch (err: any) {
       fastify.log.error(err);
       return reply.status(500).send({ message: 'Failed to fetch referrals' });

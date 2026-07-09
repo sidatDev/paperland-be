@@ -4,6 +4,7 @@ import * as bcrypt from 'bcryptjs';
 import { logActivity } from '../utils/audit';
 import { mergeGuestCart } from '../services/cart.service';
 import { emailService } from '../services/email.service';
+import { PromotionService } from '../services/promotion.service';
 import { 
   generateOTP, 
   getOTPExpiry, 
@@ -136,7 +137,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
           city: { type: 'string' },
           state: { type: 'string' },
           zipCode: { type: 'string' },
-          country: { type: 'string', enum: ['Pakistan'] }
+          country: { type: 'string', enum: ['Pakistan'] },
+          referralCode: { type: 'string' }
         }
       },
       response: {
@@ -149,12 +151,19 @@ export default async function authRoutes(fastify: FastifyInstance) {
       }
     }
   }, async (request, reply) => {
-    const { registrationId, password, firstName, lastName, phoneNumber, phoneCountryCode, city, state, zipCode, country } = request.body as any;
+    const { registrationId, password, firstName, lastName, phoneNumber, phoneCountryCode, city, state, zipCode, country, referralCode } = request.body as any;
 
     try {
       const pendingReg = await (fastify.prisma as any).pendingRegistration.findUnique({ where: { id: registrationId } });
       if (!pendingReg) return (reply as any).status(404).send({ message: 'Registration session not found' });
       if (!pendingReg.emailVerified) return (reply as any).status(400).send({ message: 'Email must be verified first' });
+
+      if (referralCode) {
+        const referrer = await PromotionService.validateReferralCode(fastify.prisma, referralCode);
+        if (!referrer) {
+          return (reply as any).status(400).send({ message: 'Invalid referral code' });
+        }
+      }
 
       const passwordHash = await bcrypt.hash(password, 10);
 
@@ -170,7 +179,8 @@ export default async function authRoutes(fastify: FastifyInstance) {
           city,
           state,
           country,
-          zipCode
+          zipCode,
+          referralCode
         }
       });
 
@@ -456,6 +466,14 @@ fastify.post('/auth/verify-otp', {
             }
           }
 
+          // Record referral if present
+          if ((pendingReg as any).referralCode) {
+            const referrer = await PromotionService.validateReferralCode(tx, (pendingReg as any).referralCode);
+            if (referrer) {
+              await PromotionService.recordReferral(tx, referrer.id, pendingReg.email);
+            }
+          }
+
           // Delete pending registration
           await (tx as any).pendingRegistration.delete({ where: { id: registrationId } });
 
@@ -538,6 +556,14 @@ fastify.post('/auth/verify-otp', {
             create: userData,
             include: { role: true }
           });
+
+          // Record referral if present
+          if ((pendingReg as any).referralCode) {
+            const referrer = await PromotionService.validateReferralCode(tx, (pendingReg as any).referralCode);
+            if (referrer) {
+              await PromotionService.recordReferral(tx, referrer.id, pendingReg.email);
+            }
+          }
 
           // Delete pending registration
           await (tx as any).pendingRegistration.delete({ where: { id: registrationId } });

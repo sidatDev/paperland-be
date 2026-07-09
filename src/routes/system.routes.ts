@@ -502,7 +502,7 @@ export default async function systemRoutes(fastify: FastifyInstance) {
   
   // Payment Gateway Routes
   fastify.get('/admin/system/payment-gateways', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('system_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('gateway_view')],
   }, async (request: any, reply: any) => {
     try {
       const gateways = await (fastify.prisma as any).paymentGateway.findMany({
@@ -538,7 +538,7 @@ export default async function systemRoutes(fastify: FastifyInstance) {
   });
 
   fastify.put('/admin/system/payment-gateways/:id', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('system_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('gateway_manage')],
   }, async (request: any, reply: any) => {
     try {
       const { id } = request.params as any;

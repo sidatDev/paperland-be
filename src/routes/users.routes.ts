@@ -6,7 +6,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
   
   // List all users
   fastify.get('/admin/users', {
-    preHandler: [fastify.authenticate, fastify.requireSuperAdmin],
+    preHandler: [fastify.authenticate, fastify.hasPermission('user_view')],
     schema: {
       description: 'List all staff users with pagination and search',
       tags: ['Users'],
@@ -33,6 +33,7 @@ export default async function userRoutes(fastify: FastifyInstance) {
                   firstName: { type: 'string', nullable: true },
                   lastName: { type: 'string', nullable: true },
                   isActive: { type: 'boolean' },
+                  accountStatus: { type: 'string' },
                   role: {
                     type: 'object',
                     properties: {
@@ -189,16 +190,19 @@ export default async function userRoutes(fastify: FastifyInstance) {
       body: {
         type: 'object',
         properties: {
+          email: { type: 'string', format: 'email' },
           firstName: { type: 'string' },
           lastName: { type: 'string' },
           roleId: { type: 'string' },
-          isActive: { type: 'boolean' }
+          isActive: { type: 'boolean' },
+          password: { type: 'string' },
+          accountStatus: { type: 'string' }
         }
       }
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { firstName, lastName, roleId, isActive } = request.body as any;
+    const { email, firstName, lastName, roleId, isActive, password, accountStatus } = request.body as any;
     try {
       const beforeUser = await fastify.prisma.user.findUnique({ where: { id } });
       const currentLockedAt = beforeUser?.lockedAt;
@@ -210,15 +214,25 @@ export default async function userRoutes(fastify: FastifyInstance) {
         newLockedAt = null;
       }
 
+      const updateData: any = {
+        email,
+        firstName,
+        lastName,
+        roleId,
+        isActive,
+        lockedAt: newLockedAt
+      };
+
+      if (password) {
+        updateData.passwordHash = await bcrypt.hash(password, 10);
+      }
+      if (accountStatus) {
+        updateData.accountStatus = accountStatus;
+      }
+
       const user = await fastify.prisma.user.update({
         where: { id },
-        data: { 
-          firstName, 
-          lastName, 
-          roleId, 
-          isActive,
-          lockedAt: newLockedAt
-        }
+        data: updateData
       });
 
       // Log Activity
@@ -234,6 +248,9 @@ export default async function userRoutes(fastify: FastifyInstance) {
 
       return user;
     } catch (err: any) {
+      if (err.code === 'P2002') {
+        return reply.status(400).send({ message: 'A user with this email address already exists' });
+      }
       if (err.code === 'P2003') {
         return reply.status(400).send({ message: 'Invalid Role ID provided' });
       }

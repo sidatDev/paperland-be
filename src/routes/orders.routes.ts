@@ -7,6 +7,7 @@ import { emailService } from '../services/email.service';
 import { generateOrderNumber } from '../utils/order-utils';
 import { fireN8nEvent } from '../utils/n8n-webhook';
 import { z } from 'zod';
+import { PromotionService } from '../services/promotion.service';
 
 // Order Validation Schema
 const OrderItemSchema = z.object({
@@ -242,7 +243,7 @@ export default async function orderRoutes(fastify: FastifyInstance) {
             properties: {
                 page: { type: 'integer', default: 1 },
                 limit: { type: 'integer', default: 10 },
-                status: { type: 'string', enum: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'all'] },
+                status: { type: 'string', enum: ['PENDING', 'PROCESSING', 'SHIPPED', 'DELIVERED', 'CANCELLED', 'CANCELLATION_REQUESTED', 'RETURN_REQUESTED', 'REFUNDED', 'all'] },
                 search: { type: 'string', description: 'Search by Order Number, ERP ID or Customer Email' },
                 startDate: { type: 'string', format: 'date' },
                 endDate: { type: 'string', format: 'date' },
@@ -703,30 +704,30 @@ export default async function orderRoutes(fastify: FastifyInstance) {
 
           fastify.log.info(`Order ${id} status updated from ${order.status} to ${status}`);
 
-           // Invalidate Cache
-           try {
-               await (fastify as any).cache.del('shop:home');
-               await (fastify as any).cache.clearPattern('shop:products:*');
-               if (updatedOrder && updatedOrder.items) {
-                   for (const item of updatedOrder.items) {
-                       if (item.productId) {
-                           const p = await (fastify as any).prisma.product.findUnique({ where: { id: item.productId }, select: { slug: true } });
-                           if (p) {
-                                await (fastify as any).cache.del("product:" + item.productId);
-                                if (p.slug) await (fastify as any).cache.del("product:" + p.slug);
-                           }
-                       }
-                   }
-               }
-           } catch (cacheErr) {
-               fastify.log.error(cacheErr, 'Failed to invalidate cache on status update');
-           }
-           return createResponse(updatedOrder, "Order Status Updated");
-       } catch (err: any) {
-           fastify.log.error(`Error updating order ${id} status:`, err);
-           return reply.status(500).send(createErrorResponse(err.message));
-       }
-   });
+          // Invalidate Cache
+          try {
+              if (updatedOrder && updatedOrder.items) {
+                  for (const item of updatedOrder.items) {
+                      if (item.productId) {
+                          const p = await (fastify as any).prisma.product.findUnique({
+                              where: { id: item.productId },
+                              select: { id: true, slug: true, parentId: true }
+                          });
+                          if (p) {
+                              await (fastify as any).cache.invalidateProductCache(p);
+                          }
+                      }
+                  }
+              }
+          } catch (cacheErr) {
+              fastify.log.error(cacheErr, 'Failed to invalidate cache on status update');
+          }
+          return createResponse(updatedOrder, "Order Status Updated");
+      } catch (err: any) {
+          fastify.log.error(`Error updating order ${id} status:`, err);
+          return reply.status(500).send(createErrorResponse(err.message));
+      }
+  });
    
   // PATCH /admin/orders/:id/logistics
   fastify.patch('/admin/orders/:id/logistics', {
@@ -1266,10 +1267,16 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                   }
               }
 
-              return await tx.order.update({
-                  where: { id: order.id },
-                  data: updateData
-              });
+               const updated = await tx.order.update({
+                   where: { id: order.id },
+                   data: updateData
+               });
+
+               if (updated.paymentStatus === 'PAID') {
+                   await PromotionService.triggerOrderReferralReward(tx, updated);
+               }
+
+               return updated;
           });
 
           await logActivity(fastify, {

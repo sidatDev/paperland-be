@@ -1,6 +1,78 @@
 import { FastifyInstance } from 'fastify';
 import { logActivity } from '../utils/audit';
 
+async function ensureCustomersCollection(fastify: any) {
+  if (!fastify.typesense) return;
+  const COLLECTION_NAME = 'customers';
+  try {
+    await fastify.typesense.collections(COLLECTION_NAME).retrieve();
+  } catch (e: any) {
+    // Collection doesn't exist, create it
+    const schema = {
+      name: COLLECTION_NAME,
+      fields: [
+        { name: 'id', type: 'string' },
+        { name: 'name', type: 'string' },
+        { name: 'email', type: 'string' },
+        { name: 'type', type: 'string', facet: true },
+        { name: 'status', type: 'string', facet: true }
+      ]
+    };
+    await fastify.typesense.collections().create(schema);
+    
+    // Sync all existing customers
+    const users = await fastify.prisma.user.findMany({
+      where: {
+        role: {
+          name: { in: ['CUSTOMER', 'BUSINESS', 'B2B_ADMIN', 'DEALER'] }
+        }
+      },
+      include: {
+        role: true,
+        b2bCompanyDetails: true
+      }
+    });
+
+    const documents = users.map((user: any) => ({
+      id: user.id,
+      name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : (user.b2bCompanyDetails?.companyName || 'N/A'),
+      email: user.email,
+      type: (user.role?.name === 'BUSINESS' || user.role?.name === 'B2B_ADMIN') ? 'B2B' : (user.role?.name === 'DEALER' ? 'DEALER' : 'B2C'),
+      status: user.accountStatus.toLowerCase()
+    }));
+
+    if (documents.length > 0) {
+      await fastify.typesense.collections(COLLECTION_NAME).documents().import(documents, { action: 'upsert' });
+    }
+  }
+}
+
+async function syncCustomerToTypesense(fastify: any, userId: string) {
+  if (!fastify.typesense) return;
+  try {
+    await ensureCustomersCollection(fastify);
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: true,
+        b2bCompanyDetails: true
+      }
+    });
+    if (user) {
+      const doc = {
+        id: user.id,
+        name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : (user.b2bCompanyDetails?.companyName || 'N/A'),
+        email: user.email,
+        type: (user.role?.name === 'BUSINESS' || user.role?.name === 'B2B_ADMIN') ? 'B2B' : (user.role?.name === 'DEALER' ? 'DEALER' : 'B2C'),
+        status: user.accountStatus.toLowerCase()
+      };
+      await fastify.typesense.collections('customers').documents().upsert(doc);
+    }
+  } catch (err) {
+    fastify.log.error(err, 'Failed to sync customer to Typesense');
+  }
+}
+
 export default async function crmRoutes(fastify: FastifyInstance) {
   
   // Customer List
@@ -34,7 +106,25 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         where.role = { name: type };
       }
 
-      if (search) {
+      let ids: string[] | null = null;
+      if (search && fastify.typesense) {
+        await ensureCustomersCollection(fastify);
+        try {
+          const searchParams = {
+            q: search,
+            query_by: 'name,email',
+            per_page: 250
+          };
+          const tsResult = await fastify.typesense.collections('customers').documents().search(searchParams);
+          ids = tsResult.hits?.map((hit: any) => hit.document.id) || [];
+        } catch (tsErr) {
+          fastify.log.error(tsErr, 'Typesense customer search failed');
+        }
+      }
+
+      if (ids !== null) {
+        where.id = { in: ids };
+      } else if (search) {
         where.OR = [
           { email: { contains: search, mode: 'insensitive' } },
           { firstName: { contains: search, mode: 'insensitive' } },
@@ -254,6 +344,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
           usedCredit: user.b2bProfile.usedCredit,
           paymentTerms: user.b2bProfile.paymentTerms,
           status: user.b2bProfile.status,
+          isCatalogExclusive: user.b2bProfile.isCatalogExclusive || false,
           adminNotes: (user.b2bProfile as any).adminNotes,
           rejectionReason: (user.b2bProfile as any).rejectionReason,
           discountTier: user.b2bProfile.discountTier,
@@ -559,6 +650,9 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             userAgent: request.headers['user-agent']
         });
 
+        // Sync to Typesense
+        await syncCustomerToTypesense(fastify, id);
+ 
         return { success: true };
     } catch (err: any) {
         fastify.log.error(err);
@@ -654,6 +748,9 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             userAgent: request.headers['user-agent']
         });
 
+        // Sync to Typesense
+        await syncCustomerToTypesense(fastify, id);
+ 
         return { success: true };
     } catch (err: any) {
         fastify.log.error(err);
@@ -670,13 +767,14 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         type: 'object',
         properties: {
           creditLimit: { type: 'number' },
-          adminNotes: { type: 'string' }
+          adminNotes: { type: 'string' },
+          isCatalogExclusive: { type: 'boolean' }
         }
       }
     }
   }, async (request, reply) => {
     const { id } = request.params as any;
-    const { creditLimit, adminNotes } = request.body as any;
+    const { creditLimit, adminNotes, isCatalogExclusive } = request.body as any;
 
     try {
       const user = await fastify.prisma.user.findUnique({
@@ -692,6 +790,7 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         where: { id: user.b2bProfileId },
         data: {
           creditLimit: creditLimit !== undefined ? creditLimit : undefined,
+          isCatalogExclusive: isCatalogExclusive !== undefined ? isCatalogExclusive : undefined,
           // adminNotes: adminNotes !== undefined ? adminNotes : undefined // adminNotes might not be in Prisma schema yet
         }
       }) as any);
@@ -707,9 +806,12 @@ export default async function crmRoutes(fastify: FastifyInstance) {
         entityId: id,
         action: 'UPDATE_CUSTOMER_INFO',
         performedBy: (request.user as any)?.id,
-        details: { creditLimit, adminNotes }
+        details: { creditLimit, adminNotes, isCatalogExclusive }
       });
 
+      // Sync to Typesense
+      await syncCustomerToTypesense(fastify, id);
+ 
       return { success: true };
     } catch (err: any) {
       fastify.log.error(err);

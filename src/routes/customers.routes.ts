@@ -4,7 +4,7 @@ export default async function customerRoutes(fastify: FastifyInstance) {
 
   // GET all call logs (Admin)
   fastify.get('/admin/customers/calls', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('crm_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('customer_view')],
     schema: {
       tags: ['Admin Customers'],
       security: [{ bearerAuth: [] }]
@@ -30,7 +30,7 @@ export default async function customerRoutes(fastify: FastifyInstance) {
 
   // POST create a new call log
   fastify.post('/admin/customers/calls', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('crm_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
     schema: {
       tags: ['Admin Customers'],
       security: [{ bearerAuth: [] }],
@@ -70,7 +70,7 @@ export default async function customerRoutes(fastify: FastifyInstance) {
 
   // GET all security deposits (Admin)
   fastify.get('/admin/customers/deposits', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('crm_view')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('customer_view')],
     schema: {
       tags: ['Admin Customers'],
       security: [{ bearerAuth: [] }]
@@ -96,7 +96,7 @@ export default async function customerRoutes(fastify: FastifyInstance) {
 
   // POST record a new security deposit
   fastify.post('/admin/customers/deposits', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('crm_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
     schema: {
       tags: ['Admin Customers'],
       security: [{ bearerAuth: [] }],
@@ -136,7 +136,7 @@ export default async function customerRoutes(fastify: FastifyInstance) {
 
   // PUT update deposit status
   fastify.put('/admin/customers/deposits/:id/status', {
-    preHandler: [fastify.authenticate, fastify.hasPermission('crm_manage')],
+    preHandler: [fastify.authenticate, fastify.hasPermission('customer_manage')],
     schema: {
       tags: ['Admin Customers'],
       security: [{ bearerAuth: [] }],

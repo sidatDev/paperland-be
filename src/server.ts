@@ -77,6 +77,24 @@ const start = async () => {
       }
     });
 
+    // Register Socket.IO (NEW)
+    await fastify.register(import('./plugins/socket'));
+
+    // Initialize WhatsApp Client Service (NEW)
+    const { WhatsappClientService } = await import('./services/whatsapp-client.service');
+    const whatsappClient = new WhatsappClientService(fastify);
+    fastify.decorate('whatsappClient', whatsappClient);
+    
+    if (process.env.CHAT_ENABLED === 'true') {
+      whatsappClient.initialize().then(() => {
+        fastify.log.info('WhatsApp Client initialized successfully');
+      }).catch((err) => {
+        fastify.log.error(err, 'Failed to initialize WhatsApp Client');
+      });
+    } else {
+      fastify.log.info('WhatsApp Support Chat is disabled via CHAT_ENABLED=false');
+    }
+
     // Global Request Monitor (Aggressive Logging)
     fastify.addHook('onRequest', async (request) => {
         process.stdout.write(`🚀 [ENTRY LOG]: ${request.method} ${request.url}\n`);
@@ -119,6 +137,7 @@ const start = async () => {
     await fastify.register(import('./routes/coupons.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/returns.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/whatsapp.routes'), { prefix: '/api/v1' });
+    await fastify.register(import('./routes/chat.routes'), { prefix: '/api/v1' });
     await fastify.register(import('./routes/promotions.routes'), { prefix: '/api/v1' });
     
     // New Admin Module Routes

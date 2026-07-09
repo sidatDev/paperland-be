@@ -21,7 +21,22 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                 orderBy: { position: 'asc' },
                 include: {
                     _count: {
-                        select: { articles: { where: { status: 'PUBLISHED', deletedAt: null } } }
+                        select: { 
+                            articles: { 
+                                where: { 
+                                    status: 'PUBLISHED', 
+                                    deletedAt: null,
+                                    OR: [
+                                        { publishedAt: { lte: new Date() } },
+                                        { publishedAt: null }
+                                    ],
+                                    NOT: [
+                                        { title: { equals: 'Untitled', mode: 'insensitive' } },
+                                        { title: { equals: 'Untitled Article', mode: 'insensitive' } }
+                                    ]
+                                } 
+                            } 
+                        }
                     }
                 }
             });
@@ -67,7 +82,15 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
             const where: any = {
                 status: 'PUBLISHED',
                 visibility: 'PUBLIC',
-                deletedAt: null
+                deletedAt: null,
+                OR: [
+                    { publishedAt: { lte: new Date() } },
+                    { publishedAt: null }
+                ],
+                NOT: [
+                    { title: { equals: 'Untitled', mode: 'insensitive' } },
+                    { title: { equals: 'Untitled Article', mode: 'insensitive' } }
+                ]
             };
 
             if (categoryId) {
@@ -140,7 +163,11 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                     slug,
                     status: 'PUBLISHED',
                     visibility: 'PUBLIC',
-                    deletedAt: null
+                    deletedAt: null,
+                    OR: [
+                        { publishedAt: { lte: new Date() } },
+                        { publishedAt: null }
+                    ]
                 },
                 include: {
                     category: {
@@ -149,7 +176,18 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
                             name: true,
                             slug: true,
                             articles: {
-                                where: { status: 'PUBLISHED', deletedAt: null },
+                                where: { 
+                                    status: 'PUBLISHED', 
+                                    deletedAt: null,
+                                    OR: [
+                                        { publishedAt: { lte: new Date() } },
+                                        { publishedAt: null }
+                                    ],
+                                    NOT: [
+                                        { title: { equals: 'Untitled', mode: 'insensitive' } },
+                                        { title: { equals: 'Untitled Article', mode: 'insensitive' } }
+                                    ]
+                                },
                                 select: { id: true, title: true, slug: true, position: true },
                                 orderBy: { position: 'asc' }
                             }
@@ -255,6 +293,48 @@ export default async function publicKbRoutes(fastify: FastifyInstance) {
         } catch (err) {
             fastify.log.error(err);
             return reply.status(500).send(createErrorResponse("Failed to fetch FAQs"));
+        }
+    });
+
+    // 6. Submit feedback (helpful / not helpful)
+    fastify.post('/public/kb/feedback', {
+        schema: {
+            description: 'Submit feedback for a KB article or FAQ',
+            tags: ['Knowledge Base'],
+            body: {
+                type: 'object',
+                required: ['helpful'],
+                properties: {
+                    articleId: { type: 'string' },
+                    faqId: { type: 'string' },
+                    helpful: { type: 'boolean' }
+                }
+            }
+        }
+    }, async (request: any, reply) => {
+        const { articleId, faqId, helpful } = request.body;
+        const ipAddress = request.ip;
+        const userAgent = request.headers['user-agent'];
+
+        try {
+            if (!articleId && !faqId) {
+                return reply.status(400).send(createErrorResponse("Either articleId or faqId must be provided"));
+            }
+
+            const feedback = await prisma.kbFeedback.create({
+                data: {
+                    articleId: articleId || null,
+                    faqId: faqId || null,
+                    helpful,
+                    ipAddress,
+                    userAgent
+                }
+            });
+
+            return createResponse(feedback, "Feedback submitted successfully");
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.status(500).send(createErrorResponse("Failed to submit feedback"));
         }
     });
 }

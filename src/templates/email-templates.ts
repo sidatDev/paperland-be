@@ -429,7 +429,7 @@ export function getOrderStatusUpdateTemplate(order: any, newStatus: string): str
                 <td align="center" style="padding: 35px 25px;">
                     <p style="margin-top: 0; font-weight: bold; color: #166534; font-size: 18px;">How was your experience?</p>
                     <p style="margin-bottom: 25px; color: #15803d; font-size: 14px;">Your feedback helps us grow and assists other customers in making informed choices!</p>
-                    <a href="${WEBSITE_URL}/en/dashboard/orders/${order.id}" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 16px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px;">
+                    <a href="${WEBSITE_URL}/en/dashboard/orders/${order.id}?review=true" style="display: inline-block; background-color: #E31E24; color: #ffffff; padding: 16px 35px; border-radius: 12px; text-decoration: none; font-weight: bold; font-size: 16px;">
                         Add a Review & Feedback
                     </a>
                 </td>

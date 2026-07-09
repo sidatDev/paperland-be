@@ -89,7 +89,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
       groupNumber: p.groupNumber,
       groupId: p.groupId,
       status: (() => {
-        // Dynamic Status Logic
         const baseStock = p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
         const variantsStock = p.variants?.reduce((acc: number, v: any) => 
             acc + (v.stocks?.reduce((a: number, s: any) => a + (s.qty || 0), 0) || 0), 0) || 0;
@@ -100,12 +99,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
             acc + (v.stocks?.reduce((a: number, s: any) => a + (s.reorderLevel || 0), 0) || 0), 0) || 0;
         const effectiveThreshold = p.variants?.length > 0 ? variantsThreshold : baseThreshold;
 
-        // If manual status is already 'Out of Stock', keep it.
-        // Otherwise, if stock <= threshold, mark as 'Out of Stock'
-        if (p.status === 'Out of Stock') return 'Out of Stock';
-        if (totalStock <= effectiveThreshold) return 'Out of Stock';
-        
-        return p.status || (p.isActive ? 'Active' : 'Draft');
+        if (totalStock > effectiveThreshold) {
+            if (p.status === "Out of Stock") return "Active";
+            return p.status || (p.isActive ? "Active" : "Draft");
+        } else {
+            if (p.status === "Active" || (!p.status && p.isActive)) return "Out of Stock";
+            return p.status || "Out of Stock";
+        }
       })(),
       price: Number(p.price || 0),
       relatedProductsCount: 0, 
@@ -240,53 +240,140 @@ export default async function productRoutes(fastify: FastifyInstance) {
   // Products Search (Lightweight for Autocomplete)
   fastify.get('/admin/products/search', {
     schema: {
-        description: 'Search products by name or SKU for autocomplete',
+        description: 'Search products by name, brand, or SKU for autocomplete',
         tags: ['Catalog'],
         querystring: {
             type: 'object',
             properties: {
-                q: { type: 'string', minLength: 2 }
-            },
-            required: ['q']
+                q: { type: 'string' }
+            }
         }
     }
   }, async (request: any, reply) => {
       const { q } = request.query;
       try {
+          // If query is empty, return default active products from Prisma
+          if (!q || q.trim() === '') {
+              const products = await (fastify.prisma as any).product.findMany({
+                  where: {
+                      deletedAt: null,
+                      isActive: true,
+                      parentId: null
+                  },
+                  select: {
+                      id: true,
+                      name: true,
+                      sku: true,
+                      price: true,
+                      imageUrl: true,
+                      brand: { select: { name: true } },
+                      prices: {
+                          where: { isActive: true },
+                          include: { currency: true }
+                      },
+                      stocks: true
+                  },
+                  orderBy: { createdAt: 'desc' },
+                  take: 20
+              });
+
+              const transformed = products.map((p: any) => ({
+                  id: p.id,
+                  name: p.name,
+                  sku: p.sku,
+                  price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
+                  brand: p.brand?.name || 'Unknown',
+                  currency: p.prices?.[0]?.currency?.code || 'PKR',
+                  currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
+                  image_url: p.imageUrl
+              }));
+
+              return createResponse(transformed, "Default products retrieved");
+          }
+
+          // Try Typesense search first
+          if (fastify.typesense) {
+              try {
+                  const searchParameters = {
+                      q: q,
+                      query_by: 'name,brand,sku,category',
+                      filter_by: 'isActive:true',
+                      per_page: 20
+                  };
+                  const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+                  
+                  const transformed = result.hits?.map((hit: any) => {
+                      const doc = hit.document;
+                      return {
+                          id: doc.id,
+                          name: doc.name,
+                          sku: doc.sku,
+                          price: Number(doc.price || 0),
+                          brand: doc.brand || 'Unknown',
+                          currency: doc.currency || 'PKR',
+                          currentStock: 0,
+                          image_url: doc.image_url
+                      };
+                  }) || [];
+
+                  // Populate stock count for Typesense hits from Prisma
+                  if (transformed.length > 0) {
+                      const productIds = transformed.map((t: any) => t.id);
+                      const stocks = await (fastify.prisma as any).stock.findMany({
+                          where: { productId: { in: productIds } }
+                      });
+                      transformed.forEach((t: any) => {
+                          const pStocks = stocks.filter((s: any) => s.productId === t.id);
+                          t.currentStock = pStocks.reduce((acc: number, s: any) => acc + s.qty, 0) || 0;
+                      });
+                  }
+
+                  return createResponse(transformed, "Search successful via Typesense");
+              } catch (tsErr) {
+                  fastify.log.error(tsErr, "Typesense search failed, falling back to Prisma");
+              }
+          }
+
+          // Prisma Fallback Search (searching name, sku, brand name, and category name)
           const products = await (fastify.prisma as any).product.findMany({
               where: {
                   deletedAt: null,
                   isActive: true,
                   OR: [
                       { name: { contains: q, mode: 'insensitive' } },
-                      { sku: { contains: q, mode: 'insensitive' } }
+                      { sku: { contains: q, mode: 'insensitive' } },
+                      { brand: { name: { contains: q, mode: 'insensitive' } } },
+                      { category: { name: { contains: q, mode: 'insensitive' } } }
                   ]
               },
               select: {
                   id: true,
                   name: true,
                   sku: true,
+                  price: true,
+                  imageUrl: true,
+                  brand: { select: { name: true } },
                   prices: {
                       where: { isActive: true },
                       include: { currency: true }
                   },
-                  stocks: true,
-                  isVisibleOnEcommerce: true
+                  stocks: true
               },
               take: 20
           });
 
-          const transformed = products.map((p: any) => ({
+          const transformedFallback = products.map((p: any) => ({
               id: p.id,
               name: p.name,
               sku: p.sku,
               price: Number(p.price || p.prices?.[0]?.priceRetail || 0),
-               currency: p.prices?.[0]?.currency?.code || 'PKR',
+              brand: p.brand?.name || 'Unknown',
+              currency: p.prices?.[0]?.currency?.code || 'PKR',
               currentStock: p.stocks?.reduce((acc: number, stock: any) => acc + stock.qty, 0) || 0,
-              isVisibleOnEcommerce: p.isVisibleOnEcommerce
+              image_url: p.imageUrl
           }));
 
-          return createResponse(transformed, "Search successful");
+          return createResponse(transformedFallback, "Search successful via Prisma");
       } catch (err) {
           fastify.log.error(err);
           return reply.status(500).send(createErrorResponse('Search Failed'));
@@ -315,6 +402,24 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
     fastify.log.info({ query: request.query }, "Admin list products filters");
     try {
+      let productIdsFromSearch: string[] | undefined = undefined;
+
+      if (search && search.trim() !== '') {
+        if (fastify.typesense) {
+          try {
+            const searchParameters = {
+              q: search,
+              query_by: 'name,brand,sku,category',
+              per_page: 250
+            };
+            const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+            productIdsFromSearch = result.hits?.map((hit: any) => hit.document.id) || [];
+          } catch (tsErr) {
+            fastify.log.error(tsErr, "Typesense query failed in admin list, falling back to Prisma search");
+          }
+        }
+      }
+
       const parseFilterArray = (val: any) => {
         if (!val || val === 'all') return undefined;
         const arr = Array.isArray(val) ? val : val.split(',').filter(Boolean);
@@ -330,13 +435,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
       const where: any = {
         deletedAt: null, 
         AND: [
-          search ? {
-            OR: [
-              { name: { contains: search, mode: 'insensitive' } },
-              { sku: { contains: search, mode: 'insensitive' } },
-              { description: { contains: search, mode: 'insensitive' } },
-            ]
-          } : {},
+          productIdsFromSearch !== undefined ? { id: { in: productIdsFromSearch } } : (
+            search ? {
+              OR: [
+                { name: { contains: search, mode: 'insensitive' } },
+                { sku: { contains: search, mode: 'insensitive' } },
+                { description: { contains: search, mode: 'insensitive' } },
+              ]
+            } : {}
+          ),
           
           // Status Filter
           status && status !== 'all' ? { status } : {},
@@ -836,8 +943,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache for listings and homepage
         try {
-            await fastify.cache.invalidateShopCache('products');
-            await fastify.cache.invalidateShopCache('home');
+            await fastify.cache.invalidateProductCache(productCreated);
         } catch (cacheErr) {
             fastify.log.error(cacheErr, 'Failed to invalidate cache on create');
         }
@@ -922,6 +1028,30 @@ export default async function productRoutes(fastify: FastifyInstance) {
             parentId, variantOptions, variantAttributes
         } = data;
 
+        let finalStatus = status;
+        let finalIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : undefined;
+
+        if (stock !== undefined) {
+            const numericStock = Number(stock);
+            if (!isNaN(numericStock)) {
+                const thresholdVal = data.threshold !== undefined 
+                    ? Number(data.threshold) 
+                    : (existing.stocks?.reduce((acc: number, s: any) => acc + (s.reorderLevel || 0), 0) || 10);
+                
+                const currentStatus = status !== undefined ? status : existing.status;
+                if (numericStock > thresholdVal) {
+                    if (currentStatus === 'Out of Stock') {
+                        finalStatus = 'Active';
+                        finalIsActive = true;
+                    }
+                } else {
+                    if (currentStatus === 'Active' || (!currentStatus && (bodyIsActive === true || existing.isActive))) {
+                        finalStatus = 'Out of Stock';
+                    }
+                }
+            }
+        }
+
         const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
             where: { isDefault: true, isActive: true },
             select: { id: true }
@@ -969,7 +1099,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
         if (fullDescription !== undefined) updateData.fullDescription = fullDescription;
         if (groupNumber !== undefined) updateData.groupNumber = groupNumber;
         if (groupId !== undefined) updateData.groupId = groupId;
-        if (status !== undefined) updateData.status = status;
+        if (finalStatus !== undefined) updateData.status = finalStatus;
         if (costPrice !== undefined) updateData.costPrice = Number(costPrice);
         if (resolvedImageUrl !== undefined) updateData.imageUrl = resolvedImageUrl;
         if (mediaUrls !== undefined) updateData.images = mediaUrls;
@@ -1063,9 +1193,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 });
             }
         }
-        const resolvedIsActive = bodyIsActive !== undefined 
-            ? (bodyIsActive === 'true' || bodyIsActive === true) 
-            : (status === "Draft" ? false : (status === "Active" ? true : undefined));
+        const resolvedIsActive = finalIsActive !== undefined 
+            ? finalIsActive
+            : (finalStatus === "Draft" ? false : (finalStatus === "Active" ? true : undefined));
 
         if (resolvedIsActive !== undefined) updateData.isActive = resolvedIsActive;
         if (isFeatured !== undefined) updateData.isFeatured = (isFeatured === 'true' || isFeatured === true);
@@ -1098,6 +1228,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
         }
         if (variantOptions !== undefined) updateData.variantOptions = variantOptions;
         if (variantAttributes !== undefined) updateData.variantAttributes = variantAttributes;
+
+        if (stock !== undefined && stock !== null) {
+            const numericStock = Number(stock);
+            if (!isNaN(numericStock)) {
+                updateData.stocks = {
+                    upsert: {
+                        where: { productId_warehouseId: { productId: id, warehouseId: defaultWarehouseId || '' } },
+                        create: { qty: numericStock, locationId: 'DEFAULT', warehouseId: defaultWarehouseId },
+                        update: { qty: numericStock }
+                    }
+                };
+            }
+        }
 
         if (data.variants !== undefined && Array.isArray(data.variants)) {
             const variantsInRequest = data.variants;
@@ -1312,9 +1455,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache
         try {
-            await fastify.cache.invalidateShopCache('products');
-            await fastify.cache.invalidateShopCache('home');
-            if (updated.slug) await fastify.cache.clearPattern(`product:${updated.slug}:*`);
+            await fastify.cache.invalidateProductCache(updated);
             // Also invalidate the old slug if it changed
             if (existing.slug && existing.slug !== updated.slug) {
                 await fastify.cache.clearPattern(`product:${existing.slug}:*`);
@@ -1408,9 +1549,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
           // Invalidate Cache
           try {
-              await fastify.cache.invalidateShopCache('products');
-              await fastify.cache.invalidateShopCache('home');
-              if (product.slug) await fastify.cache.clearPattern(`product:${product.slug}:*`);
+              await fastify.cache.invalidateProductCache(product);
           } catch (cacheErr) {
               fastify.log.error(cacheErr, 'Failed to invalidate cache on delete');
           }
@@ -1530,10 +1669,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
         // Invalidate Cache for main product
         const restored = await (fastify.prisma as any).product.findUnique({ where: { id } });
-        if (restored?.slug) {
-            await fastify.cache.del(`product:${restored.slug}`);
-            await fastify.cache.del('shop:home');
-            await fastify.cache.clearPattern('shop:products:*');
+        if (restored) {
+            await fastify.cache.invalidateProductCache(restored);
         }
 
         // Re-sync to Typesense
@@ -1789,11 +1926,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
           { header: 'Sub-Category', key: 'subCategory' },
           { header: 'Industry', key: 'industry' },
           { header: 'Status', key: 'status' },
-          { header: 'Base Price (SAR)', key: 'basePrice' },
-          { header: 'SAR Retail', key: 'sarRetail' },
-          { header: 'SAR Wholesale', key: 'sarWholesale' },
-          { header: 'AED Retail', key: 'aedRetail' },
-          { header: 'AED Wholesale', key: 'aedWholesale' },
+          { header: 'Base Price (PKR)', key: 'basePrice' },
           { header: 'PKR Retail', key: 'pkrRetail' },
           { header: 'PKR Wholesale', key: 'pkrWholesale' },
           { header: 'Total Stock', key: 'totalStock' },
@@ -1818,8 +1951,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
               basePrice: Number(p.price || 0),
               pkrRetail: getPriceByCurrency(p, 'PKR', 'retail'),
               pkrWholesale: getPriceByCurrency(p, 'PKR', 'wholesale'),
-              aedRetail: getPriceByCurrency(p, 'AED', 'retail'),
-              aedWholesale: getPriceByCurrency(p, 'AED', 'wholesale'),
               totalStock: Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
               seoTitle: seo.title || "",
               seoDescription: seo.description || "",
@@ -1858,6 +1989,808 @@ export default async function productRoutes(fastify: FastifyInstance) {
     } catch (err) {
       fastify.log.error(err);
       return reply.status(500).send(createErrorResponse('Export Failed'));
+    }
+  });
+
+  // POST /admin/products/bulk-price-update
+  fastify.post('/admin/products/bulk-price-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Price and Rate Update',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['actionType', 'field', 'value'],
+        properties: {
+          ids: { type: 'array', items: { type: 'string' } },
+          brandIds: { type: 'array', items: { type: 'string' } },
+          categoryIds: { type: 'array', items: { type: 'string' } },
+          actionType: { type: 'string', enum: ['SET_SAME', 'INC_FIXED', 'DEC_FIXED', 'INC_PERCENT', 'DEC_PERCENT', 'COPY_PRODUCT'] },
+          field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL', 'COST'] },
+          value: { type: 'number' },
+          copyFromProductId: { type: 'string' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { ids, actionType, field, value, copyFromProductId, brandIds, categoryIds } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if ((!ids || ids.length === 0) && (!brandIds || brandIds.length === 0) && (!categoryIds || categoryIds.length === 0)) {
+        return reply.status(400).send(createErrorResponse('No products, brands, or categories selected'));
+      }
+
+      let resolvedIds = ids || [];
+      if (resolvedIds.length === 0 && ((brandIds && brandIds.length > 0) || (categoryIds && categoryIds.length > 0))) {
+        const filters: any = { deletedAt: null, parentId: null };
+        if (brandIds && brandIds.length > 0) {
+          filters.brandId = { in: brandIds };
+        }
+        if (categoryIds && categoryIds.length > 0) {
+          filters.categoryId = { in: categoryIds };
+        }
+        const matchingProducts = await prisma.product.findMany({
+          where: filters,
+          select: { id: true }
+        });
+        resolvedIds = matchingProducts.map((p: any) => p.id);
+      }
+
+      if (resolvedIds.length === 0) {
+        return reply.status(404).send(createErrorResponse('No products found matching selection'));
+      }
+
+      // Generate a single batch ID for this bulk action
+      const batchId = crypto.randomUUID();
+
+      // Fetch target products and variants
+      const targets = await prisma.product.findMany({
+        where: { id: { in: resolvedIds }, deletedAt: null },
+        include: {
+          prices: { where: { isActive: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: { where: { isActive: true } } }
+          }
+        }
+      });
+
+      if (targets.length === 0) {
+        return reply.status(404).send(createErrorResponse('No valid target products found'));
+      }
+
+      // Collect all individual items (standalone, parents, and child variants) to update
+      const itemsMap = new Map<string, any>();
+      for (const t of targets) {
+        itemsMap.set(t.id, t);
+        if (t.variants && t.variants.length > 0) {
+          for (const v of t.variants) {
+            itemsMap.set(v.id, {
+              ...v,
+              parentSku: t.sku
+            });
+          }
+        }
+      }
+
+      const allItems = Array.from(itemsMap.values());
+
+      // Fetch source product if action is COPY_PRODUCT
+      let sourceProduct: any = null;
+      if (actionType === 'COPY_PRODUCT') {
+        if (!copyFromProductId) {
+          return reply.status(400).send(createErrorResponse('copyFromProductId is required for COPY_PRODUCT'));
+        }
+        sourceProduct = await prisma.product.findUnique({
+          where: { id: copyFromProductId },
+          include: {
+            prices: { where: { isActive: true } },
+            variants: {
+              where: { deletedAt: null },
+              include: { prices: { where: { isActive: true } } }
+            }
+          }
+        });
+        if (!sourceProduct) {
+          return reply.status(404).send(createErrorResponse('Source product to copy from not found'));
+        }
+      }
+
+      // Helper to get matching variant by attributes
+      const findMatchingVariant = (sourceVariants: any[], targetAttributes: any) => {
+        if (!sourceVariants || !targetAttributes) return null;
+        return sourceVariants.find(sv => {
+          const svAttrs = sv.variantAttributes || {};
+          const targetAttrs = targetAttributes || {};
+          const svKeys = Object.keys(svAttrs);
+          const targetKeys = Object.keys(targetAttrs);
+          if (svKeys.length !== targetKeys.length) return false;
+          return svKeys.every(k => String(svAttrs[k]).toLowerCase() === String(targetAttrs[k]).toLowerCase());
+        });
+      };
+
+      // Resolve admin user display name
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const defaultWarehouse = await prisma.warehouse.findFirst({
+        where: { isDefault: true, isActive: true },
+        select: { id: true }
+      });
+      const defaultWarehouseId = defaultWarehouse?.id ?? null;
+
+      const currencyRec = await prisma.currency.findFirst({
+        where: { code: 'PKR' }
+      }) || { id: 'PKR' };
+
+      const updates: any[] = [];
+      const logsToCreate: any[] = [];
+
+      for (const item of allItems) {
+        const activePriceObj = item.prices?.[0];
+        let oldPrice = 0;
+
+        if (field === 'RETAIL') {
+          oldPrice = Number(item.price || 0);
+        } else if (field === 'WHOLESALE') {
+          oldPrice = Number(activePriceObj?.priceWholesale || Number(item.price || 0) * 0.9);
+        } else if (field === 'SPECIAL') {
+          oldPrice = Number(activePriceObj?.priceSpecial || 0);
+        } else if (field === 'COST') {
+          oldPrice = Number(item.costPrice || 0);
+        }
+
+        let newPrice = oldPrice;
+
+        if (actionType === 'SET_SAME') {
+          newPrice = Number(value);
+        } else if (actionType === 'INC_FIXED') {
+          newPrice = oldPrice + Number(value);
+        } else if (actionType === 'DEC_FIXED') {
+          newPrice = Math.max(0, oldPrice - Number(value));
+        } else if (actionType === 'INC_PERCENT') {
+          newPrice = oldPrice * (1 + Number(value) / 100);
+        } else if (actionType === 'DEC_PERCENT') {
+          newPrice = Math.max(0, oldPrice * (1 - Number(value) / 100));
+        } else if (actionType === 'COPY_PRODUCT') {
+          let sourceItem = sourceProduct;
+          if (item.parentId && sourceProduct.variants && sourceProduct.variants.length > 0) {
+            const matchedVariant = findMatchingVariant(sourceProduct.variants, item.variantAttributes);
+            if (matchedVariant) {
+              sourceItem = matchedVariant;
+            }
+          }
+          
+          const srcPriceObj = sourceItem.prices?.[0];
+          if (field === 'RETAIL') {
+            newPrice = Number(sourceItem.price || 0);
+          } else if (field === 'WHOLESALE') {
+            newPrice = Number(srcPriceObj?.priceWholesale || Number(sourceItem.price || 0) * 0.9);
+          } else if (field === 'SPECIAL') {
+            newPrice = Number(srcPriceObj?.priceSpecial || 0);
+          } else if (field === 'COST') {
+            newPrice = Number(sourceItem.costPrice || 0);
+          }
+        }
+
+        newPrice = Number(newPrice.toFixed(2));
+
+        if (newPrice !== oldPrice) {
+          logsToCreate.push({
+            productId: item.id,
+            productName: item.name,
+            sku: item.sku,
+            priceType: field,
+            oldPrice,
+            newPrice,
+            performedBy: user?.id || null,
+            userName,
+            reason: `Bulk Update (${actionType})`,
+            batchId
+          });
+
+          updates.push({
+            itemId: item.id,
+            field,
+            newPrice,
+            activePriceObj
+          });
+        }
+      }
+
+      if (updates.length === 0) {
+        return createResponse(null, "No price changes were necessary");
+      }
+
+      await prisma.$transaction(async (tx: any) => {
+        await tx.priceUpdateLog.createMany({ data: logsToCreate });
+
+        for (const up of updates) {
+          const updateData: any = {};
+          if (up.field === 'RETAIL') {
+            updateData.price = up.newPrice;
+          } else if (up.field === 'COST') {
+            updateData.costPrice = up.newPrice;
+          }
+
+          if (up.field !== 'COST') {
+            if (up.activePriceObj) {
+              const priceFields: any = {};
+              if (up.field === 'RETAIL') priceFields.priceRetail = up.newPrice;
+              if (up.field === 'WHOLESALE') priceFields.priceWholesale = up.newPrice;
+              if (up.field === 'SPECIAL') priceFields.priceSpecial = up.newPrice;
+
+              await tx.price.update({
+                where: { id: up.activePriceObj.id },
+                data: priceFields
+              });
+            } else {
+              const priceRetail = up.field === 'RETAIL' ? up.newPrice : 0;
+              const priceWholesale = up.field === 'WHOLESALE' ? up.newPrice : (priceRetail * 0.9);
+              const priceSpecial = up.field === 'SPECIAL' ? up.newPrice : null;
+
+              await tx.price.create({
+                data: {
+                  productId: up.itemId,
+                  currencyId: currencyRec.id,
+                  priceRetail,
+                  priceWholesale,
+                  priceSpecial,
+                  isActive: true
+                }
+              });
+            }
+          }
+
+          if (Object.keys(updateData).length > 0) {
+            await tx.product.update({
+              where: { id: up.itemId },
+              data: updateData
+            });
+          }
+        }
+      });
+
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: updates.map(u => u.itemId) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: batchId,
+        action: 'BULK_UPDATE_PRICE',
+        performedBy: user?.id || 'unknown',
+        details: { count: updates.length, field, actionType, batchId },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ batchId, count: updates.length }, "Bulk pricing update completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Bulk update failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-inline-price-update
+  fastify.post('/admin/products/bulk-inline-price-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Save Manual Inline Price Updates',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['updates'],
+        properties: {
+          updates: {
+            type: 'array',
+            items: {
+              type: 'object',
+              required: ['id', 'priceRetail', 'priceWholesale'],
+              properties: {
+                id: { type: 'string' },
+                priceRetail: { type: 'number' },
+                priceWholesale: { type: 'number' },
+                priceSpecial: { type: 'number', nullable: true },
+                costPrice: { type: 'number', nullable: true }
+              }
+            }
+          }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { updates } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!updates || updates.length === 0) {
+        return reply.status(400).send(createErrorResponse('No updates provided'));
+      }
+
+      // Generate a batch ID for this manual batch
+      const batchId = crypto.randomUUID();
+
+      // Resolve user name
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const currencyRec = await prisma.currency.findFirst({
+        where: { code: 'PKR' }
+      }) || { id: 'PKR' };
+
+      // Fetch all targets to be updated
+      const productIds = updates.map((u: any) => u.id);
+      const targetProducts = await prisma.product.findMany({
+        where: { id: { in: productIds }, deletedAt: null },
+        include: {
+          prices: { where: { isActive: true } }
+        }
+      });
+
+      const productsMap = new Map<string, any>(targetProducts.map((p: any) => [p.id, p]));
+
+      const logsToCreate: any[] = [];
+      const dbUpdates: any[] = [];
+
+      for (const u of updates) {
+        const product = productsMap.get(u.id);
+        if (!product) continue;
+
+        const activePriceObj = product.prices?.[0];
+        
+        // Old values
+        const oldRetail = Number(product.price || 0);
+        const oldWholesale = Number(activePriceObj?.priceWholesale || oldRetail * 0.9);
+        const oldSpecial = activePriceObj?.priceSpecial !== null && activePriceObj?.priceSpecial !== undefined ? Number(activePriceObj.priceSpecial) : null;
+        const oldCost = Number(product.costPrice || 0);
+
+        // New values from payload
+        const newRetail = Number(u.priceRetail);
+        const newWholesale = Number(u.priceWholesale);
+        const newSpecial = u.priceSpecial !== null && u.priceSpecial !== undefined && String(u.priceSpecial).trim() !== '' ? Number(u.priceSpecial) : null;
+        const newCost = u.costPrice !== undefined && u.costPrice !== null && String(u.costPrice).trim() !== '' ? Number(u.costPrice) : 0;
+
+        // Perform comparison and construct logs
+        const logField = (field: 'RETAIL' | 'WHOLESALE' | 'SPECIAL' | 'COST', oldVal: number, newVal: number) => {
+          logsToCreate.push({
+            productId: product.id,
+            productName: product.name,
+            sku: product.sku,
+            priceType: field,
+            oldPrice: oldVal,
+            newPrice: newVal,
+            performedBy: user?.id || null,
+            userName,
+            reason: 'Manual Inline Edit',
+            batchId
+          });
+        };
+
+        let changed = false;
+        if (newRetail !== oldRetail) {
+          logField('RETAIL', oldRetail, newRetail);
+          changed = true;
+        }
+        if (newWholesale !== oldWholesale) {
+          logField('WHOLESALE', oldWholesale, newWholesale);
+          changed = true;
+        }
+        // Special comparison: handle null vs 0 vs existing
+        const oldSpecialCompare = oldSpecial !== null ? oldSpecial : 0;
+        const newSpecialCompare = newSpecial !== null ? newSpecial : 0;
+        if (newSpecialCompare !== oldSpecialCompare) {
+          logField('SPECIAL', oldSpecialCompare, newSpecialCompare);
+          changed = true;
+        }
+        if (newCost !== oldCost) {
+          logField('COST', oldCost, newCost);
+          changed = true;
+        }
+
+        if (changed) {
+          dbUpdates.push({
+            id: product.id,
+            priceRetail: newRetail,
+            priceWholesale: newWholesale,
+            priceSpecial: newSpecial,
+            costPrice: newCost,
+            activePriceObj
+          });
+        }
+      }
+
+      if (dbUpdates.length === 0) {
+        return createResponse(null, "No price changes detected");
+      }
+
+      await prisma.$transaction(async (tx: any) => {
+        await tx.priceUpdateLog.createMany({ data: logsToCreate });
+
+        for (const item of dbUpdates) {
+          // Update product price if Retail price changed, and always update costPrice
+          await tx.product.update({
+            where: { id: item.id },
+            data: { 
+              price: item.priceRetail,
+              costPrice: item.costPrice
+            }
+          });
+
+          if (item.activePriceObj) {
+            await tx.price.update({
+              where: { id: item.activePriceObj.id },
+              data: {
+                priceRetail: item.priceRetail,
+                priceWholesale: item.priceWholesale,
+                priceSpecial: item.priceSpecial
+              }
+            });
+          } else {
+            await tx.price.create({
+              data: {
+                productId: item.id,
+                currencyId: currencyRec.id,
+                priceRetail: item.priceRetail,
+                priceWholesale: item.priceWholesale,
+                priceSpecial: item.priceSpecial,
+                isActive: true
+              }
+            });
+          }
+        }
+      });
+
+      // Fetch updated details for Typesense sync
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: dbUpdates.map(u => u.id) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: batchId,
+        action: 'BULK_UPDATE_PRICE',
+        performedBy: user?.id || 'unknown',
+        details: { count: dbUpdates.length, batchId, mode: 'INLINE_EDIT' },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ batchId, count: dbUpdates.length }, "Inline pricing updates completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Inline pricing updates failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-price-undo
+  fastify.post('/admin/products/bulk-price-undo', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Undo/Revert price adjustments',
+      tags: ['Finance'],
+      body: {
+        type: 'object',
+        properties: {
+          batchId: { type: 'string' },
+          logId: { type: 'string' }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { batchId, logId } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!batchId && !logId) {
+        return reply.status(400).send(createErrorResponse('Either batchId or logId is required'));
+      }
+
+      const whereClause: any = {};
+      if (batchId) whereClause.batchId = batchId;
+      else whereClause.id = logId;
+
+      const logs = await prisma.priceUpdateLog.findMany({
+        where: whereClause,
+        orderBy: { createdAt: 'desc' }
+      });
+
+      if (logs.length === 0) {
+        return reply.status(404).send(createErrorResponse('No matching price update logs found to revert'));
+      }
+
+      const undoBatchId = crypto.randomUUID();
+
+      let userName = 'System';
+      if (user?.id) {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { firstName: true, lastName: true, email: true }
+        });
+        if (dbUser) {
+          userName = `${dbUser.firstName || ''} ${dbUser.lastName || ''}`.trim() || dbUser.email;
+        }
+      }
+
+      const productIdsToSync = new Set<string>();
+      const reversionLogs: any[] = [];
+
+      await prisma.$transaction(async (tx: any) => {
+        for (const log of logs) {
+          productIdsToSync.add(log.productId);
+
+          const activePrice = await tx.price.findFirst({
+            where: { productId: log.productId, isActive: true }
+          });
+
+          if (log.priceType === 'RETAIL') {
+            await tx.product.update({
+              where: { id: log.productId },
+              data: { price: log.oldPrice }
+            });
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceRetail: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'WHOLESALE') {
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceWholesale: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'SPECIAL') {
+            if (activePrice) {
+              await tx.price.update({
+                where: { id: activePrice.id },
+                data: { priceSpecial: log.oldPrice }
+              });
+            }
+          } else if (log.priceType === 'COST') {
+            await tx.product.update({
+              where: { id: log.productId },
+              data: { costPrice: log.oldPrice }
+            });
+          }
+
+          reversionLogs.push({
+            productId: log.productId,
+            productName: log.productName,
+            sku: log.sku,
+            priceType: log.priceType,
+            oldPrice: log.newPrice,
+            newPrice: log.oldPrice,
+            performedBy: user?.id || null,
+            userName,
+            reason: `Undo Revert of ${batchId ? 'Batch ' + batchId : 'Log ' + logId}`,
+            batchId: undoBatchId
+          });
+        }
+
+        await tx.priceUpdateLog.createMany({ data: reversionLogs });
+      });
+
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: Array.from(productIdsToSync) } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense revert sync for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: undoBatchId,
+        action: 'UNDO_PRICE_UPDATE',
+        performedBy: user?.id || 'unknown',
+        details: { revertedBatchId: batchId || null, revertedLogId: logId || null, undoBatchId },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ undoBatchId, count: logs.length }, "Price reversion completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Undo failed: ${err.message}`));
+    }
+  });
+
+  // POST /admin/products/bulk-status-update
+  fastify.post('/admin/products/bulk-status-update', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+      description: 'Bulk Status Update for Products',
+      tags: ['Catalog'],
+      body: {
+        type: 'object',
+        required: ['ids', 'status'],
+        properties: {
+          ids: { type: 'array', items: { type: 'string' } },
+          status: { type: 'string', enum: ['Active', 'Draft', 'Out of Stock'] }
+        }
+      }
+    }
+  }, async (request: any, reply) => {
+    const { ids, status } = request.body;
+    const prisma = fastify.prisma as any;
+    const user = request.user as any;
+
+    try {
+      if (!ids || ids.length === 0) {
+        return reply.status(400).send(createErrorResponse('No products selected'));
+      }
+
+      // Fetch all targets and variants
+      const targets = await prisma.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        include: {
+          variants: { where: { deletedAt: null } }
+        }
+      });
+
+      if (targets.length === 0) {
+        return reply.status(404).send(createErrorResponse('No valid products found'));
+      }
+
+      const itemsMap = new Map<string, any>();
+      for (const t of targets) {
+        itemsMap.set(t.id, t);
+        if (t.variants && t.variants.length > 0) {
+          for (const v of t.variants) {
+            itemsMap.set(v.id, v);
+          }
+        }
+      }
+
+      const allIds = Array.from(itemsMap.keys());
+      const isActive = status === 'Active' || status === 'Out of Stock';
+
+      await prisma.product.updateMany({
+        where: { id: { in: allIds } },
+        data: { status, isActive }
+      });
+
+      // Fetch updated details for Typesense sync
+      const updatedProducts = await prisma.product.findMany({
+        where: { id: { in: allIds } },
+        include: {
+          category: true,
+          brand: true,
+          prices: { include: { currency: true } },
+          stocks: true,
+          industries: { include: { industry: true } },
+          variants: {
+            where: { deletedAt: null },
+            include: { prices: true, stocks: true }
+          }
+        }
+      });
+
+      for (const p of updatedProducts) {
+        try {
+          if (fastify.queues?.search) {
+            await fastify.queues.search.add('product-sync', {
+              type: 'product',
+              action: 'upsert',
+              data: mapToTypesenseDocument(p)
+            });
+          }
+        } catch (tsErr) {
+          fastify.log.error(tsErr, `Failed to queue typesense sync on bulk status update for ${p.id}`);
+        }
+      }
+
+      await logActivity(fastify, {
+        entityType: 'PRODUCT',
+        entityId: ids[0],
+        action: 'BULK_UPDATE_STATUS',
+        performedBy: user?.id || 'unknown',
+        details: { count: allIds.length, status },
+        ip: request.ip,
+        userAgent: request.headers['user-agent']
+      });
+
+      return createResponse({ count: allIds.length, status }, "Bulk status update completed successfully");
+
+    } catch (err: any) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse(`Bulk status update failed: ${err.message}`));
     }
   });
 }

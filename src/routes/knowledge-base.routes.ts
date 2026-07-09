@@ -46,6 +46,18 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
   // Create Category
   fastify.post('/admin/kb/categories', checkManage, async (request: any, reply) => {
     const { name, parentId, description, icon, visibility, isActive } = request.body;
+    
+    // Check case-insensitive name uniqueness among active categories
+    const existingName = await prisma.kbCategory.findFirst({
+      where: {
+        name: { equals: name, mode: 'insensitive' },
+        deletedAt: null
+      }
+    });
+    if (existingName) {
+      return reply.status(400).send(createErrorResponse('Category name must be unique'));
+    }
+
     const slug = generateKbSlug(name);
     
     // Check slug uniqueness
@@ -84,12 +96,23 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const { id } = request.params;
     const data = request.body;
     
-    if (data.name) {
-      data.slug = generateKbSlug(data.name);
-    }
-
     const current = await prisma.kbCategory.findUnique({ where: { id } });
     if (!current) return reply.status(404).send(createErrorResponse('Category not found'));
+
+    if (data.name) {
+      // Check case-insensitive name uniqueness among active categories excluding this category itself
+      const existingName = await prisma.kbCategory.findFirst({
+        where: {
+          name: { equals: data.name, mode: 'insensitive' },
+          deletedAt: null,
+          id: { not: id }
+        }
+      });
+      if (existingName) {
+        return reply.status(400).send(createErrorResponse('Category name must be unique'));
+      }
+      data.slug = generateKbSlug(data.name);
+    }
 
     if (data.parentId !== undefined || data.slug) {
       const finalSlug = data.slug || current.slug;
@@ -113,6 +136,48 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     });
 
     return createResponse(category, 'Category updated successfully');
+  });
+
+  // Delete Category
+  fastify.delete('/admin/kb/categories/:id', checkManage, async (request: any, reply) => {
+    const { id } = request.params;
+
+    const category = await prisma.kbCategory.findUnique({
+      where: { id },
+      include: {
+        children: { where: { deletedAt: null } },
+        articles: { where: { deletedAt: null } },
+        faqs: { where: { deletedAt: null } }
+      }
+    });
+
+    if (!category || category.deletedAt) {
+      return reply.status(404).send(createErrorResponse('Category not found'));
+    }
+
+    if (category.children.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active subcategories'));
+    }
+    if (category.articles.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active articles'));
+    }
+    if (category.faqs.length > 0) {
+      return reply.status(400).send(createErrorResponse('Cannot delete category: it has active FAQs'));
+    }
+
+    await prisma.kbCategory.update({
+      where: { id },
+      data: { deletedAt: new Date() }
+    });
+
+    await logActivity(fastify, {
+      entityType: 'KB_CATEGORY',
+      entityId: id,
+      action: 'DELETE',
+      performedBy: (request.user as any).id
+    });
+
+    return createResponse(null, 'Category deleted successfully');
   });
 
   // ─── ARTICLES ─────────────────────────────────────────────────────
@@ -202,6 +267,8 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
     const contentText = extractTextFromTiptapJson(data.contentJson);
     const renderedHtml = renderTiptapToHtml(data.contentJson);
     const readingTime = calculateReadingTime(contentText);
+    const status = data.status || 'DRAFT';
+    const publishedAt = status === 'PUBLISHED' ? (data.publishedAt || new Date()) : (data.publishedAt || null);
 
     let article;
     try {
@@ -212,7 +279,8 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
           contentText,
           renderedHtml,
           readingTime,
-          status: data.status || 'DRAFT'
+          status,
+          publishedAt
         }
       });
     } catch (error: any) {
@@ -226,7 +294,8 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
             contentText,
             renderedHtml,
             readingTime,
-            status: data.status || 'DRAFT'
+            status,
+            publishedAt
           }
         });
       } else {
@@ -280,6 +349,14 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       data.contentText = extractTextFromTiptapJson(data.contentJson);
       data.renderedHtml = renderTiptapToHtml(data.contentJson);
       data.readingTime = calculateReadingTime(data.contentText);
+    }
+
+    if (data.status) {
+      if (data.status === 'PUBLISHED') {
+        data.publishedAt = data.publishedAt || current.publishedAt || new Date();
+      } else {
+        data.publishedAt = null;
+      }
     }
 
     const article = await prisma.kbArticle.update({
@@ -570,6 +647,224 @@ const knowledgeBaseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance)
       data: { deletedAt: new Date() }
     });
     return createResponse(null, 'FAQ deleted successfully');
+  });
+
+  // Publish Article
+  fastify.post('/admin/kb/articles/:id/publish', checkManage, async (request: any, reply) => {
+    const { id } = request.params;
+    const { status } = request.body;
+    
+    const current = await prisma.kbArticle.findUnique({ where: { id } });
+    if (!current) return reply.status(404).send(createErrorResponse('Article not found'));
+
+    if (status === 'PUBLISHED') {
+      if (!current.title || current.title === 'Untitled Article') {
+        return reply.status(400).send(createErrorResponse('Cannot publish: Article title is required and cannot be default'));
+      }
+      if (!current.categoryId) {
+        return reply.status(400).send(createErrorResponse('Cannot publish: Category must be selected'));
+      }
+      if (!current.contentText || current.contentText.trim() === '') {
+        return reply.status(400).send(createErrorResponse('Cannot publish: Article content cannot be empty'));
+      }
+    }
+
+    const publishedAt = status === 'PUBLISHED' ? (current.publishedAt || new Date()) : null;
+
+    const article = await prisma.kbArticle.update({
+      where: { id },
+      data: {
+        status,
+        publishedAt
+      }
+    });
+
+    await syncKbArticleToSearch(fastify, id);
+
+    await logActivity(fastify, {
+      entityType: 'KB_ARTICLE',
+      entityId: id,
+      action: status === 'PUBLISHED' ? 'PUBLISH' : 'UNPUBLISH',
+      performedBy: (request.user as any).id,
+      details: { status }
+    });
+
+    return createResponse(article, `Article ${status.toLowerCase()} successfully`);
+  });
+
+  // Reorder Categories
+  fastify.put('/admin/kb/categories/reorder', checkManage, async (request: any, reply) => {
+    const { items } = request.body;
+    if (!items || !Array.isArray(items)) {
+      return reply.status(400).send(createErrorResponse('Invalid items array'));
+    }
+
+    await prisma.$transaction(
+      items.map((item: any) =>
+        prisma.kbCategory.update({
+          where: { id: item.id },
+          data: { position: item.position }
+        })
+      )
+    );
+
+    return createResponse(null, 'Categories reordered successfully');
+  });
+
+  // Reorder Articles
+  fastify.put('/admin/kb/articles/reorder', checkManage, async (request: any, reply) => {
+    const { items } = request.body;
+    if (!items || !Array.isArray(items)) {
+      return reply.status(400).send(createErrorResponse('Invalid items array'));
+    }
+
+    await prisma.$transaction(
+      items.map((item: any) =>
+        prisma.kbArticle.update({
+          where: { id: item.id },
+          data: { position: item.position }
+        })
+      )
+    );
+
+    for (const item of items) {
+      await syncKbArticleToSearch(fastify, item.id);
+    }
+
+    return createResponse(null, 'Articles reordered successfully');
+  });
+
+  // Reorder FAQs
+  fastify.put('/admin/kb/faqs/reorder', checkManage, async (request: any, reply) => {
+    const { items } = request.body;
+    if (!items || !Array.isArray(items)) {
+      return reply.status(400).send(createErrorResponse('Invalid items array'));
+    }
+
+    await prisma.$transaction(
+      items.map((item: any) =>
+        prisma.kbFaq.update({
+          where: { id: item.id },
+          data: { position: item.position }
+        })
+      )
+    );
+
+    return createResponse(null, 'FAQs reordered successfully');
+  });
+
+  // Get Feedback Analytics
+  fastify.get('/admin/kb/feedback/analytics', checkView, async (request, reply) => {
+    try {
+      // 1. Overall stats
+      const totalCount = await prisma.kbFeedback.count();
+      const helpfulCount = await prisma.kbFeedback.count({ where: { helpful: true } });
+      const notHelpfulCount = totalCount - helpfulCount;
+      const satisfactionRate = totalCount > 0 ? Math.round((helpfulCount / totalCount) * 100) : 0;
+
+      // 2. Per-article feedback analytics
+      const articlesWithFeedback = await prisma.kbArticle.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          viewCount: true,
+          feedbacks: {
+            select: {
+              helpful: true
+            }
+          }
+        }
+      });
+
+      const articleStats = articlesWithFeedback
+        .map(art => {
+          const total = art.feedbacks.length;
+          const helpful = art.feedbacks.filter(f => f.helpful).length;
+          const notHelpful = total - helpful;
+          const satisfaction = total > 0 ? Math.round((helpful / total) * 100) : 0;
+          return {
+            id: art.id,
+            title: art.title,
+            slug: art.slug,
+            viewCount: art.viewCount,
+            total,
+            helpful,
+            notHelpful,
+            satisfaction
+          };
+        })
+        .filter(art => art.total > 0)
+        .sort((a, b) => b.total - a.total);
+
+      // 3. Per-faq feedback analytics
+      const faqsWithFeedback = await prisma.kbFaq.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          question: true,
+          feedbacks: {
+            select: {
+              helpful: true
+            }
+          }
+        }
+      });
+
+      const faqStats = faqsWithFeedback
+        .map(faq => {
+          const total = faq.feedbacks.length;
+          const helpful = faq.feedbacks.filter(f => f.helpful).length;
+          const notHelpful = total - helpful;
+          const satisfaction = total > 0 ? Math.round((helpful / total) * 100) : 0;
+          return {
+            id: faq.id,
+            question: faq.question,
+            total,
+            helpful,
+            notHelpful,
+            satisfaction
+          };
+        })
+        .filter(faq => faq.total > 0)
+        .sort((a, b) => b.total - a.total);
+
+      // 4. Recent feedback responses
+      const recentFeedback = await prisma.kbFeedback.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: {
+          article: {
+            select: {
+              id: true,
+              title: true
+            }
+          },
+          faq: {
+            select: {
+              id: true,
+              question: true
+            }
+          }
+        }
+      });
+
+      return createResponse({
+        overall: {
+          totalCount,
+          helpfulCount,
+          notHelpfulCount,
+          satisfactionRate
+        },
+        articles: articleStats,
+        faqs: faqStats,
+        recent: recentFeedback
+      });
+    } catch (err) {
+      fastify.log.error(err);
+      return reply.status(500).send(createErrorResponse('Failed to fetch feedback analytics'));
+    }
   });
 
 };

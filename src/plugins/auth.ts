@@ -58,6 +58,48 @@ export default fp(async (fastify: FastifyInstance) => {
           return;
         }
 
+        // 3. Unified Prefix Group Matching
+        const prefixGroups = [
+          ["finance", "pricing", "gateway"],
+          ["product", "category", "brand", "industry", "relation"],
+          ["promotion", "marketing"],
+          ["logistics", "region", "shipping"],
+          ["customer", "support", "b2b", "catalog", "crm"]
+        ];
+
+        const searchParts = searchKey.split('_');
+        if (searchParts.length === 2) {
+          const [searchPrefix, searchAction] = searchParts;
+          
+          // Find if searchPrefix is in any group
+          const matchedGroup = prefixGroups.find(group => group.includes(searchPrefix));
+          if (matchedGroup) {
+            // Check if user has a permission in this group that satisfies the action
+            const hasSatisfyingPermission = permissions.some((userPerm: string) => {
+              const userParts = userPerm.split('_');
+              if (userParts.length !== 2) return false;
+              const [userPrefix, userAction] = userParts;
+              
+              if (!matchedGroup.includes(userPrefix)) return false;
+
+              // If checking for view, user can have view or manage/edit/create/delete
+              if (searchAction === 'view') {
+                return true; // Any permission in this group allows viewing
+              }
+              // If checking for manage, user must have manage/edit/create/delete/update
+              if (searchAction === 'manage') {
+                return ['manage', 'create', 'edit', 'delete', 'update'].includes(userAction);
+              }
+              // For other specific actions, check exact action match or manage
+              return userAction === searchAction || userAction === 'manage';
+            });
+
+            if (hasSatisfyingPermission) {
+              return;
+            }
+          }
+        }
+
         // 3. Fallback for manage permissions
         if (searchKey.endsWith('_manage')) {
           const module = searchKey.replace('_manage', '');
@@ -138,6 +180,10 @@ export default fp(async (fastify: FastifyInstance) => {
       '/public/upload',
       '/redis-health',
       '/api/redis-health',
+      '/chat/session',
+      '/chat/message',
+      '/chat/messages',
+      '/chat/webhook',
     ];
 
     // Allow Swagger
@@ -206,7 +252,8 @@ export default fp(async (fastify: FastifyInstance) => {
       '/system/public-settings',
       '/system/sitemap-content',
       '/search',
-      '/countries'
+      '/countries',
+      '/locations'
     ];
 
     if (request.method === 'GET' && (publicGetPaths.some(p => normalizedPath.startsWith(p)) || publicGetPaths.some(p => path.startsWith(`/api/v1${p}`)))) {

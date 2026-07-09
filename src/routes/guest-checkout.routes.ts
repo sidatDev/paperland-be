@@ -90,7 +90,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                 title: item.product?.name || 'Unknown Product',
                 price: Number(item.price || pkr?.priceRetail || item.product?.price || 0),
                 quantity: item.quantity,
-                image: item.product?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : null),
+                image: item.product?.imageUrl || item.product?.parent?.imageUrl || (item.product?.images ? (item.product.images as string[])[0] : (item.product?.parent?.images ? (item.product.parent.images as string[])[0] : null)),
                 sku: item.product?.sku || item.sku,
                 partNumber: item.product?.sku || item.sku
             };
@@ -105,7 +105,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
     /**
      * Helper: Validate guest coupon
      */
-    const validateGuestCoupon = async (couponCode: string, subtotal: number, items: any[]) => {
+    const validateGuestCoupon = async (couponCode: string, subtotal: number, items: any[], email?: string) => {
         if (!couponCode) return { valid: false, couponDiscount: 0, couponId: null };
 
         const coupon = await (fastify.prisma as any).coupon.findUnique({
@@ -122,6 +122,17 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
 
         if (coupon.usageLimit && coupon.usedCount >= coupon.usageLimit) {
             return { valid: false, couponDiscount: 0, couponId: null, error: 'Coupon usage limit reached' };
+        }
+
+        // User-specific email validation
+        if (coupon.allowedEmails && coupon.allowedEmails.length > 0) {
+            if (!email) {
+                return { valid: false, couponDiscount: 0, couponId: null, error: 'This coupon is restricted to specific users. Please enter your email.' };
+            }
+            const isAllowed = coupon.allowedEmails.some((e: string) => e.toLowerCase() === email.toLowerCase());
+            if (!isAllowed) {
+                return { valid: false, couponDiscount: 0, couponId: null, error: 'This coupon is not valid for your email address.' };
+            }
         }
 
         // Check customer type eligibility
@@ -289,7 +300,8 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     billingCity: { type: 'string' },
                     billingProvince: { type: 'string' },
                     billingZip: { type: 'string' },
-                    billingCountry: { type: 'string' }
+                    billingCountry: { type: 'string' },
+                    referralCode: { type: 'string' }
                 }
             }
         }
@@ -299,8 +311,15 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             const { 
                 guestToken, firstName, lastName, email, 
                 address, city, country, province, phone, zipCode, 
-                companyName, shippingMethodId, couponCode 
+                companyName, shippingMethodId, couponCode, referralCode 
             } = payload;
+
+            if (referralCode) {
+                const referrer = await PromotionService.validateReferralCode(fastify.prisma, referralCode);
+                if (!referrer) {
+                    return reply.code(400).send({ message: 'Invalid referral code' });
+                }
+            }
 
             // 1. Get Guest Cart
             const cart = await getGuestCart(guestToken);
@@ -356,7 +375,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             let finalCouponCode = null;
 
             if (couponCode) {
-                const couponResult = await validateGuestCoupon(couponCode, subtotal, cart.items);
+                const couponResult = await validateGuestCoupon(couponCode, subtotal, cart.items, email);
                 if (couponResult.valid) {
                     couponDiscount = couponResult.couponDiscount;
                     couponId = couponResult.couponId;
@@ -455,6 +474,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                         firstName, lastName, companyName, shippingMethodId, 
                         couponCode: finalCouponCode,
                         email,
+                        referralCode,
                         billingSameAsShipping: payload.billingSameAsShipping,
                         billingFirstName: payload.billingFirstName,
                         billingLastName: payload.billingLastName,
@@ -566,7 +586,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },
@@ -634,7 +657,7 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             }, 0);
 
             // Validate coupon for guest
-            const couponResult = await validateGuestCoupon(couponCode, subtotal, (order as any).items);
+            const couponResult = await validateGuestCoupon(couponCode, subtotal, (order as any).items, order.guestEmail || undefined);
             
             if (!couponResult.valid) {
                 return reply.code(400).send({ 
@@ -672,7 +695,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },
@@ -757,7 +783,10 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     items: { 
                         include: { 
                             product: {
-                                include: { prices: { where: { isActive: true }, include: { currency: true } } }
+                                include: { 
+                                    parent: true,
+                                    prices: { where: { isActive: true }, include: { currency: true } } 
+                                }
                             } 
                         } 
                     },
@@ -881,21 +910,45 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
                     });
                 }
 
-                return await tx.order.update({
+                const isOnlinePayment = stripeVerifiedIntentId || ['IPG', 'RAAST', 'ONELINK', 'GOPAYFAST', 'STRIPE', 'CARD'].includes(paymentMethod?.toUpperCase());
+                const orderStatus = isOnlinePayment ? 'PROCESSING' : 'PENDING';
+                const paymentStatus = isOnlinePayment ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID');
+
+                const updatedOrder = await tx.order.update({
                     where: { id: orderId },
                     data: {
-                        status: 'PENDING',
+                        status: orderStatus,
                         orderNumber: generateOrderNumber(),
                         paymentMethod: paymentMethod || 'COD',
                         paymentDetails: {
                             ...(paymentMetadata || {}),
                             ...(stripeVerifiedIntentId ? { stripePaymentIntentId: stripeVerifiedIntentId } : {})
                         },
-                        paymentStatus: stripeVerifiedIntentId ? 'PAID' : (paymentMethod === 'BANK_TRANSFER' ? 'AWAITING_CONFIRMATION' : 'UNPAID'),
+                        paymentStatus: paymentStatus,
                         ...(stripeVerifiedIntentId ? { transactionRef: stripeVerifiedIntentId } : {}),
                         updatedAt: new Date()
                     }
                 });
+
+                // Handle referral recording on submit
+                const shippingDetails = (updatedOrder.shippingDetails as any) || {};
+                const refCode = shippingDetails.referralCode;
+                if (refCode) {
+                    const referrer = await PromotionService.validateReferralCode(tx, refCode);
+                    if (referrer) {
+                        const userEmail = updatedOrder.guestEmail || (order.userId ? (await tx.user.findUnique({ where: { id: order.userId } }))?.email : null);
+                        if (userEmail) {
+                            await PromotionService.recordReferral(tx, referrer.id, userEmail);
+                        }
+                    }
+                }
+
+                // If order is paid, trigger eligibility immediately
+                if (updatedOrder.paymentStatus === 'PAID') {
+                    await PromotionService.triggerOrderReferralReward(tx, updatedOrder);
+                }
+
+                return updatedOrder;
             });
 
             // Trigger n8n webhook
@@ -939,12 +992,13 @@ export default async function guestCheckoutRoutes(fastify: FastifyInstance) {
             }
 
             // Create transaction record
+            const isOnlinePayment = stripeVerifiedIntentId || ['IPG', 'RAAST', 'ONELINK', 'GOPAYFAST', 'STRIPE', 'CARD'].includes(paymentMethod?.toUpperCase());
             await (fastify.prisma as any).transaction.create({
                 data: {
                     orderId: finalOrder.id,
                     userId: order.userId, // Link to hidden guest user
                     amount: finalOrder.totalAmount,
-                    status: 'PENDING',
+                    status: isOnlinePayment ? 'SUCCESS' : 'PENDING',
                     type: 'PAYMENT',
                     method: paymentMethod || 'COD',
                     currencyId: finalOrder.currencyId,

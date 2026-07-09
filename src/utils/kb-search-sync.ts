@@ -23,8 +23,11 @@ export async function syncKbArticleToSearch(fastify: FastifyInstance, articleId:
     return;
   }
 
-  if (article.status !== 'PUBLISHED' || article.visibility !== 'PUBLIC') {
-    // Remove from index if not public/published
+  const lowerTitle = article.title.trim().toLowerCase();
+  const isUntitled = lowerTitle === 'untitled' || lowerTitle === 'untitled article';
+
+  if (article.status !== 'PUBLISHED' || article.visibility !== 'PUBLIC' || isUntitled) {
+    // Remove from index if not public/published/titled
     try {
       await typesense.collections('knowledge_base').documents(article.id).delete();
     } catch (e) {}

@@ -259,9 +259,10 @@ model B2BProfile {
   taxId             String?                   @map("tax_id")
   creditLimit       Decimal                   @default(0) @map("credit_limit") @db.Decimal(12, 2)
   usedCredit        Decimal                   @default(0) @map("used_credit") @db.Decimal(12, 2)
-  paymentTerms      String?                   @map("payment_terms")
-  status            String                    @default("PENDING")
-  createdAt         DateTime                  @default(now()) @map("created_at")
+  paymentTerms       String?                   @map("payment_terms")
+  status             String                    @default("PENDING")
+  isCatalogExclusive Boolean                   @default(false) @map("is_catalog_exclusive")
+  createdAt          DateTime                  @default(now()) @map("created_at")
   updatedAt         DateTime                  @updatedAt @map("updated_at")
   deletedAt         DateTime?                 @map("deleted_at")
   currencyId        String?                   @map("currency_id")
@@ -1178,12 +1179,14 @@ model PriceUpdateLog {
   userName          String?  @map("user_name")
   reason            String?
   createdAt         DateTime @default(now()) @map("created_at")
+  batchId           String?  @map("batch_id")
   
   product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
   performer         User?    @relation(fields: [performedBy], references: [id])
 
   @@index([productId])
   @@index([createdAt])
+  @@index([batchId])
   @@map("price_update_logs")
 }
 
@@ -1257,6 +1260,7 @@ model PendingRegistration {
   updatedAt        DateTime  @updatedAt @map("updated_at")
   state            String?
   zipCode          String?   @map("zip_code")
+  referralCode     String?   @map("referral_code")
 
   @@map("pending_registrations")
 }
@@ -1330,10 +1334,27 @@ model DiscountTier {
   isActive        Boolean      @default(true) @map("is_active")
   createdAt       DateTime     @default(now()) @map("created_at")
   updatedAt       DateTime     @updatedAt @map("updated_at")
-  exemptSkus      String[]     @default([]) @map("exempt_skus")
+  exemptSkus      String[]             @default([]) @map("exempt_skus")
   b2bProfiles     B2BProfile[]
+  assignmentRules B2BAssignmentRule[]
 
   @@map("discount_tiers")
+}
+
+model B2BAssignmentRule {
+  id                 String        @id @default(uuid())
+  name               String
+  emailDomain        String?       @map("email_domain")
+  companyNamePattern String?       @map("company_name_pattern")
+  catalogId          String?       @map("catalog_id")
+  discountTierId     String?       @map("discount_tier_id")
+  isActive           Boolean       @default(true) @map("is_active")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+  catalog            Catalog?      @relation(fields: [catalogId], references: [id], onDelete: SetNull)
+  discountTier       DiscountTier? @relation(fields: [discountTierId], references: [id], onDelete: SetNull)
+
+  @@map("b2b_assignment_rules")
 }
 
 model ProductDiscountOverride {
@@ -1377,6 +1398,7 @@ model Coupon {
   visibility            String           @default("PRIVATE") @map("visibility")
   isStackable           Boolean          @default(false) @map("is_stackable")
   couponType            String           @default("STATIC") @map("coupon_type")
+  allowedEmails         String[]         @default([]) @map("allowed_emails")
   categories            CouponCategory[]
   products              CouponProduct[]
   orders                Order[]
@@ -1615,6 +1637,7 @@ model Catalog {
   products         CatalogProduct[]
   variants         CatalogVariant[]
   companies        CompanyCatalog[]
+  assignmentRules  B2BAssignmentRule[]
 
   @@map("catalogs")
 }
@@ -1902,6 +1925,7 @@ model KbArticle {
   category        KbCategory?       @relation(fields: [categoryId], references: [id])
   author          User              @relation("KbArticleAuthor", fields: [authorId], references: [id])
   revisions       KbArticleRevision[]
+  feedbacks       KbFeedback[]
 
   @@index([categoryId])
   @@index([status, publishedAt])
@@ -1942,9 +1966,27 @@ model KbFaq {
   deletedAt   DateTime?    @map("deleted_at")
 
   category    KbCategory?  @relation(fields: [categoryId], references: [id])
+  feedbacks   KbFeedback[]
 
   @@index([categoryId])
   @@map("kb_faqs")
+}
+
+model KbFeedback {
+  id         String     @id @default(uuid())
+  articleId  String?    @map("article_id")
+  faqId      String?    @map("faq_id")
+  helpful    Boolean
+  ipAddress  String?    @map("ip_address")
+  userAgent  String?    @map("user_agent")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  article    KbArticle? @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  faq        KbFaq?     @relation(fields: [faqId], references: [id], onDelete: Cascade)
+
+  @@index([articleId])
+  @@index([faqId])
+  @@map("kb_feedback")
 }
 
 model KbMedia {
@@ -1960,3 +2002,85 @@ model KbMedia {
 
   @@map("kb_media_assets")
 }
+
+enum ChatStatus {
+  ACTIVE
+  CLOSED
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum SenderType {
+  VISITOR
+  AGENT
+  SYSTEM
+}
+
+enum MessagingProviderType {
+  WHATSAPP_WEB
+  WHATSAPP_CLOUD
+}
+
+model ChatSession {
+  id                    String        @id @default(uuid())
+  shortId               String        @unique @map("short_id")
+  visitorId             String        @map("visitor_id")
+  status                ChatStatus    @default(ACTIVE)
+  visitorName           String?       @map("visitor_name")
+  visitorEmail          String?       @map("visitor_email")
+  userAgent             String?       @map("user_agent")
+  ipAddress             String?       @map("ip_address")
+  closedAt              DateTime?     @map("closed_at")
+  closedBy              String?       @map("closed_by")
+  closeReason           String?       @map("close_reason")
+  createdAt             DateTime      @default(now()) @map("created_at")
+  updatedAt             DateTime      @updatedAt @map("updated_at")
+  messages              ChatMessage[]
+
+  @@index([visitorId])
+  @@index([shortId])
+  @@map("chat_sessions")
+}
+
+model ChatMessage {
+  id                     String                @id @default(uuid())
+  sessionId              String                @map("session_id")
+  direction              MessageDirection
+  sender                 SenderType
+  content                String
+  provider               MessagingProviderType @default(WHATSAPP_WEB)
+  providerMessageId      String?               @map("provider_message_id")
+  providerConversationId String?               @map("provider_conversation_id")
+  attachmentUrl          String?               @map("attachment_url")
+  attachmentType         String?               @map("attachment_type")
+  isRead                 Boolean               @default(false) @map("is_read")
+  readAt                 DateTime?             @map("read_at")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  session                ChatSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("chat_messages")
+}
+
+model ChatAgent {
+  id        String   @id @default(uuid())
+  name      String
+  role      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("chat_agents")
+}
+
+model WhatsAppConnectionStatus {
+  id             String   @id @default("singleton")
+  status         String   // CONNECTED, DISCONNECTED, AUTH_FAILURE, CONNECTING
+  qrCode         String?  @db.Text
+  whatsappNumber String?  @map("whatsapp_number")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("whatsapp_connection_statuses")
+}
+

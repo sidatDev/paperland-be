@@ -249,4 +249,121 @@ export class PromotionService {
       brands: Array.from(occupied.brands)
     };
   }
+
+  /**
+   * Validates a referral code.
+   * Format is REF-[first 8 characters of referrer's user ID].
+   */
+  static async validateReferralCode(prisma: any, referralCode: string) {
+    if (!referralCode || !referralCode.startsWith('REF-')) return null;
+    const idPrefix = referralCode.replace('REF-', '').toLowerCase();
+    if (idPrefix.length < 4) return null; // safety check
+    
+    // Find a user whose ID starts with the prefix
+    const referrer = await prisma.user.findFirst({
+      where: {
+        id: {
+          startsWith: idPrefix,
+          mode: 'insensitive'
+        },
+        deletedAt: null
+      }
+    });
+    return referrer;
+  }
+
+  /**
+   * Records a pending referral record in the database.
+   */
+  static async recordReferral(prisma: any, referrerId: string, referredEmail: string) {
+    try {
+      // 1. Get active referral program
+      const program = await prisma.referralProgram.findFirst({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' }
+      });
+      if (!program) return null;
+
+      // 2. Check if a referral already exists for this referred email
+      const cleanEmail = referredEmail.trim().toLowerCase();
+      const uniqueReferralCode = `REF-${referrerId.slice(0, 8)}-${cleanEmail}`;
+
+      const existing = await prisma.customerReferral.findFirst({
+        where: {
+          OR: [
+            { referralCode: uniqueReferralCode },
+            { referralCode: { endsWith: `-${cleanEmail}` } }
+          ]
+        }
+      });
+      if (existing) return existing;
+
+      // 3. Create pending customer referral
+      const newReferral = await prisma.customerReferral.create({
+        data: {
+          programId: program.id,
+          referrerId: referrerId,
+          referralCode: uniqueReferralCode,
+          status: 'PENDING',
+          rewardPaid: false
+        }
+      });
+      return newReferral;
+    } catch (err) {
+      console.error('Error recording referral:', err);
+      return null;
+    }
+  }
+
+  /**
+   * Automatically updates a referral's status to ELIGIBLE when the referred user's first order shifts to paid.
+   */
+  static async triggerOrderReferralReward(prisma: any, order: any) {
+    try {
+      const email = (order.guestEmail || order.user?.email || '').trim().toLowerCase();
+      if (!email) return;
+
+      // Find if this email was referred
+      const referral = await prisma.customerReferral.findFirst({
+        where: {
+          referralCode: {
+            endsWith: `-${email}`
+          },
+          status: 'PENDING'
+        }
+      });
+
+      if (!referral) return;
+
+      // Check if this is the referred user's first paid order
+      // Query other orders for this user/guest email that are PAID and are not this order
+      const otherPaidOrders = await prisma.order.findFirst({
+        where: {
+          id: { not: order.id },
+          OR: [
+            { guestEmail: email },
+            { user: { email } }
+          ],
+          paymentStatus: 'PAID',
+          deletedAt: null
+        }
+      });
+
+      if (otherPaidOrders) {
+        // Not the first paid order
+        return;
+      }
+
+      // Flag the referral as ELIGIBLE for reward payout
+      await prisma.customerReferral.update({
+        where: { id: referral.id },
+        data: {
+          status: 'ELIGIBLE'
+        }
+      });
+    } catch (err) {
+      console.error('Error triggering order referral reward:', err);
+    }
+  }
 }
+

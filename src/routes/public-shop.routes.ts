@@ -25,6 +25,27 @@ async function getAllCategoryIdsRecursive(prisma: any, categoryIds: string[]): P
     return Array.from(new Set(allIds));
 }
 
+async function getAllParentCategoryIdsRecursive(prisma: any, categoryIds: string[]): Promise<string[]> {
+    if (!categoryIds || categoryIds.length === 0) return [];
+    
+    let allIds = [...categoryIds];
+    let currentLevelIds = [...categoryIds];
+    
+    while (currentLevelIds.length > 0) {
+        const parents = await prisma.category.findMany({
+            where: { id: { in: currentLevelIds }, parentId: { not: null } },
+            select: { parentId: true }
+        });
+        
+        currentLevelIds = parents.map((c: any) => c.parentId).filter(Boolean);
+        if (currentLevelIds.length > 0) {
+            allIds = [...allIds, ...currentLevelIds];
+        }
+    }
+    
+    return Array.from(new Set(allIds));
+}
+
 export default async function publicShopRoutes(fastify: FastifyInstance) {
     
     // 0. GET /api/redis-health
@@ -370,6 +391,8 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                     originalPrice: isSale ? basePrice : undefined,
                                     isSale,
                                     currency: 'PKR', slug: i.product?.slug, link: i.customLink || (i.product ? `/en/products/${i.product.slug || i.product.id}` : '#'), is_featured_large: i.isFeaturedLarge,
+                                    customSubtitle: i.customSubtitle || '',
+                                    customDescription: i.customDescription || '',
                                     ... (i.product ? calculateAvailability(i.product) : {}),
                                     ... (i.product ? calculateVariantPriceRange(i.product) : {}),
                                     rating: i.product?.reviews?.length > 0 
@@ -415,7 +438,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             }
                             return {
                                 id: i.id, name: i.customTitle || 'Unnamed', image: i.customImage || '',
-                                price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge
+                                price: 0, currency: 'PKR', link: i.customLink || '#', is_featured_large: i.isFeaturedLarge,
+                                customSubtitle: i.customSubtitle || '',
+                                customDescription: i.customDescription || ''
                             };
                         })
                     };
@@ -571,10 +596,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             const result = await fastify.cache.wrap(cacheKey, async () => {
                 // Fetch user's catalogs for filtering if logged in
                 let catalogIds: string[] = [];
+                let isExclusive = false;
                 if (userId && userId !== 'guest') {
                     const user = await (fastify.prisma as any).user.findUnique({
                         where: { id: userId },
                         select: {
+                            b2bProfile: {
+                                select: {
+                                    isCatalogExclusive: true
+                                }
+                            },
                             company: {
                                 select: {
                                     catalogs: {
@@ -600,6 +631,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                     if (user?.company?.catalogs) {
                         catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                     }
+                    if (user?.b2bProfile) {
+                        isExclusive = user.b2bProfile.isCatalogExclusive;
+                    }
                 }
 
                 const where: any = {
@@ -620,7 +654,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 };
 
                 // Catalog Visibility Filter for B2B Users
-                if (catalogIds.length > 0) {
+                if (catalogIds.length > 0 && isExclusive) {
                     where.AND.push({
                         catalogProducts: {
                             some: {
@@ -678,16 +712,38 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             categoryId: { in: categoryIds }
                         });
                     } else {
-                        // Otherwise do general search including category name
-                        where.AND.push({
-                            OR: [
-                                { name: { contains: q, mode: 'insensitive' } },
-                                { sku: { contains: q, mode: 'insensitive' } },
-                                { specifications: { path: ['partNo'], string_contains: q } },
-                                { category: { name: { contains: q, mode: 'insensitive' } } },
-                                { brand: { name: { contains: q, mode: 'insensitive' } } }
-                            ]
-                        });
+                        let productIdsFromSearch: string[] | undefined = undefined;
+                        if (fastify.typesense) {
+                            try {
+                                const searchParameters = {
+                                    q: q,
+                                    query_by: 'name,sku,normalized_sku,part_no,normalized_part_no,slug,description,brand,category',
+                                    filter_by: 'isActive:true',
+                                    per_page: 1000
+                                };
+                                const result = await fastify.typesense.collections('products').documents().search(searchParameters);
+                                productIdsFromSearch = result.hits?.map((hit: any) => hit.document.id) || [];
+                            } catch (tsErr) {
+                                fastify.log.error(tsErr, "Typesense search failed in public shop, falling back to Prisma search");
+                            }
+                        }
+
+                        if (productIdsFromSearch !== undefined) {
+                            where.AND.push({
+                                id: { in: productIdsFromSearch }
+                            });
+                        } else {
+                            // Otherwise do general search including category name
+                            where.AND.push({
+                                OR: [
+                                    { name: { contains: q, mode: 'insensitive' } },
+                                    { sku: { contains: q, mode: 'insensitive' } },
+                                    { specifications: { path: ['partNo'], string_contains: q } },
+                                    { category: { name: { contains: q, mode: 'insensitive' } } },
+                                    { brand: { name: { contains: q, mode: 'insensitive' } } }
+                                ]
+                            });
+                        }
                     }
                 }
 
@@ -806,6 +862,20 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         break;
                 }
 
+                const clonePrismaWhere = (original: any) => {
+                    return JSON.parse(JSON.stringify(original));
+                };
+
+                const whereForBrandFacet = {
+                    ...clonePrismaWhere(where),
+                    AND: where.AND ? where.AND.filter((item: any) => !item.brand) : []
+                };
+
+                const whereForCategoryFacet = {
+                    ...clonePrismaWhere(where),
+                    AND: where.AND ? where.AND.filter((item: any) => !item.categoryId) : []
+                };
+
                 const [products, total, totalCategories, totalBrands, totalIndustries] = await Promise.all([
                     (fastify.prisma as any).product.findMany({
                         where,
@@ -875,24 +945,33 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         });
                     }),
                     (fastify.prisma as any).product.count({ where }),
-                    (fastify.prisma as any).category.findMany({ 
-                        where: { 
-                            isActive: true, 
-                            deletedAt: null 
-                        }, 
-                        select: { 
-                            id: true, 
-                            name: true, 
-                            slug: true, 
-                            imageUrl: true, 
-                            parentId: true,
-                            _count: {
-                                select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } }
-                            }
-                        },
-                        orderBy: { name: 'asc' }
+                    (fastify.prisma as any).product.findMany({
+                        where: whereForCategoryFacet,
+                        select: { categoryId: true },
+                        distinct: ['categoryId']
+                    }).then(async (catIdsInResults: any[]) => {
+                        const directCatIds = catIdsInResults.map((p: any) => p.categoryId).filter(Boolean);
+                        const relevantCatIds = await getAllParentCategoryIdsRecursive(fastify.prisma, directCatIds);
+                        return (fastify.prisma as any).category.findMany({
+                            where: { id: { in: relevantCatIds }, isActive: true, deletedAt: null },
+                            select: { id: true, name: true, slug: true, imageUrl: true, parentId: true,
+                                _count: { select: { products: { where: { isActive: true, deletedAt: null, isVisibleOnEcommerce: true, parentId: null } } } }
+                            },
+                            orderBy: { name: 'asc' }
+                        });
                     }),
-                    (fastify.prisma as any).brand.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } }),
+                    (fastify.prisma as any).product.findMany({
+                        where: whereForBrandFacet,
+                        select: { brandId: true },
+                        distinct: ['brandId']
+                    }).then(async (brandIdsInResults: any[]) => {
+                        const relevantBrandIds = brandIdsInResults.map((p: any) => p.brandId).filter(Boolean);
+                        return (fastify.prisma as any).brand.findMany({
+                            where: { id: { in: relevantBrandIds }, isActive: true, deletedAt: null },
+                            select: { id: true, name: true, slug: true, logoUrl: true },
+                            orderBy: { name: 'asc' }
+                        });
+                    }),
                     (fastify.prisma as any).industry.findMany({ where: { isActive: true, deletedAt: null }, select: { id: true, name: true, slug: true, logoUrl: true }, orderBy: { name: 'asc' } })
                 ]);
 
@@ -919,7 +998,19 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 });
                             };
 
-                            return pruneEmpty(rootCategories);
+                            const annotateWithAncestors = (nodes: any[], ancestors: {id: string; name: string; slug: string}[] = []) => {
+                                nodes.forEach(node => {
+                                    node.ancestors = ancestors;
+                                    annotateWithAncestors(node.subCategories || [], [
+                                        ...ancestors,
+                                        { id: node.id, name: node.name, slug: node.slug }
+                                    ]);
+                                });
+                            };
+
+                            const prunedCategories = pruneEmpty(rootCategories);
+                            annotateWithAncestors(prunedCategories);
+                            return prunedCategories;
                         })(totalCategories),
                         brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
                         industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
@@ -982,10 +1073,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             // Fetch user's catalogs for filtering if logged in
             let catalogIds: string[] = [];
+            let isExclusive = false;
             if (userId) {
                 const user = await (fastify.prisma as any).user.findUnique({
                     where: { id: userId },
                     select: {
+                        b2bProfile: {
+                            select: {
+                                isCatalogExclusive: true
+                            }
+                        },
                         company: {
                             select: {
                                 catalogs: {
@@ -1011,6 +1108,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 if (user?.company?.catalogs) {
                     catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 }
+                if (user?.b2bProfile) {
+                    isExclusive = user.b2bProfile.isCatalogExclusive;
+                }
             }
 
             const product = await (fastify.prisma as any).product.findFirst({
@@ -1028,7 +1128,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 { industries: { some: { industry: { isActive: true, deletedAt: null } } } }
                             ]
                         },
-                        catalogIds.length > 0 ? {
+                        catalogIds.length > 0 && isExclusive ? {
                             catalogProducts: {
                                 some: {
                                     catalogId: { in: catalogIds }
@@ -1099,7 +1199,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 variantAttributes: product.variantAttributes,
                 variants: await Promise.all((product.variants || [])
                     .filter((v: any) => {
-                        if (catalogIds.length === 0) return true;
+                        if (catalogIds.length === 0 || !isExclusive) return true;
                         // For B2B with catalogs, variants must also be in the catalog
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })
@@ -1176,10 +1276,16 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
             // Fetch user's catalogs for filtering if logged in
             let catalogIds: string[] = [];
+            let isExclusive = false;
             if (userId && userId !== 'guest') {
                 const user = await (fastify.prisma as any).user.findUnique({
                     where: { id: userId },
                     select: {
+                        b2bProfile: {
+                            select: {
+                                isCatalogExclusive: true
+                            }
+                        },
                         company: {
                             select: {
                                 catalogs: {
@@ -1205,6 +1311,9 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 if (user?.company?.catalogs) {
                     catalogIds = user.company.catalogs.map((c: any) => c.catalogId);
                 }
+                if (user?.b2bProfile) {
+                    isExclusive = user.b2bProfile.isCatalogExclusive;
+                }
             }
 
             const product = await (fastify.prisma as any).product.findFirst({
@@ -1227,7 +1336,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 ...(isUUID ? [{ id: slug }] : [])
                             ]
                         },
-                        catalogIds.length > 0 ? {
+                        catalogIds.length > 0 && isExclusive ? {
                             catalogProducts: {
                                 some: {
                                     catalogId: { in: catalogIds }
@@ -1298,7 +1407,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                 variantAttributes: product.variantAttributes,
                 variants: await Promise.all((product.variants || [])
                     .filter((v: any) => {
-                        if (catalogIds.length === 0) return true;
+                        if (catalogIds.length === 0 || !isExclusive) return true;
                         // For B2B with catalogs, variants must also be in the catalog
                         return product.catalogVariants?.some((cv: any) => cv.variantId === v.id && catalogIds.includes(cv.catalogId));
                     })
