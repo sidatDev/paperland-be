@@ -7,6 +7,8 @@ import ExcelJS from 'exceljs';
 import crypto from 'crypto';
 import { featureFlags } from '../config/feature-flags';
 
+const processedRequestIds = new Set<string>();
+
 export default async function productRoutes(fastify: FastifyInstance) {
   
   // Helper to resolve Category/Brand ID by ID or Name
@@ -181,12 +183,20 @@ export default async function productRoutes(fastify: FastifyInstance) {
 
       pricing: (() => {
         const supported = ['PKR'];
-        const results = p.prices?.map((price: any) => ({
-           currency: price.currency?.code,
-           basePrice: Number(price.priceRetail),
-           wholesalePrice: Number(price.priceWholesale),
-           promotionalPrice: Number(price.priceSpecial)
-        })) ?? [];
+        const results = p.prices?.map((price: any) => {
+           const retail = Number(price.priceRetail);
+           const special = Number(price.priceSpecial || 0);
+           // Only treat priceSpecial as a promotional price when it is
+           // a strictly positive value AND lower than the retail price.
+           // This matches the same guard used by the public-shop PricingEngine.
+           const validPromo = special > 0 && special < retail ? special : 0;
+           return {
+             currency: price.currency?.code,
+             basePrice: retail,
+             wholesalePrice: Number(price.priceWholesale),
+             promotionalPrice: validPromo
+           };
+        }) ?? [];
         
         const existingCodes = results.map((r: any) => r.currency);
         const pkrPrice = results.find((r: any) => r.currency === 'PKR');
@@ -197,7 +207,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 results.push({
                     currency: code,
                     basePrice: Number(pkrBase.toFixed(2)),
-                    wholesalePrice: Number((pkrBase * 0.9).toFixed(2))
+                    wholesalePrice: Number((pkrBase * 0.9).toFixed(2)),
+                    promotionalPrice: 0
                 });
             }
         });
@@ -229,7 +240,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
         : Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
       
       wholesalePrice: Number(p.prices?.find((pr: any) => pr.isActive)?.priceWholesale || p.prices?.[0]?.priceWholesale || 0),
-      promotionalPrice: Number(p.prices?.find((pr: any) => pr.isActive)?.priceSpecial || p.prices?.[0]?.priceSpecial || 0),
+      promotionalPrice: (() => {
+        const activePr = p.prices?.find((pr: any) => pr.isActive) || p.prices?.[0];
+        const retail = Number(activePr?.priceRetail || 0);
+        const special = Number(activePr?.priceSpecial || 0);
+        // Only expose a promotional price when it is strictly lower than retail
+        return special > 0 && special < retail ? special : 0;
+      })(),
 
       media: (p.images && p.images.length > 0)
         ? p.images.map((url: string, index: number) => ({ type: 'image', url, label: index === 0 ? 'Main' : `Image ${index + 1}` }))
@@ -478,8 +495,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
           minPrice !== undefined && minPrice !== "" ? { price: { gte: Number(minPrice) } } : {},
           maxPrice !== undefined && maxPrice !== "" ? { price: { lte: Number(maxPrice) } } : {},
 
-          // Only Base Products (Hide Variants unless explicitly requested)
-          String(includeVariants) === 'true' || groupedView === 'variants' ? {} : { parentId: null },
+          // Only Base Products (Hide Variants unless explicitly requested by groupedView='variants')
+          // Note: includeVariants='true' is used to embed variants inside their parents, not to flatten them into the root results list.
+          groupedView === 'variants' ? { parentId: { not: null } } : { parentId: null },
 
           // Parent Filter (Task 2.2)
           parentIdFilter !== undefined ? (parentIdFilter === 'null' ? { parentId: null } : { parentId: parentIdFilter }) : {},
@@ -669,8 +687,6 @@ export default async function productRoutes(fastify: FastifyInstance) {
         },
         seo: { type: 'object', additionalProperties: true },
 
-        // Variants
-        promotionalPrice: { type: 'number' },
         tierPricing: {
             type: 'object',
             properties: {
@@ -798,7 +814,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status = "Draft",
             salesPrice = 0, currency = "PKR", stock = 0, costPrice = 0, specifications = {}, specs = [],
-            promotionalPrice = 0, tierPricing = {},
+            tierPricing = {},
             weight, width, length, volume,
             media, seo, 
             isFeatured = false, 
@@ -810,6 +826,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
             variantAttributes,
             variants = []
         } = data;
+        const promotionalPrice = undefined;
 
         console.log('Create Product Body:', JSON.stringify(data, null, 2));
 
@@ -1036,12 +1053,13 @@ export default async function productRoutes(fastify: FastifyInstance) {
             categoryId: bodyCategoryId, brandId: bodyBrandId,
             category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status,
             salesPrice, stock, costPrice, specifications, specs,
-            promotionalPrice, tierPricing,
+            tierPricing,
             weight, width, length, volume,
             media, seo, 
             isFeatured, isVisibleOnEcommerce, isEcommerceVisible, fullDescription, industries,
             parentId, variantOptions, variantAttributes
         } = data;
+        const promotionalPrice = undefined;
 
         let finalStatus = status;
         let finalIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : undefined;
@@ -2023,16 +2041,25 @@ export default async function productRoutes(fastify: FastifyInstance) {
           actionType: { type: 'string', enum: ['SET_SAME', 'INC_FIXED', 'DEC_FIXED', 'INC_PERCENT', 'DEC_PERCENT', 'COPY_PRODUCT'] },
           field: { type: 'string', enum: ['RETAIL', 'WHOLESALE', 'SPECIAL', 'COST'] },
           value: { type: 'number' },
-          copyFromProductId: { type: 'string' }
+          copyFromProductId: { type: 'string' },
+          requestId: { type: 'string' }
         }
       }
     }
   }, async (request: any, reply) => {
-    const { ids, actionType, field, value, copyFromProductId, brandIds, categoryIds } = request.body;
+    const { ids, actionType, field, value, copyFromProductId, brandIds, categoryIds, requestId } = request.body;
     const prisma = fastify.prisma as any;
     const user = request.user as any;
 
     try {
+      if (requestId) {
+        if (processedRequestIds.has(requestId)) {
+          return createResponse(null, 'Duplicate request ignored');
+        }
+        processedRequestIds.add(requestId);
+        setTimeout(() => processedRequestIds.delete(requestId), 10000);
+      }
+
       if ((!ids || ids.length === 0) && (!brandIds || brandIds.length === 0) && (!categoryIds || categoryIds.length === 0)) {
         return reply.status(400).send(createErrorResponse('No products, brands, or categories selected'));
       }
@@ -2061,8 +2088,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
       const batchId = crypto.randomUUID();
 
       // Fetch target products and variants
+      // We look up products by resolvedIds (direct match) OR parentId in resolvedIds (so that if a parent is selected, its variants are loaded, and if a variant is selected, its parent context is matched).
       const targets = await prisma.product.findMany({
-        where: { id: { in: resolvedIds }, deletedAt: null },
+        where: {
+          OR: [
+            { id: { in: resolvedIds } },
+            { parentId: { in: resolvedIds } }
+          ],
+          deletedAt: null
+        },
         include: {
           prices: { where: { isActive: true } },
           variants: {
@@ -2076,10 +2110,10 @@ export default async function productRoutes(fastify: FastifyInstance) {
         return reply.status(404).send(createErrorResponse('No valid target products found'));
       }
 
-      // Collect all individual items (standalone, parents, and child variants) to update
+      // Collect all individual items (standalone, parents without variants, and child variants) to update.
+      // Parent products with variants are containers and should not have prices saved/updated directly.
       const itemsMap = new Map<string, any>();
       for (const t of targets) {
-        itemsMap.set(t.id, t);
         if (t.variants && t.variants.length > 0) {
           for (const v of t.variants) {
             itemsMap.set(v.id, {
@@ -2087,10 +2121,25 @@ export default async function productRoutes(fastify: FastifyInstance) {
               parentSku: t.sku
             });
           }
+        } else {
+          itemsMap.set(t.id, t);
         }
       }
 
-      const allItems = Array.from(itemsMap.values());
+      // If specific IDs were selected, filter allItems so we only apply updates to:
+      // 1. The selected variants themselves (if variant IDs were passed directly)
+      // 2. Sibling variants of selected parents (if parent IDs were passed)
+      // 3. Standalone products (if standalone IDs were passed)
+      let allItems = Array.from(itemsMap.values());
+      if (ids && ids.length > 0) {
+        allItems = allItems.filter(item => {
+          // If the item itself is selected
+          if (ids.includes(item.id)) return true;
+          // If the item is a variant and its parent is selected
+          if (item.parentId && ids.includes(item.parentId)) return true;
+          return false;
+        });
+      }
 
       // Fetch source product if action is COPY_PRODUCT
       let sourceProduct: any = null;
@@ -2273,6 +2322,39 @@ export default async function productRoutes(fastify: FastifyInstance) {
               data: updateData
             });
           }
+
+          // Automatically sync the parent product's price to the lowest active variant's retail price
+          // if a variant's retail price was updated (i.e. if it has a parentId).
+          const targetProd = await tx.product.findUnique({
+            where: { id: up.itemId },
+            select: { parentId: true }
+          });
+          if (targetProd?.parentId) {
+            const siblings = await tx.product.findMany({
+              where: { parentId: targetProd.parentId, deletedAt: null, isActive: true },
+              include: { prices: { where: { isActive: true } } }
+            });
+            const siblingPrices = siblings.map((s: any) => {
+              if (s.id === up.itemId && up.field === 'RETAIL') return up.newPrice;
+              return s.prices?.[0]?.priceRetail ?? Number(s.price || 0);
+            });
+            if (siblingPrices.length > 0) {
+              const lowestPrice = Math.min(...siblingPrices);
+              await tx.product.update({
+                where: { id: targetProd.parentId },
+                data: { price: lowestPrice }
+              });
+              const parentPriceObj = await tx.price.findFirst({
+                where: { productId: targetProd.parentId, isActive: true }
+              });
+              if (parentPriceObj) {
+                await tx.price.update({
+                  where: { id: parentPriceObj.id },
+                  data: { priceRetail: lowestPrice }
+                });
+              }
+            }
+          }
         }
       });
 
@@ -2441,12 +2523,15 @@ export default async function productRoutes(fastify: FastifyInstance) {
           logField('WHOLESALE', oldWholesale, newWholesale);
           changed = true;
         }
-        // Special comparison: handle null vs 0 vs existing
-        const oldSpecialCompare = oldSpecial !== null ? oldSpecial : 0;
-        const newSpecialCompare = newSpecial !== null ? newSpecial : 0;
-        if (newSpecialCompare !== oldSpecialCompare) {
-          logField('SPECIAL', oldSpecialCompare, newSpecialCompare);
-          changed = true;
+        // Special comparison: only compare when caller explicitly sent a value (not null).
+        // null means "don't touch priceSpecial" (e.g. price-management page after removing the field).
+        if (u.priceSpecial !== null && u.priceSpecial !== undefined) {
+          const oldSpecialCompare = oldSpecial !== null ? oldSpecial : 0;
+          const newSpecialCompare = newSpecial !== null ? newSpecial : 0;
+          if (newSpecialCompare !== oldSpecialCompare) {
+            logField('SPECIAL', oldSpecialCompare, newSpecialCompare);
+            changed = true;
+          }
         }
         if (newCost !== oldCost) {
           logField('COST', oldCost, newCost);
@@ -2458,7 +2543,9 @@ export default async function productRoutes(fastify: FastifyInstance) {
             id: product.id,
             priceRetail: newRetail,
             priceWholesale: newWholesale,
-            priceSpecial: newSpecial,
+            // Only include priceSpecial when caller explicitly sent a value;
+            // null means "don't touch it" (e.g. price-management page).
+            priceSpecial: u.priceSpecial !== null && u.priceSpecial !== undefined ? newSpecial : undefined,
             costPrice: newCost,
             activePriceObj
           });
@@ -2488,7 +2575,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
               data: {
                 priceRetail: item.priceRetail,
                 priceWholesale: item.priceWholesale,
-                priceSpecial: item.priceSpecial
+                // Only overwrite priceSpecial when caller explicitly sent a value
+                ...(item.priceSpecial !== undefined ? { priceSpecial: item.priceSpecial } : {})
               }
             });
           } else {
@@ -2502,6 +2590,40 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 isActive: true
               }
             });
+          }
+
+          // Automatically sync the parent product's price to the lowest active variant's retail price
+          // if the product being updated is a variant (i.e. has a parentId).
+          const targetProd = await tx.product.findUnique({
+            where: { id: item.id },
+            select: { parentId: true }
+          });
+          if (targetProd?.parentId) {
+            const siblings = await tx.product.findMany({
+              where: { parentId: targetProd.parentId, deletedAt: null, isActive: true },
+              include: { prices: { where: { isActive: true } } }
+            });
+            const siblingPrices = siblings.map((s: any) => {
+              if (s.id === item.id) return item.priceRetail; // use the newly updated price
+              return s.prices?.[0]?.priceRetail ?? Number(s.price || 0);
+            });
+            if (siblingPrices.length > 0) {
+              const lowestPrice = Math.min(...siblingPrices);
+              await tx.product.update({
+                where: { id: targetProd.parentId },
+                data: { price: lowestPrice }
+              });
+              // Also update the parent product's main active price entry if it exists
+              const parentPriceObj = await tx.price.findFirst({
+                where: { productId: targetProd.parentId, isActive: true }
+              });
+              if (parentPriceObj) {
+                await tx.price.update({
+                  where: { id: parentPriceObj.id },
+                  data: { priceRetail: lowestPrice }
+                });
+              }
+            }
           }
         }
       });
