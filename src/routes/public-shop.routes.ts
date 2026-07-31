@@ -239,13 +239,20 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
 
         const prices = p.variants
             .map((v: any) => {
-                const { finalPrice } = getProductPrices(v);
-                return finalPrice;
+                const pkr = v.prices?.find((pr: any) => pr.currency?.code === 'PKR');
+                const price = pkr ? Number(pkr.priceRetail) : Number(v.prices?.[0]?.priceRetail || v.price || 0);
+                return price;
             })
             .filter((pr: number) => pr > 0);
 
+        const parentPrice = Number(p.price || 0);
+
         if (prices.length === 0) {
-            return { hasVariants: true, minVariantPrice: Number(p.price), maxVariantPrice: Number(p.price) };
+            return {
+                hasVariants: true,
+                minVariantPrice: parentPrice,
+                maxVariantPrice: parentPrice
+            };
         }
 
         return {
@@ -587,7 +594,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
             acc[key] = request.query[key];
             return acc;
         }, {} as any);
-        const cacheKey = `shop:products:${userId}:${JSON.stringify(queryKey)}`;
+        const cacheKey = `shop:products:v3:${userId}:${JSON.stringify(queryKey)}`;
         
         // TTL logic: Search (q) gets 2 mins, general listing gets 5 mins
         const TTL = q ? 120 : 300; 
@@ -887,7 +894,7 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             industries: { include: { industry: true } },
                             variants: {
                                 where: { deletedAt: null },
-                                include: { stocks: true }
+                                include: { stocks: true, prices: { include: { currency: true } } }
                             },
                             reviews: {
                                 where: { status: 'APPROVED' },
