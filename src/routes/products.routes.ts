@@ -2523,6 +2523,8 @@ export default async function productRoutes(fastify: FastifyInstance) {
       await prisma.$transaction(async (tx: any) => {
         await tx.priceUpdateLog.createMany({ data: logsToCreate });
 
+        const parentIdsToResync = new Set<string>();
+
         for (const up of updates) {
           const updateData: any = {};
           if (up.field === 'RETAIL') {
@@ -2567,39 +2569,45 @@ export default async function productRoutes(fastify: FastifyInstance) {
             });
           }
 
-          // Automatically sync the parent product's price to the lowest active variant's retail price
-          // if a variant's retail price was updated (i.e. if it has a parentId).
-          const targetProd = await tx.product.findUnique({
-            where: { id: up.itemId },
-            select: { parentId: true }
+          // Collect parentId if item is a variant
+          const itemMeta = allItems.find(i => i.id === up.itemId);
+          if (itemMeta?.parentId) {
+            parentIdsToResync.add(itemMeta.parentId);
+          }
+        }
+
+        // Resync parent lowest prices once per unique parent
+        for (const parentId of Array.from(parentIdsToResync)) {
+          const siblings = await tx.product.findMany({
+            where: { parentId, deletedAt: null, isActive: true },
+            include: { prices: { where: { isActive: true } } }
           });
-          if (targetProd?.parentId) {
-            const siblings = await tx.product.findMany({
-              where: { parentId: targetProd.parentId, deletedAt: null, isActive: true },
-              include: { prices: { where: { isActive: true } } }
+          const siblingPrices = siblings.map((s: any) => {
+            const up = updates.find(u => u.itemId === s.id && u.field === 'RETAIL');
+            if (up) return up.newPrice;
+            return s.prices?.[0]?.priceRetail ?? Number(s.price || 0);
+          }).filter((p: number) => !isNaN(p) && p > 0);
+
+          if (siblingPrices.length > 0) {
+            const lowestPrice = Math.min(...siblingPrices);
+            await tx.product.update({
+              where: { id: parentId },
+              data: { price: lowestPrice }
             });
-            const siblingPrices = siblings.map((s: any) => {
-              if (s.id === up.itemId && up.field === 'RETAIL') return up.newPrice;
-              return s.prices?.[0]?.priceRetail ?? Number(s.price || 0);
+            const parentPriceObj = await tx.price.findFirst({
+              where: { productId: parentId, isActive: true }
             });
-            if (siblingPrices.length > 0) {
-              const lowestPrice = Math.min(...siblingPrices);
-              await tx.product.update({
-                where: { id: targetProd.parentId },
-                data: { price: lowestPrice }
+            if (parentPriceObj) {
+              await tx.price.update({
+                where: { id: parentPriceObj.id },
+                data: { priceRetail: lowestPrice }
               });
-              const parentPriceObj = await tx.price.findFirst({
-                where: { productId: targetProd.parentId, isActive: true }
-              });
-              if (parentPriceObj) {
-                await tx.price.update({
-                  where: { id: parentPriceObj.id },
-                  data: { priceRetail: lowestPrice }
-                });
-              }
             }
           }
         }
+      }, {
+        timeout: 30000,
+        maxWait: 10000
       });
 
       const updatedProducts = await prisma.product.findMany({

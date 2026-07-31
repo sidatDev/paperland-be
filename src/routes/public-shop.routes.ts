@@ -968,7 +968,24 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                         const relevantBrandIds = brandIdsInResults.map((p: any) => p.brandId).filter(Boolean);
                         return (fastify.prisma as any).brand.findMany({
                             where: { id: { in: relevantBrandIds }, isActive: true, deletedAt: null },
-                            select: { id: true, name: true, slug: true, logoUrl: true },
+                            select: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                logoUrl: true,
+                                _count: {
+                                    select: {
+                                        products: {
+                                            where: {
+                                                isActive: true,
+                                                deletedAt: null,
+                                                isVisibleOnEcommerce: true,
+                                                parentId: null
+                                            }
+                                        }
+                                    }
+                                }
+                            },
                             orderBy: { name: 'asc' }
                         });
                     }),
@@ -991,6 +1008,18 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                                 }
                             });
 
+                            // Roll up subcategory product counts to parent categories
+                            const rollupCategoryCounts = (nodes: any[]): number => {
+                                let childrenSum = 0;
+                                nodes.forEach(node => {
+                                    const subSum = rollupCategoryCounts(node.subCategories || []);
+                                    node.productsCount = (node.productsCount || 0) + subSum;
+                                    childrenSum += node.productsCount;
+                                });
+                                return childrenSum;
+                            };
+                            rollupCategoryCounts(rootCategories);
+
                             const pruneEmpty = (nodes: any[]) => {
                                 return nodes.filter(node => {
                                     node.subCategories = pruneEmpty(node.subCategories);
@@ -1012,7 +1041,15 @@ export default async function publicShopRoutes(fastify: FastifyInstance) {
                             annotateWithAncestors(prunedCategories);
                             return prunedCategories;
                         })(totalCategories),
-                        brands: totalBrands.map((b: any) => ({ ...b, imageUrl: b.logoUrl })), // Map logoUrl to imageUrl for consistency
+                        brands: totalBrands
+                            .map((b: any) => ({
+                                id: b.id,
+                                name: b.name,
+                                slug: b.slug,
+                                imageUrl: b.logoUrl,
+                                productsCount: b._count?.products || 0
+                            }))
+                            .filter((b: any) => b.productsCount > 0),
                         industries: totalIndustries.map((i: any) => ({ ...i, imageUrl: i.logoUrl })) // Map logoUrl to imageUrl
                     },
                     products: products.map((p: any) => ({
