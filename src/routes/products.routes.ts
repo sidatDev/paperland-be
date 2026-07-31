@@ -1630,6 +1630,76 @@ export default async function productRoutes(fastify: FastifyInstance) {
       }
   });
 
+  // POST /admin/products/bulk-delete — Bulk Soft Delete (Deactivate)
+  fastify.post('/admin/products/bulk-delete', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+        description: 'Bulk soft-delete (deactivate) products',
+        tags: ['Catalog'],
+        body: {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+                ids: { type: 'array', items: { type: 'string' } }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { ids } = request.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send(createErrorResponse('Product IDs array is required'));
+    }
+
+    try {
+        const products = await (fastify.prisma as any).product.findMany({
+            where: { id: { in: ids } }
+        });
+
+        const timestamp = Date.now();
+
+        for (const product of products) {
+            await (fastify.prisma as any).product.update({
+                where: { id: product.id },
+                data: {
+                    deletedAt: new Date(),
+                    isActive: false,
+                    sku: `${product.sku}_del_${timestamp}_${product.id.slice(0, 4)}`,
+                    slug: product.slug ? `${product.slug}_del_${timestamp}_${product.id.slice(0, 4)}` : undefined
+                }
+            });
+
+            // Soft-delete variants of this product
+            const variants = await (fastify.prisma as any).product.findMany({
+                where: { parentId: product.id }
+            });
+
+            for (const v of variants) {
+                await (fastify.prisma as any).product.update({
+                    where: { id: v.id },
+                    data: {
+                        deletedAt: new Date(),
+                        isActive: false,
+                        sku: `${v.sku}_del_${timestamp}_${v.id.slice(0, 4)}`,
+                        slug: v.slug ? `${v.slug}_del_${timestamp}_${v.id.slice(0, 4)}` : undefined
+                    }
+                });
+            }
+
+            // Invalidate cache
+            try {
+                await fastify.cache.invalidateProductCache(product);
+            } catch (cacheErr) {
+                fastify.log.error(cacheErr, 'Failed to invalidate cache on bulk delete');
+            }
+        }
+
+        return createResponse(null, `${products.length} product(s) deactivated successfully`);
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to bulk delete products: ' + err.message));
+    }
+  });
+
   // Get Deactivated Products
   fastify.get('/admin/products/deactivated', {
     schema: {
@@ -1870,6 +1940,167 @@ export default async function productRoutes(fastify: FastifyInstance) {
     } catch (err: any) {
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse('Failed to bulk permanently delete products'));
+    }
+  });
+
+  // POST /admin/products/bulk-duplicate — Bulk Duplicate Products
+  fastify.post('/admin/products/bulk-duplicate', {
+    preHandler: [fastify.authenticate, fastify.hasPermission('product_manage')],
+    schema: {
+        description: 'Duplicate multiple products by IDs',
+        tags: ['Catalog'],
+        body: {
+            type: 'object',
+            required: ['ids'],
+            properties: {
+                ids: { type: 'array', items: { type: 'string' } }
+            }
+        }
+    }
+  }, async (request: any, reply) => {
+    const { ids } = request.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+        return reply.status(400).send(createErrorResponse('Product IDs array is required'));
+    }
+
+    try {
+        let currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
+        if (!currencyRec) {
+            currencyRec = await (fastify.prisma as any).currency.findFirst();
+        }
+        const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
+            where: { isDefault: true, isActive: true },
+            select: { id: true }
+        });
+        const defaultWarehouseId = defaultWarehouse?.id ?? null;
+
+        const duplicatedProducts: any[] = [];
+
+        for (const sourceId of ids) {
+            const source = await (fastify.prisma as any).product.findUnique({
+                where: { id: sourceId },
+                include: {
+                    prices: true,
+                    stocks: true,
+                    industries: true,
+                    variants: {
+                        include: { prices: true, stocks: true }
+                    }
+                }
+            });
+
+            if (!source) continue;
+
+            // Generate unique SKU for duplicated product
+            let newSku = `${source.sku}-COPY`;
+            let skuCounter = 1;
+            while (await (fastify.prisma as any).product.findUnique({ where: { sku: newSku } })) {
+                newSku = `${source.sku}-COPY-${skuCounter}`;
+                skuCounter++;
+            }
+
+            const newSlug = await generateUniqueSlug(source.name, source.partNo || '', newSku);
+            const sourcePrice = source.prices?.[0];
+            const sourceStockQty = source.stocks?.reduce((acc: number, curr: any) => acc + (curr.qty || 0), 0) || 0;
+
+            // Duplicate variants
+            const duplicatedVariants = await Promise.all((source.variants || []).map(async (v: any) => {
+                let vSku = v.sku ? `${v.sku}-COPY` : `${newSku}-VAR`;
+                let vCounter = 1;
+                while (await (fastify.prisma as any).product.findUnique({ where: { sku: vSku } })) {
+                    vSku = `${v.sku || newSku}-COPY-${vCounter}`;
+                    vCounter++;
+                }
+                const vSlug = await generateUniqueSlug(v.name || source.name, "", vSku);
+                return {
+                    name: v.name,
+                    slug: vSlug,
+                    sku: vSku,
+                    price: Number(v.price || 0),
+                    costPrice: Number(v.costPrice || 0),
+                    isActive: v.isActive !== undefined ? v.isActive : true,
+                    status: "Draft",
+                    variantAttributes: v.variantAttributes,
+                    specifications: v.specifications || {},
+                    category: { connect: { id: source.categoryId } },
+                    brand: { connect: { id: source.brandId } },
+                    imageUrl: v.imageUrl || null,
+                    prices: currencyRec ? {
+                        create: {
+                            currencyId: currencyRec.id,
+                            priceRetail: Number(v.prices?.[0]?.priceRetail || v.price || 0),
+                            isActive: true
+                        }
+                    } : undefined,
+                    stocks: {
+                        create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stocks?.[0]?.qty || 0 }
+                    }
+                };
+            }));
+
+            const created = await (fastify.prisma as any).product.create({
+                data: {
+                    name: source.name,
+                    slug: newSlug,
+                    sku: newSku,
+                    price: source.price,
+                    costPrice: source.costPrice,
+                    description: source.description,
+                    fullDescription: source.fullDescription,
+                    status: "Draft",
+                    groupNumber: source.groupNumber,
+                    groupId: source.groupId,
+                    isActive: false,
+                    isFeatured: source.isFeatured || false,
+                    isVisibleOnEcommerce: source.isVisibleOnEcommerce ?? true,
+                    imageUrl: source.imageUrl,
+                    images: source.images || [],
+                    category: { connect: { id: source.categoryId } },
+                    brand: { connect: { id: source.brandId } },
+                    length: source.length,
+                    width: source.width,
+                    weight: source.weight,
+                    volume: source.volume,
+                    specifications: source.specifications || {},
+                    variantOptions: source.variantOptions || undefined,
+                    variantAttributes: source.variantAttributes || undefined,
+                    prices: currencyRec ? {
+                        create: {
+                            currencyId: currencyRec.id,
+                            priceRetail: Number(sourcePrice?.priceRetail || source.price || 0),
+                            priceWholesale: Number(sourcePrice?.priceWholesale || 0),
+                            priceSpecial: Number(sourcePrice?.priceSpecial || 0),
+                            isActive: true
+                        }
+                    } : undefined,
+                    stocks: {
+                        create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: sourceStockQty }
+                    },
+                    industries: source.industries?.length > 0 ? {
+                        create: source.industries.map((ind: any) => ({
+                            industry: { connect: { id: ind.industryId } }
+                        }))
+                    } : undefined,
+                    variants: duplicatedVariants.length > 0 ? {
+                        create: duplicatedVariants
+                    } : undefined
+                },
+                include: {
+                    category: true,
+                    brand: true,
+                    prices: { include: { currency: true } },
+                    stocks: true,
+                    variants: true
+                }
+            });
+
+            duplicatedProducts.push(created);
+        }
+
+        return createResponse(duplicatedProducts.map(transformProduct), `${duplicatedProducts.length} product(s) duplicated successfully`);
+    } catch (err: any) {
+        fastify.log.error(err);
+        return reply.status(500).send(createErrorResponse('Failed to bulk duplicate products: ' + err.message));
     }
   });
   
