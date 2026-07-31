@@ -17,13 +17,17 @@ WORKDIR /app
 # Increase npm network reliability
 RUN npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 20000 && \
-    npm config set fetch-retry-maxtimeout 120000
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set prefer-offline false
 
 COPY package*.json ./
 COPY prisma ./prisma/
 
-# Install dependencies
-RUN npm ci --no-audit --no-fund
+# Install dependencies with retry logic to handle transient ECONNRESET failures
+RUN for i in 1 2 3; do \
+        npm ci --no-audit --no-fund && break || \
+        { echo "npm ci attempt $i failed, retrying in 15s..."; sleep 15; }; \
+    done
 
 COPY . .
 
@@ -47,7 +51,7 @@ RUN apk add --no-cache \
 
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
-ENV NODE_ENV production
+ENV NODE_ENV=production
 
 WORKDIR /app
 
