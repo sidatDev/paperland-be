@@ -362,7 +362,7 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
       // Sync product status label with inventory
       await syncProductStockStatus(fastify.prisma, productId);
 
-      // Invalidate Cache
+      // Invalidate Cache and sync parent if variant
       try {
         const product = await (fastify.prisma as any).product.findUnique({
           where: { id: productId },
@@ -370,6 +370,16 @@ const warehouseRoutes: FastifyPluginAsync = async (fastify: FastifyInstance) => 
         });
         if (product) {
           await fastify.cache.invalidateProductCache(product);
+          if (product.parentId) {
+            await syncProductStockStatus(fastify.prisma, product.parentId);
+            const parentProd = await (fastify.prisma as any).product.findUnique({
+              where: { id: product.parentId },
+              select: { id: true, slug: true }
+            });
+            if (parentProd) {
+              await fastify.cache.invalidateProductCache(parentProd);
+            }
+          }
         }
       } catch (cacheErr) {
         fastify.log.error(cacheErr, 'Failed to invalidate cache on stock adjust');

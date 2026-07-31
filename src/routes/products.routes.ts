@@ -223,21 +223,31 @@ export default async function productRoutes(fastify: FastifyInstance) {
          physicalQty: stock.qty,
          reservedQty: stock.reservedQty || 0,
          quantityAvailable: Math.max(0, stock.qty - (stock.reservedQty || 0)),
+         reorderLevel: stock.reorderLevel ?? 10,
          warehouse: stock.warehouse ? {
            id: stock.warehouse.id,
            code: stock.warehouse.code,
            name: stock.warehouse.name
          } : null
       })) ?? [],
-      totalPhysicalStock: p.variants && p.variants.length > 0 
-        ? p.variants.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty || 0), 0) || 0), 0)
-        : p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0,
-      totalReservedStock: p.variants && p.variants.length > 0
-        ? p.variants.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.reservedQty || 0), 0) || 0), 0)
-        : p.stocks?.reduce((acc: number, s: any) => acc + (s.reservedQty || 0), 0) || 0,
-      totalStock: p.variants && p.variants.length > 0
-        ? p.variants.reduce((acc: number, v: any) => acc + Math.max(0, v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty - (s.reservedQty || 0)), 0) || 0), 0)
-        : Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0),
+      totalPhysicalStock: (() => {
+        const activeVars = p.variants?.filter((v: any) => !v.deletedAt) || [];
+        const basePhys = p.stocks?.reduce((acc: number, s: any) => acc + (s.qty || 0), 0) || 0;
+        const varsPhys = activeVars.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty || 0), 0) || 0), 0);
+        return activeVars.length > 0 ? (basePhys + varsPhys) : basePhys;
+      })(),
+      totalReservedStock: (() => {
+        const activeVars = p.variants?.filter((v: any) => !v.deletedAt) || [];
+        const baseRes = p.stocks?.reduce((acc: number, s: any) => acc + (s.reservedQty || 0), 0) || 0;
+        const varsRes = activeVars.reduce((acc: number, v: any) => acc + (v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.reservedQty || 0), 0) || 0), 0);
+        return activeVars.length > 0 ? (baseRes + varsRes) : baseRes;
+      })(),
+      totalStock: (() => {
+        const activeVars = p.variants?.filter((v: any) => !v.deletedAt) || [];
+        const baseAvail = Math.max(0, p.stocks?.reduce((acc: number, s: any) => acc + (s.qty - (s.reservedQty || 0)), 0) || 0);
+        const varsAvail = activeVars.reduce((acc: number, v: any) => acc + Math.max(0, v.stocks?.reduce((sAcc: number, s: any) => sAcc + (s.qty - (s.reservedQty || 0)), 0) || 0), 0);
+        return activeVars.length > 0 ? (baseAvail + varsAvail) : baseAvail;
+      })(),
       
       wholesalePrice: Number(p.prices?.find((pr: any) => pr.isActive)?.priceWholesale || p.prices?.[0]?.priceWholesale || 0),
       promotionalPrice: (() => {
@@ -881,6 +891,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                 price: Number(v.price || v.salesPrice || 0),
                 costPrice: Number(v.costPrice || 0),
                 isActive: v.isActive !== undefined ? v.isActive : true,
+                status: (v.stock && Number(v.stock) > 0) ? "Active" : "Out of Stock",
                 variantAttributes: v.variantAttributes,
                 specifications: variantHash ? { variantHash } : {},
                 category: { connect: { id: finalCategoryId } },
@@ -1358,6 +1369,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         slug: await generateUniqueSlug(v.name, "", v.sku, v.id),
                         price: vPriceRetail,
                         costPrice: Number(v.costPrice || 0),
+                        status: (v.stock !== undefined && Number(v.stock) > 0) ? "Active" : "Out of Stock",
                         variantAttributes: v.variantAttributes,
                         ...(variantHash ? {
                             specifications: {
@@ -1410,6 +1422,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
                         price: Number(v.price || v.salesPrice || 0),
                         costPrice: Number(v.costPrice || 0),
                         isActive: v.isActive !== undefined ? v.isActive : true,
+                        status: (v.stock && Number(v.stock) > 0) ? "Active" : "Out of Stock",
                         variantAttributes: v.variantAttributes,
                         specifications: variantHash ? { variantHash } : {},
                         category: { connect: { id: finalCategoryId } },
