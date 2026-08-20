@@ -150,6 +150,9 @@ export default fp(async (fastify: FastifyInstance) => {
     console.log(`[AUTH DEBUG] Request: ${request.method} ${path} (Normalized: ${normalizedPath})`);
 
     const publicPaths = [
+      '/',
+      '/favicon.ico',
+      '/robots.txt',
       '/admin/auth/login',
       '/api/public/contact',
       '/public/contact',
@@ -172,6 +175,7 @@ export default fp(async (fastify: FastifyInstance) => {
       '/auth/activate-guest',
       '/auth/activate-finalize',
       '/health',
+      '/api/v1/health',
       '/orders/track',
       '/public/newsletter/subscribe',
       '/api/public/newsletter/subscribe',

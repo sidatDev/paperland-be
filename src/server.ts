@@ -196,8 +196,31 @@ const start = async () => {
     await fastify.register(import('./routes/search.routes'), { prefix: '/api/v1' });
 
 
-    // Health Check
+    // Root & Health Checks
+    fastify.get('/', async (request, reply) => {
+      return {
+        name: 'PaperLand API',
+        status: 'ok',
+        version: '1.0.0',
+        documentation: '/documentation',
+        health: '/health'
+      };
+    });
+
+    fastify.get('/robots.txt', async (request, reply) => {
+      reply.type('text/plain');
+      return 'User-agent: *\nDisallow: /admin\nDisallow: /api\nAllow: /\n';
+    });
+
+    fastify.get('/favicon.ico', async (request, reply) => {
+      return reply.status(204).send();
+    });
+
     fastify.get('/health', async (request, reply) => {
+      return { status: 'ok' };
+    });
+
+    fastify.get('/api/v1/health', async (request, reply) => {
       return { status: 'ok' };
     });
 
