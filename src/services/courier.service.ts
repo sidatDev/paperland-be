@@ -74,6 +74,8 @@ export class CourierService {
             shipperBookingId: response.bookingId,
             shipperLabelUrl: response.labelUrl,
             status: 'SHIPPED',
+            deliveryStatus: 'SHIPPED',
+            logisticsType: 'THIRD_PARTY',
             shippedDate: new Date()
           } as any
         });

@@ -8,6 +8,7 @@ import { generateOrderNumber } from '../utils/order-utils';
 import { fireN8nEvent } from '../utils/n8n-webhook';
 import { z } from 'zod';
 import { PromotionService } from '../services/promotion.service';
+import { computeSynchronizedOrderFields } from '../utils/order-status-sync';
 
 // Order Validation Schema
 const OrderItemSchema = z.object({
@@ -445,9 +446,10 @@ export default async function orderRoutes(fastify: FastifyInstance) {
                            }
                        }
 
+                      const syncFields = computeSynchronizedOrderFields(order, { status });
                       await tx.order.update({
                           where: { id: order.id },
-                          data: { status }
+                          data: syncFields
                       });
 
                       // Log to OrderStatusHistory
@@ -556,22 +558,17 @@ export default async function orderRoutes(fastify: FastifyInstance) {
               return reply.status(404).send(createErrorResponse("Order Not Found"));
           }
 
-          const updateData: any = { status };
+          const syncFields = computeSynchronizedOrderFields(order, { status });
+          const updateData: any = { ...syncFields };
           
-          // Update timestamps based on status
-          if (status === 'PROCESSING' && !order.processingDate) {
-              updateData.processingDate = new Date();
-              // Auto-assign logistics if not already assigned
+          // Auto-assign logistics if not already assigned when moving to PROCESSING
+          if (status === 'PROCESSING') {
               try {
                   const { LogisticsEngine } = await import('../services/logistics-engine.service');
-                  // We'll call this after the update to ensure we have the latest status, 
-                  // but we want it to be part of the transaction or subsequent logic.
               } catch (err) {
                   fastify.log.error(err, 'Failed to load LogisticsEngine');
               }
           }
-          if (status === 'SHIPPED' && !order.shippedDate) updateData.shippedDate = new Date();
-          if (status === 'DELIVERED' && !order.deliveredDate) updateData.deliveredDate = new Date();
 
           // Use transaction for safer stock decrement
           const updatedOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
@@ -760,17 +757,70 @@ export default async function orderRoutes(fastify: FastifyInstance) {
           
           if (!order) return reply.status(404).send(createErrorResponse("Order Not Found"));
 
-          const updatedOrder = await (fastify.prisma as any).order.update({
-              where: { id: order.id },
-              data: {
-                  logisticsType: data.logisticsType,
-                  courierProviderId: data.courierProviderId || null,
-                  riderId: data.riderId || null,
-                  deliveryStatus: data.deliveryStatus || order.deliveryStatus,
-                  trackingNumber: data.trackingNumber || order.trackingNumber,
-                  isManualLogistics: true,
+          const incomingDeliveryStatus = data.deliveryStatus || order.deliveryStatus;
+          const syncFields = computeSynchronizedOrderFields(
+              { ...order, logisticsType: data.logisticsType },
+              { deliveryStatus: incomingDeliveryStatus }
+          );
+
+          const updatedOrder = await (fastify.prisma as any).$transaction(async (tx: any) => {
+              // If logistics marks as DELIVERED and order was not already DELIVERED, decrement inventory
+              if (syncFields.status === 'DELIVERED' && order.status !== 'DELIVERED') {
+                  const fullOrder = await tx.order.findUnique({
+                      where: { id: order.id },
+                      include: { items: true }
+                  });
+                  for (const item of (fullOrder?.items || [])) {
+                      if (item.productId) {
+                          const stock = await tx.stock.findFirst({ 
+                              where: { 
+                                  productId: item.productId,
+                                  reservedQty: { gte: Number(item.quantity) }
+                              },
+                              orderBy: { qty: 'desc' }
+                          }) || await tx.stock.findFirst({ 
+                              where: { productId: item.productId },
+                              orderBy: { reservedQty: 'desc' }
+                          });
+
+                          if (stock) {
+                              await tx.stock.update({
+                                  where: { id: stock.id },
+                                  data: { 
+                                      qty: { decrement: Number(item.quantity) },
+                                      reservedQty: { decrement: Math.min(Number(item.quantity), stock.reservedQty) }
+                                  }
+                              });
+                              await syncProductStockStatus(tx, item.productId);
+                          }
+                      }
+                  }
               }
+
+              return await tx.order.update({
+                  where: { id: order.id },
+                  data: {
+                      logisticsType: data.logisticsType,
+                      courierProviderId: data.courierProviderId || null,
+                      riderId: data.riderId || null,
+                      trackingNumber: data.trackingNumber || order.trackingNumber,
+                      isManualLogistics: true,
+                      ...syncFields,
+                  }
+              });
           });
+
+          // If status was auto-synchronized by logistics, log status history
+          if (syncFields.status && syncFields.status !== order.status) {
+              await (fastify.prisma as any).orderStatusHistory.create({
+                  data: {
+                      orderId: order.id,
+                      status: syncFields.status,
+                      notes: data.note || `Status auto-synchronized to ${syncFields.status} via Logistics update (${incomingDeliveryStatus})`,
+                      changedBy: (request.user as any)?.id || null
+                  }
+              });
+          }
 
           // Audit Log
           await logActivity(fastify, {

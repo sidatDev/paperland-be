@@ -6,7 +6,7 @@ export default fp(async (fastify: FastifyInstance) => {
   fastify.register(fastifyJwt, {
     secret: process.env.JWT_SECRET || 'supersecret',
     sign: {
-      expiresIn: '2m',
+      expiresIn: '8h',
     },
   });
 
