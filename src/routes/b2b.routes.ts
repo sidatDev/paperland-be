@@ -344,14 +344,23 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
             }
         }
 
-        // Send approval email
-        const { emailService } = await import('../services/email.service');
-        await emailService.sendB2BApprovalEmail(
-          user.email,
-          user.firstName || 'Valued Customer',
-          user.b2bCompanyDetails.companyName,
-          creditLimit
-        );
+        // Send approval email (Non-blocking & resilient)
+        if (user.email) {
+          try {
+            const { getEmailService } = await import('../services/email.service');
+            const svc = getEmailService(fastify.prisma);
+            if (svc) {
+              await svc.sendB2BApprovalEmail(
+                user.email,
+                user.firstName || 'Valued Customer',
+                user.b2bCompanyDetails.companyName,
+                Number(creditLimit) || 0
+              );
+            }
+          } catch (emailErr: any) {
+            fastify.log.warn(`[B2B Approval] Notification email could not be sent to ${user.email}: ${emailErr.message}`);
+          }
+        }
 
         // Log activity
         const { logActivity } = await import('../utils/audit');
@@ -390,14 +399,23 @@ export default async function b2bRoutes(fastify: FastifyInstance) {
           }
         });
 
-        // Send rejection email
-        const { emailService } = await import('../services/email.service');
-        await emailService.sendB2BRejectionEmail(
-          user.email,
-          user.firstName || 'Applicant',
-          user.b2bCompanyDetails.companyName,
-          rejectionReason
-        );
+        // Send rejection email (Non-blocking & resilient)
+        if (user.email) {
+          try {
+            const { getEmailService } = await import('../services/email.service');
+            const svc = getEmailService(fastify.prisma);
+            if (svc) {
+              await svc.sendB2BRejectionEmail(
+                user.email,
+                user.firstName || 'Applicant',
+                user.b2bCompanyDetails.companyName,
+                rejectionReason
+              );
+            }
+          } catch (emailErr: any) {
+            fastify.log.warn(`[B2B Rejection] Notification email could not be sent to ${user.email}: ${emailErr.message}`);
+          }
+        }
 
         // Log activity
         const { logActivity } = await import('../utils/audit');

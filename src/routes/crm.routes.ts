@@ -630,30 +630,47 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             }
         });
 
-        // 4. Send Approval Email
-        const { emailService } = await import('../services/email.service');
-        await emailService.sendB2BApprovalEmail(
-            user.email,
-            user.firstName || 'Valued Customer',
-            user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
-            creditLimit
-        );
+        // 4. Send Approval Email (Non-blocking & resilient)
+        if (user.email) {
+            try {
+                const { getEmailService } = await import('../services/email.service');
+                const svc = getEmailService(fastify.prisma);
+                if (svc) {
+                    await svc.sendB2BApprovalEmail(
+                        user.email,
+                        user.firstName || 'Valued Customer',
+                        user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
+                        Number(creditLimit) || 0
+                    );
+                }
+            } catch (emailErr: any) {
+                fastify.log.warn(`[B2B Approval] Notification email could not be sent to ${user.email}: ${emailErr.message}`);
+            }
+        }
 
-        // 5. Log Activity
-        await logActivity(fastify, {
-            entityType: 'USER',
-            entityId: id,
-            action: 'APPROVE_B2B',
-            performedBy: (request.user as any)?.id,
-            details: { creditLimit, paymentTerms, notes },
-            ip: request.ip,
-            userAgent: request.headers['user-agent']
-        });
+        // 5. Log Activity (Safe)
+        try {
+            await logActivity(fastify, {
+                entityType: 'USER',
+                entityId: id,
+                action: 'APPROVE_B2B',
+                performedBy: (request.user as any)?.id,
+                details: { creditLimit: Number(creditLimit) || 0, paymentTerms, notes },
+                ip: request.ip,
+                userAgent: request.headers['user-agent']
+            });
+        } catch (auditErr: any) {
+            fastify.log.warn(`[AuditLog] Activity logging skipped: ${auditErr.message}`);
+        }
 
-        // Sync to Typesense
-        await syncCustomerToTypesense(fastify, id);
+        // 6. Sync to Typesense (Safe)
+        try {
+            await syncCustomerToTypesense(fastify, id);
+        } catch (tsErr: any) {
+            fastify.log.warn(`[Typesense] Customer sync failed: ${tsErr.message}`);
+        }
  
-        return { success: true };
+        return { success: true, message: 'B2B account approved successfully' };
     } catch (err: any) {
         fastify.log.error(err);
         return reply.status(500).send({ message: 'Internal Server Error: ' + err.message });
@@ -728,30 +745,47 @@ export default async function crmRoutes(fastify: FastifyInstance) {
             }
         });
 
-        // Send Rejection Email
-        const { emailService } = await import('../services/email.service');
-        await emailService.sendB2BRejectionEmail(
-            user.email, 
-            user.firstName || 'Applicant', 
-            user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
-            reason
-        );
+        // Send Rejection Email (Non-blocking & resilient)
+        if (user.email) {
+            try {
+                const { getEmailService } = await import('../services/email.service');
+                const svc = getEmailService(fastify.prisma);
+                if (svc) {
+                    await svc.sendB2BRejectionEmail(
+                        user.email, 
+                        user.firstName || 'Applicant', 
+                        user.b2bCompanyDetails?.companyName || user.companyName || 'B2B Client',
+                        reason
+                    );
+                }
+            } catch (emailErr: any) {
+                fastify.log.warn(`[B2B Rejection] Notification email could not be sent to ${user.email}: ${emailErr.message}`);
+            }
+        }
 
-        // Log Activity
-        await logActivity(fastify, {
-            entityType: 'USER',
-            entityId: id,
-            action: 'REJECT_B2B',
-            performedBy: (request.user as any)?.id,
-            details: { reason },
-            ip: request.ip,
-            userAgent: request.headers['user-agent']
-        });
+        // Log Activity (Safe)
+        try {
+            await logActivity(fastify, {
+                entityType: 'USER',
+                entityId: id,
+                action: 'REJECT_B2B',
+                performedBy: (request.user as any)?.id,
+                details: { reason },
+                ip: request.ip,
+                userAgent: request.headers['user-agent']
+            });
+        } catch (auditErr: any) {
+            fastify.log.warn(`[AuditLog] Activity logging skipped: ${auditErr.message}`);
+        }
 
-        // Sync to Typesense
-        await syncCustomerToTypesense(fastify, id);
+        // Sync to Typesense (Safe)
+        try {
+            await syncCustomerToTypesense(fastify, id);
+        } catch (tsErr: any) {
+            fastify.log.warn(`[Typesense] Customer sync failed: ${tsErr.message}`);
+        }
  
-        return { success: true };
+        return { success: true, message: 'B2B application rejected successfully' };
     } catch (err: any) {
         fastify.log.error(err);
         return reply.status(500).send({ message: 'Internal Server Error: ' + err.message });

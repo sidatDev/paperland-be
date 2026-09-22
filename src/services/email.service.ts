@@ -245,84 +245,101 @@ export class EmailService {
    * Send B2B account approval notification email
    */
   async sendB2BApprovalEmail(to: string, userName: string, companyName: string, creditLimit: number): Promise<void> {
+    if (!to) {
+      console.warn('⚠️ Cannot send B2B approval email: recipient email is missing');
+      return;
+    }
+    const formattedCreditLimit = (Number(creditLimit) || 0).toLocaleString();
     try {
-      await this.sendDynamicEmail('B2B_APPROVAL', to, {
-        userName,
-        companyName,
-        creditLimit: creditLimit.toLocaleString()
-      });
-    } catch (error) {
-      console.warn('⚠️ Dynamic B2B approval email failed, falling back to hardcoded template');
-      const subject = '🎉 Your B2B Account Has Been Approved - Paperland';
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #22c55e; padding: 20px; text-align: center;">
-            <h1 style="color: white; margin: 0;">✅ Account Approved!</h1>
-          </div>
-          
-          <div style="padding: 30px; background-color: #f9fafb;">
-            <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
-            
-            <p style="font-size: 16px; color: #374151; line-height: 1.6;">
-              Congratulations! Your B2B account application for <strong>${companyName}</strong> has been <strong>approved</strong>.
-            </p>
-            
-            <div style="background-color: white; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0;">
-              <h3 style="margin-top: 0; color: #059669;">Account Details:</h3>
-              <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> PKR ${creditLimit.toLocaleString()}</p>
-              <p style="margin: 5px 0;">🚀 <strong>Status:</strong> Active</p>
+      try {
+        await this.sendDynamicEmail('B2B_APPROVAL', to, {
+          userName,
+          companyName,
+          creditLimit: formattedCreditLimit
+        });
+      } catch (error) {
+        console.warn('⚠️ Dynamic B2B approval email failed, falling back to hardcoded template');
+        const subject = '🎉 Your B2B Account Has Been Approved - Paperland';
+        const htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #22c55e; padding: 20px; text-align: center;">
+              <h1 style="color: white; margin: 0;">✅ Account Approved!</h1>
             </div>
             
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              Best regards,<br>
-              <strong>Paperland Team</strong>
-            </p>
+            <div style="padding: 30px; background-color: #f9fafb;">
+              <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
+              
+              <p style="font-size: 16px; color: #374151; line-height: 1.6;">
+                Congratulations! Your B2B account application for <strong>${companyName}</strong> has been <strong>approved</strong>.
+              </p>
+              
+              <div style="background-color: white; border-left: 4px solid #22c55e; padding: 20px; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #059669;">Account Details:</h3>
+                <p style="margin: 5px 0;">💳 <strong>Initial Credit Limit:</strong> PKR ${formattedCreditLimit}</p>
+                <p style="margin: 5px 0;">🚀 <strong>Status:</strong> Active</p>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                Best regards,<br>
+                <strong>Paperland Team</strong>
+              </p>
+            </div>
           </div>
-        </div>
-      `;
-      await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+        `;
+        await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+      }
+      
+      console.log(`✅ B2B Approval Email sent to: ${to}`);
+    } catch (err: any) {
+      console.error(`❌ sendB2BApprovalEmail failed for ${to}:`, err.message);
     }
-    
-    console.log(`✅ B2B Approval Email sent to: ${to}`);
   }
 
   /**
    * Send B2B account rejection notification email
    */
   async sendB2BRejectionEmail(to: string, userName: string, companyName: string, reason?: string): Promise<void> {
-    try {
-      await this.sendDynamicEmail('B2B_REJECTION', to, {
-        userName,
-        companyName,
-        reason: reason || 'Information provided did not meet our requirements.'
-      });
-    } catch (error) {
-      console.warn('⚠️ Dynamic B2B rejection email failed, falling back to hardcoded template');
-      const subject = 'B2B Account Application Update - Paperland';
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <div style="background-color: #ef4444; padding: 20px; text-align: center;">
-            <h1 style="color: white; margin: 0;">Application Status Update</h1>
-          </div>
-          
-          <div style="padding: 30px; background-color: #f9fafb;">
-            <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
-            
-            <p style="font-size: 16px; color: #374151; line-height: 1.6;">
-              Your B2B account application for <strong>${companyName}</strong> was rejected due to <strong>${reason || 'unspecified reasons'}</strong>. Contact support for more info.
-            </p>
-            
-            <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-              Best regards,<br>
-              <strong>Paperland Team</strong>
-            </p>
-          </div>
-        </div>
-      `;
-      await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+    if (!to) {
+      console.warn('⚠️ Cannot send B2B rejection email: recipient email is missing');
+      return;
     }
-    
-    console.log(`📧 B2B Rejection Email sent to: ${to}`);
+    try {
+      try {
+        await this.sendDynamicEmail('B2B_REJECTION', to, {
+          userName,
+          companyName,
+          reason: reason || 'Information provided did not meet our requirements.'
+        });
+      } catch (error) {
+        console.warn('⚠️ Dynamic B2B rejection email failed, falling back to hardcoded template');
+        const subject = 'B2B Account Application Update - Paperland';
+        const htmlContent = `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background-color: #ef4444; padding: 20px; text-align: center;">
+              <h1 style="color: white; margin: 0;">Application Status Update</h1>
+            </div>
+            
+            <div style="padding: 30px; background-color: #f9fafb;">
+              <p style="font-size: 16px; color: #374151;">Dear ${userName},</p>
+              
+              <p style="font-size: 16px; color: #374151; line-height: 1.6;">
+                Your B2B account application for <strong>${companyName}</strong> was rejected due to <strong>${reason || 'unspecified reasons'}</strong>. Contact support for more info.
+              </p>
+              
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
+                Best regards,<br>
+                <strong>Paperland Team</strong>
+              </p>
+            </div>
+          </div>
+        `;
+        await this.sendEmail({ to, subject, html: getEmailLayout(htmlContent, subject) });
+      }
+      
+      console.log(`📧 B2B Rejection Email sent to: ${to}`);
+    } catch (err: any) {
+      console.error(`❌ sendB2BRejectionEmail failed for ${to}:`, err.message);
+    }
   }
 
   /**
@@ -627,7 +644,7 @@ export class EmailService {
    */
   async sendDynamicEmail(key: string, to: string, data: any): Promise<void> {
     try {
-      const template = await (this.prisma as any).notificationTemplate.findUnique({
+      const template = await (this.prisma as any).notificationTemplate.findFirst({
         where: { name: key, isActive: true }
       });
 
@@ -817,5 +834,12 @@ export let emailService: EmailService;
 
 export function initializeEmailService(prisma: PrismaClient) {
   emailService = new EmailService(prisma);
+  return emailService;
+}
+
+export function getEmailService(prisma?: PrismaClient): EmailService {
+  if (!emailService && prisma) {
+    emailService = new EmailService(prisma);
+  }
   return emailService;
 }
