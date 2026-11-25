@@ -191,8 +191,10 @@ model User {
   role                  Role                 @relation(fields: [roleId], references: [id])
   wishlists             Wishlist?
   priceUpdateLogs       PriceUpdateLog[]
-  kbArticles            KbArticle[]          @relation("KbArticleAuthor")
-  kbRevisions           KbArticleRevision[]  @relation("KbRevisionCreator")
+  kbArticles             KbArticle[]           @relation("KbArticleAuthor")
+  kbRevisions            KbArticleRevision[]   @relation("KbRevisionCreator")
+  submittedAnalyzerItems ProductAnalyzerItem[] @relation("AnalyzerSubmitter")
+  approvedAnalyzerItems  ProductAnalyzerItem[] @relation("AnalyzerApprover")
 
   @@map("users")
 }
@@ -373,6 +375,7 @@ model Product {
   id                   String                    @id @default(uuid())
   name                 String
   sku                  String                    @unique
+  barcode              String?
   description          String?
   imageUrl             String?                   @map("image_url")
   specifications       Json?
@@ -427,7 +430,9 @@ model Product {
   wishlistItems        WishlistItem[]
   Promotion            Promotion[]
   priceUpdateLogs      PriceUpdateLog[]
+  analyzerSourceItems  ProductAnalyzerItem[]     @relation("AnalyzerApprovedProduct")
 
+  @@index([barcode])
   @@map("products")
 }
 
@@ -2082,5 +2087,61 @@ model WhatsAppConnectionStatus {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("whatsapp_connection_statuses")
+}
+
+model ProductAnalyzerItem {
+  id                   String    @id @default(uuid())
+  batchId              String?   @map("batch_id")
+  inputType            String    @default("IMAGE") @map("input_type")
+  originalFileName     String?   @map("original_file_name")
+  uploadedImageUrl     String?   @map("uploaded_image_url")
+  barcode              String?
+  lookupStatus         String    @default("PENDING_REVIEW") @map("lookup_status")
+  lookupSource         String?   @map("lookup_source")
+  lookupError          String?   @map("lookup_error")
+  rawLookupData        Json?     @map("raw_lookup_data")
+  duplicateProductId   String?   @map("duplicate_product_id")
+
+  name                 String?
+  sku                  String?
+  brandId              String?   @map("brand_id")
+  brandName            String?   @map("brand_name")
+  categoryId           String?   @map("category_id")
+  categoryName         String?   @map("category_name")
+  status               String    @default("Active")
+  description          String?
+  fullDescription      String?   @map("full_description")
+  isFeatured           Boolean   @default(false) @map("is_featured")
+  isVisibleOnEcommerce Boolean   @default(true) @map("is_visible_on_ecommerce")
+  salesPrice           Decimal   @default(0) @map("sales_price") @db.Decimal(10, 2)
+  wholesalePrice       Decimal   @default(0) @map("wholesale_price") @db.Decimal(10, 2)
+  costPrice            Decimal   @default(0) @map("cost_price") @db.Decimal(10, 2)
+  stock                Int       @default(0)
+  threshold            Int       @default(10)
+  width                String?
+  length               String?
+  weight               String?
+  volume               String?
+  specs                Json?
+  images               String[]  @default([])
+  seo                  Json?
+
+  submittedById        String?   @map("submitted_by_id")
+  approvedById         String?   @map("approved_by_id")
+  approvedAt           DateTime? @map("approved_at")
+  rejectionReason      String?   @map("rejection_reason")
+  approvedProductId    String?   @map("approved_product_id")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  submittedBy          User?     @relation("AnalyzerSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  approvedBy           User?     @relation("AnalyzerApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedProduct      Product?  @relation("AnalyzerApprovedProduct", fields: [approvedProductId], references: [id], onDelete: SetNull)
+
+  @@index([batchId])
+  @@index([barcode])
+  @@index([lookupStatus])
+  @@index([createdAt])
+  @@map("product_analyzer_items")
 }
 

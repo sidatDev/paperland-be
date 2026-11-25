@@ -159,6 +159,9 @@ const start = async () => {
 
     // Import Routes (NEW)
     await fastify.register(import('./routes/import.routes'), { prefix: '/api/v1' });
+
+    // Product Analyzer Routes (Barcode Image & Excel -> Staging -> Live Approval)
+    await fastify.register(import('./routes/product-analyzer.routes'), { prefix: '/api/v1' });
     
     // Sync Routes (Disabled for Paperland Rebrand)
     // await fastify.register(import('./routes/sync.routes'), { prefix: '/api/v1' });

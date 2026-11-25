@@ -6,6 +6,7 @@ import { stringify } from 'csv-stringify';
 import ExcelJS from 'exceljs';
 import crypto from 'crypto';
 import { featureFlags } from '../config/feature-flags';
+import { createLiveProduct } from '../services/product-creation.service';
 
 const processedRequestIds = new Set<string>();
 
@@ -102,6 +103,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       isActive: p.isActive,
       isFeatured: p.isFeatured || false,
       sku: p.sku,
+      barcode: p.barcode || (p.specifications as any)?.barcode || null,
       slug: p.slug, 
       groupNumber: p.groupNumber,
       groupId: p.groupId,
@@ -621,6 +623,7 @@ export default async function productRoutes(fastify: FastifyInstance) {
       id: { type: 'string' },
       name: { type: 'string' },
       sku: { type: 'string' },
+      barcode: { type: 'string', nullable: true },
       isActive: { type: 'boolean' },
       groupNumber: { type: 'string', nullable: true },
       groupId: { type: 'string', nullable: true },
@@ -819,194 +822,19 @@ export default async function productRoutes(fastify: FastifyInstance) {
   }, async (request: any, reply) => {
     const data: any = request.body;
     try {
-        const { 
-            name, sku: bodySku, description, groupNumber, groupId, isActive: bodyIsActive,
-            categoryId: bodyCategoryId, brandId: bodyBrandId,
-            category: bodyCategory, brand: bodyBrand, partNo: bodyPartNo, status = "Draft",
-            salesPrice = 0, currency = "PKR", stock = 0, costPrice = 0, specifications = {}, specs = [],
-            tierPricing = {},
-            weight, width, length, volume,
-            media, seo, 
-            isFeatured = false, 
-            isVisibleOnEcommerce = true, 
-            fullDescription, 
-            industries = [],
-            parentId,
-            variantOptions,
-            variantAttributes,
-            variants = []
-        } = data;
-        const promotionalPrice = undefined;
-
         console.log('Create Product Body:', JSON.stringify(data, null, 2));
-
-        const resolvedCategoryId = await resolveEntityId('category', bodyCategoryId || bodyCategory);
-        const resolvedBrandId = await resolveEntityId('brand', bodyBrandId || bodyBrand);
-        const resolvedSku = bodySku || bodyPartNo || data.partNo;
-
-        if (!resolvedCategoryId) return reply.status(400).send(createErrorResponse('Valid Category ID or Name is required'));
-        if (!resolvedBrandId) return reply.status(400).send(createErrorResponse('Valid Brand ID or Name is required'));
-        if (!resolvedSku) return reply.status(400).send(createErrorResponse('SKU is required'));
-
-        let finalCategoryId = resolvedCategoryId;
-        let finalBrandId = resolvedBrandId;
-
-        if (parentId) {
-            const parent = await (fastify.prisma as any).product.findUnique({ where: { id: parentId } });
-            if (parent) {
-                finalCategoryId = parent.categoryId;
-                finalBrandId = parent.brandId;
-            }
-        }
-
-        const resolvedIsActive = bodyIsActive !== undefined ? (bodyIsActive === 'true' || bodyIsActive === true) : true;
-        
-        const mediaUrls = (media || []).map((m: any) => typeof m === 'string' ? m : m.url);
-        const resolvedImageUrl = (mediaUrls.length > 0) ? mediaUrls[0] : (data.imageUrl || null);
-
-        let currencyRec = await (fastify.prisma as any).currency.findUnique({ where: { code: currency } });
-        if (!currencyRec) {
-             currencyRec = await (fastify.prisma as any).currency.findFirst({ where: { code: 'PKR' } });
-        }
-
-        const defaultWarehouse = await (fastify.prisma as any).warehouse.findFirst({
-            where: { isDefault: true, isActive: true },
-            select: { id: true }
-        });
-        const defaultWarehouseId = defaultWarehouse?.id ?? null;
-
-        const partNum = bodyPartNo || "";
-        const skuVal = bodySku || "";
-        
-        const slug = await generateUniqueSlug(name, partNum, skuVal);
-
-        // Prepare variants with unique slugs
-        const variantsWithSlugs = await Promise.all(variants.map(async (v: any) => {
-            const variantHash = v.variantAttributes ? crypto.createHash('md5').update(JSON.stringify(Object.entries(v.variantAttributes).sort())).digest('hex') : null;
-            const vSlug = await generateUniqueSlug(v.name || name, "", v.sku);
-            return {
-                name: v.name,
-                slug: vSlug,
-                sku: v.sku,
-                price: Number(v.price || v.salesPrice || 0),
-                costPrice: Number(v.costPrice || 0),
-                isActive: v.isActive !== undefined ? v.isActive : true,
-                status: (v.stock && Number(v.stock) > 0) ? "Active" : "Out of Stock",
-                variantAttributes: v.variantAttributes,
-                specifications: variantHash ? { variantHash } : {},
-                category: { connect: { id: finalCategoryId } },
-                brand: { connect: { id: finalBrandId } },
-                imageUrl: v.imageUrl || null,
-                prices: {
-                    create: {
-                        currencyId: currencyRec.id,
-                        priceRetail: Number(v.price || v.salesPrice || 0),
-                        isActive: true
-                    }
-                },
-                stocks: {
-                    create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: v.stock || 0 }
-                }
-            };
-        }));
-
-        const productCreated = await (fastify.prisma as any).product.create({
-            data: {
-                name,
-                slug,
-                sku: resolvedSku,
-                price: Number(salesPrice || 0),
-                costPrice: Number(costPrice || 0),
-                description,
-                fullDescription,
-                status,
-                groupNumber,
-                groupId,
-                isActive: resolvedIsActive,
-                isFeatured,
-                isVisibleOnEcommerce,
-                imageUrl: resolvedImageUrl,
-                images: mediaUrls,
-                category: { connect: { id: finalCategoryId } },
-                brand: { connect: { id: finalBrandId } },
-                length: length?.toString(),
-                width: width?.toString(),
-                weight: weight?.toString(),
-                volume: volume?.toString(),
-                specifications: {
-                    ...specifications,
-                    technical: specs || [],
-                    seo: seo || {}
-                },
-                prices: {
-                   create: { 
-                     currencyId: currencyRec.id, 
-                     priceRetail: Number(salesPrice || 0), 
-                     priceWholesale: Number(tierPricing?.wholesale || 0),
-                     priceSpecial: Number(promotionalPrice || 0),
-                     isActive: true 
-                   }
-                },
-                stocks: {
-                    create: { warehouseId: defaultWarehouseId, locationId: 'DEFAULT', qty: stock }
-                },
-                // Create industry relations
-                industries: industries.length > 0 ? {
-                    create: industries.map((industryId: string) => ({
-                        industry: { connect: { id: industryId } }
-                    }))
-                } : undefined,
-                parent: parentId ? { connect: { id: parentId } } : undefined,
-                variantOptions,
-                variantAttributes,
-                variants: variantsWithSlugs.length > 0 ? {
-                    create: variantsWithSlugs
-                } : undefined
-            },
-            include: { 
-                category: true, 
-                brand: true, 
-                prices: { include: {currency: true} }, 
-                stocks: true, 
-                industries: { include: { industry: true } },
-                variants: { include: { prices: true, stocks: true } }
-            }
-        });
-
-        // Audit Log
-        await logActivity(fastify, {
-            entityType: 'PRODUCT',
-            entityId: productCreated.id,
-            action: 'CREATE',
+        const productCreated = await createLiveProduct(fastify, data, {
+            autoCreateEntities: false,
             performedBy: (request.user as any)?.id || 'unknown',
-            details: { name, sku: resolvedSku },
             ip: request.ip,
-            userAgent: request.headers['user-agent']
+            userAgent: request.headers['user-agent'],
+            auditAction: 'CREATE',
         });
-
-        // Invalidate Cache for listings and homepage
-        try {
-            await fastify.cache.invalidateProductCache(productCreated);
-        } catch (cacheErr) {
-            fastify.log.error(cacheErr, 'Failed to invalidate cache on create');
-        }
-
-        // Sync to Typesense (Async via Queue)
-        try {
-            if ((fastify as any).queues?.search) {
-                await (fastify as any).queues.search.add('product-sync', {
-                    type: 'product',
-                    action: 'upsert',
-                    data: mapToTypesenseDocument(productCreated)
-                });
-            }
-        } catch (tsErr: any) {
-            fastify.log.error(tsErr, 'Failed to queue product for Typesense');
-        }
 
         return createResponse(transformProduct(productCreated), "Product Created");
     } catch (err: any) {
         if (err.code === 'P2002') return reply.status(400).send(createErrorResponse('SKU already exists'));
+        if (err.statusCode === 400) return reply.status(400).send(createErrorResponse(err.message));
         fastify.log.error(err);
         return reply.status(500).send(createErrorResponse('Create Failed: ' + err.message));
     }
